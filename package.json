@@ -41,7 +41,7 @@
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
-    "jsdom": "latest",
+    "jsdom": "26.1.0",
     "prettier": "latest",
     "typescript-eslint": "latest",
     "vitest": "latest"

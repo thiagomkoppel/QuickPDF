@@ -30,6 +30,7 @@ QuickPDF is in Phase 0 foundation work. The repository now contains a Vite, Reac
 - TypeScript with strict compiler settings.
 - npm with `package-lock.json`.
 - Vitest, React Testing Library, and jsdom for unit/component tests.
+- jsdom is pinned exactly to 26.1.0 for CI compatibility.
 - Playwright configured for later end-to-end tests.
 - ESLint and Prettier for code quality.
 
@@ -55,18 +56,18 @@ npm run build
 
 ```text
 src/
-├── app/
-├── domain/
-├── application/
-├── infrastructure/
-│   ├── browser/
-│   └── pdf/
-├── presentation/
-│   ├── components/
-│   ├── pages/
-│   └── styles/
-├── shared/
-└── test/
+|-- app/
+|-- domain/
+|-- application/
+|-- infrastructure/
+|   |-- browser/
+|   `-- pdf/
+|-- presentation/
+|   |-- components/
+|   |-- pages/
+|   `-- styles/
+|-- shared/
+`-- test/
 ```
 
 The domain layer must remain independent of React, DOM APIs, PDF libraries, and browser adapters. Presentation code renders state and routes user intent through application-facing boundaries. Infrastructure will hold browser and PDF adapter implementations when Phase 0 reaches those workstreams.
