@@ -58,3 +58,7 @@ Prove that the application can safely and reliably:
 ## Recent assessment
 
 Document-session domain foundation implemented on 2026-07-28 using strict TDD and pure TypeScript. Repository foundation implemented on 2026-07-28 using Vite, React, TypeScript, npm, Vitest, React Testing Library, jsdom, ESLint, Prettier, and Playwright configuration. The Vite SPA choice is documented in ADR-004.
+
+## Runtime baseline
+
+Development and CI are standardized on Node.js 22 or newer. GitHub Actions uses `node-version: 22` to avoid jsdom/undici compatibility failures during Vitest environment startup.

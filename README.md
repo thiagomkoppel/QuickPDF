@@ -33,7 +33,7 @@ QuickPDF is in Phase 0 foundation work. The repository now contains a Vite, Reac
 - Playwright configured for later end-to-end tests.
 - ESLint and Prettier for code quality.
 
-Use Node.js 20.19 or newer. The CI workflow currently uses Node 20.
+Use Node.js 22 or newer. The CI workflow uses the latest Node 22 release via `node-version: 22`.
 
 ## Commands
 

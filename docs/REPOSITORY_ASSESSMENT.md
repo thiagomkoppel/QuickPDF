@@ -11,7 +11,7 @@ All files referenced by `docs/DOCUMENT_INDEX.md` are present.
 ## Detected technology stack
 
 - Package manager: npm with `package-lock.json`.
-- Runtime expectation: Node.js 20.19 or newer.
+- Runtime expectation: Node.js 22 or newer. GitHub Actions uses `node-version: 22`.
 - Application: Vite static SPA.
 - UI: React.
 - Language: TypeScript with strict compiler settings.
