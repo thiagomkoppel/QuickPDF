@@ -1,4 +1,4 @@
-﻿# Editor Interface
+# Editor Interface
 
 ## Current proof-of-concept layout
 
@@ -20,6 +20,7 @@
 - The Download action remains visible but disabled until export exists.
 - Selection handles must be easy to use.
 - Common actions must not require nested menus.
+- Modified wheel gestures and `Ctrl`/`Cmd` zoom shortcuts change QuickPDF viewer zoom only and must prevent browser page zoom while the editor is active.
 - Dirty destructive actions require clear confirmation.
 
 ## Status communication

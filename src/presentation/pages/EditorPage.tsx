@@ -1,10 +1,10 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent,
-  type WheelEvent,
 } from "react";
 
 import { pageToScreenRect, screenToPagePoint, type Point } from "../../application/editor-geometry";
@@ -42,6 +42,14 @@ const isFiniteRect = (rect: {
   Number.isFinite(rect.width) &&
   Number.isFinite(rect.height);
 
+const isViewerZoomShortcut = (event: globalThis.KeyboardEvent): boolean => {
+  if (!event.ctrlKey && !event.metaKey) {
+    return false;
+  }
+
+  return event.key === "+" || event.key === "=" || event.key === "-" || event.key === "0";
+};
+
 export const EditorPage = ({
   editor,
   snapshot,
@@ -56,10 +64,13 @@ export const EditorPage = ({
   const state = snapshot.state;
   const currentPage = state.currentPage;
 
-  const applySnapshot = (nextSnapshot: EditorSnapshot): void => {
-    onSnapshotChange(nextSnapshot);
-    setPageInput(String(nextSnapshot.state.currentPageNumber || 1));
-  };
+  const applySnapshot = useCallback(
+    (nextSnapshot: EditorSnapshot): void => {
+      onSnapshotChange(nextSnapshot);
+      setPageInput(String(nextSnapshot.state.currentPageNumber || 1));
+    },
+    [onSnapshotChange],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -207,32 +218,67 @@ export const EditorPage = ({
     }
   };
 
-  const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
-    const result = editor.handleWheelZoom({
-      deltaY: event.deltaY,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-    });
-    if (!result.handled) {
+  const handleWheel = useCallback(
+    (event: globalThis.WheelEvent): void => {
+      const result = editor.handleWheelZoom({
+        deltaY: event.deltaY,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+      });
+      if (!result.handled) {
+        return;
+      }
+      event.preventDefault();
+      const workspace = workspaceRef.current;
+      if (workspace !== null) {
+        const rect = workspace.getBoundingClientRect();
+        const nextScroll = calculateAnchoredScroll({
+          scrollLeft: workspace.scrollLeft,
+          scrollTop: workspace.scrollTop,
+          pointerX: event.clientX - rect.left,
+          pointerY: event.clientY - rect.top,
+          previousScale: state.zoom,
+          nextScale: result.snapshot.state.zoom,
+        });
+        workspace.scrollLeft = nextScroll.x;
+        workspace.scrollTop = nextScroll.y;
+      }
+      applySnapshot(result.snapshot);
+    },
+    [applySnapshot, editor, state.zoom],
+  );
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (workspace === null) {
       return;
     }
-    event.preventDefault();
-    const workspace = workspaceRef.current;
-    if (workspace !== null) {
-      const rect = workspace.getBoundingClientRect();
-      const nextScroll = calculateAnchoredScroll({
-        scrollLeft: workspace.scrollLeft,
-        scrollTop: workspace.scrollTop,
-        pointerX: event.clientX - rect.left,
-        pointerY: event.clientY - rect.top,
-        previousScale: state.zoom,
-        nextScale: result.snapshot.state.zoom,
-      });
-      workspace.scrollLeft = nextScroll.x;
-      workspace.scrollTop = nextScroll.y;
-    }
-    applySnapshot(result.snapshot);
-  };
+
+    workspace.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      workspace.removeEventListener("wheel", handleWheel);
+    };
+  }, [handleWheel]);
+
+  useEffect(() => {
+    const handleViewerZoomShortcut = (event: globalThis.KeyboardEvent): void => {
+      if (!isViewerZoomShortcut(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.key === "0") {
+        applySnapshot(editor.resetZoom());
+        return;
+      }
+      applySnapshot(event.key === "-" ? editor.zoomOut() : editor.zoomIn());
+    };
+
+    window.addEventListener("keydown", handleViewerZoomShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleViewerZoomShortcut);
+    };
+  }, [applySnapshot, editor]);
 
   if (currentPage === undefined) {
     return (
@@ -387,12 +433,7 @@ export const EditorPage = ({
         Whiteout only covers content visually. It does not securely remove underlying PDF data.
       </p>
 
-      <main
-        className="viewer-main"
-        ref={workspaceRef}
-        onWheel={handleWheel}
-        aria-label="PDF workspace"
-      >
+      <main className="viewer-main" ref={workspaceRef} aria-label="PDF workspace">
         <div
           ref={pageRef}
           className="pdf-page-frame"

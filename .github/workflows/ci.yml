@@ -1,9 +1,15 @@
-﻿name: QuickPDF CI
+name: QuickPDF CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
   pull_request:
+    branches:
+      - main
 
 jobs:
   validate:

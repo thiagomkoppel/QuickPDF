@@ -117,6 +117,7 @@ describe("QuickPDF application shell", () => {
     expect(screen.queryByLabelText("Edit text element")).not.toBeInTheDocument();
     expect(screen.getByText("No unsaved edits")).toBeInTheDocument();
   });
+
   it("creates whiteout, duplicates, deletes, and warns before dirty close", async () => {
     const user = userEvent.setup();
     renderAt("/");
@@ -157,13 +158,19 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByLabelText("Edit text element")).toBeInTheDocument();
   });
 
-  it("handles modified wheel zoom while ordinary wheel scroll remains unhandled", async () => {
+  it("handles modified wheel zoom with a non-passive workspace listener while ordinary wheel scroll remains unhandled", async () => {
     const user = userEvent.setup();
-    renderAt("/");
+    const addEventListener = vi.spyOn(HTMLElement.prototype, "addEventListener");
+    const removeEventListener = vi.spyOn(HTMLElement.prototype, "removeEventListener");
+    const { unmount } = renderAt("/");
     await user.upload(screen.getByLabelText(/open a local pdf/i), pdfFile());
     await screen.findByRole("heading", { name: "sample.pdf" });
 
     const workspace = screen.getByLabelText("PDF workspace");
+    expect(addEventListener).toHaveBeenCalledWith("wheel", expect.any(Function), {
+      passive: false,
+    });
+
     let ordinaryWheel = false;
     act(() => {
       ordinaryWheel = fireEvent.wheel(workspace, { deltaY: -100 });
@@ -175,10 +182,43 @@ describe("QuickPDF application shell", () => {
     act(() => {
       modifiedWheel = fireEvent.wheel(workspace, { deltaY: -100, ctrlKey: true });
     });
-    expect(modifiedWheel).toBe(true);
+    expect(modifiedWheel).toBe(false);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "125%" })).toBeInTheDocument();
     });
+    expect(screen.getByText("No unsaved edits")).toBeInTheDocument();
+
+    unmount();
+    expect(removeEventListener).toHaveBeenCalledWith("wheel", expect.any(Function));
+  });
+
+  it("prevents browser keyboard zoom shortcuts and updates only viewer zoom", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.upload(screen.getByLabelText(/open a local pdf/i), pdfFile());
+    await screen.findByRole("heading", { name: "sample.pdf" });
+
+    let zoomInShortcut = true;
+    act(() => {
+      zoomInShortcut = fireEvent.keyDown(window, { key: "+", ctrlKey: true });
+    });
+    expect(zoomInShortcut).toBe(false);
+    expect(screen.getByRole("button", { name: "125%" })).toBeInTheDocument();
+
+    let zoomOutShortcut = true;
+    act(() => {
+      zoomOutShortcut = fireEvent.keyDown(window, { key: "-", ctrlKey: true });
+    });
+    expect(zoomOutShortcut).toBe(false);
+    expect(screen.getByRole("button", { name: "100%" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Zoom in" }));
+    let resetShortcut = true;
+    act(() => {
+      resetShortcut = fireEvent.keyDown(window, { key: "0", ctrlKey: true });
+    });
+    expect(resetShortcut).toBe(false);
+    expect(screen.getByRole("button", { name: "100%" })).toBeInTheDocument();
     expect(screen.getByText("No unsaved edits")).toBeInTheDocument();
   });
 
