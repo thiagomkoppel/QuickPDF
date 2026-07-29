@@ -1,4 +1,4 @@
-{
+﻿{
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2023",
@@ -25,6 +25,7 @@
     "vitest.config.ts",
     "eslint.config.js",
     "playwright.config.ts",
-    "tests"
+    "tests",
+    "e2e"
   ]
 }

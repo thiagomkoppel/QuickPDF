@@ -1,21 +1,26 @@
-# Editor Interface
+﻿# Editor Interface
 
-## Primary desktop layout
+## Current proof-of-concept layout
 
-- top bar: undo, redo, filename, download;
-- left panel: page thumbnails and page controls;
-- center: active PDF page;
-- tool rail: text, sign, initials, date, check, image, whiteout, highlight;
-- right panel: properties for the selected element.
+- header: close document, filename, disabled future Download button;
+- toolbar: Select, Text, Whiteout, Duplicate, Delete, page navigation, zoom controls, fit width;
+- warning text: whiteout is visual cover only;
+- main workspace: PDF canvas background with transparent interactive DOM overlay.
+
+## Supported tools
+
+- Text: click or tap on the current page to add an editable text box.
+- Whiteout: click or tap on the current page to add an opaque white visual cover rectangle.
+- Select: select, move, resize, duplicate, or delete existing text and whiteout elements.
 
 ## Interaction principles
 
 - The default action after opening a PDF should be obvious.
 - Tool names use everyday language.
-- The Download action remains visible.
+- The Download action remains visible but disabled until export exists.
 - Selection handles must be easy to use.
 - Common actions must not require nested menus.
-- Destructive actions require clear affordances and undo support.
+- Dirty destructive actions require clear confirmation.
 
 ## Status communication
 
@@ -24,7 +29,6 @@ Show:
 - current page;
 - zoom level;
 - selected tool;
-- selected element type;
 - unsaved state;
-- export progress;
-- local-processing privacy statement.
+- local-processing privacy statement;
+- whiteout warning.

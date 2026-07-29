@@ -1,31 +1,24 @@
-# PDF Engine Architecture
+﻿# PDF Engine Architecture
 
 ## Purpose
 
 Keep PDF technology replaceable and prevent vendor-specific objects from leaking into the application.
 
-## Required ports
+## Current boundary
 
-```ts
-interface PdfLoader {
-  load(bytes: Uint8Array): Promise<LoadedPdf>;
-}
+The implemented PDF engine boundary supports:
 
-interface PdfRenderer {
-  renderPage(document: LoadedPdf, pageIndex: number, request: RenderRequest): Promise<RenderedPage>;
-}
+- open a document from validated bytes;
+- return page count and page dimensions;
+- render one requested page into a canvas;
+- cancel obsolete render work;
+- dispose document resources.
 
-interface PdfExporter {
-  export(request: ExportRequest): Promise<Uint8Array>;
-}
+PDF.js documents, pages, render tasks, exceptions, and worker URLs remain inside `src/infrastructure/pdf`.
 
-interface PdfFormAdapter {
-  readFields(document: LoadedPdf): Promise<ReadonlyArray<PdfFormField>>;
-  applyValues(request: ApplyFormValuesRequest): Promise<void>;
-}
-```
+## Overlay relationship
 
-These examples define intent, not final implementation details.
+The PDF canvas is the immutable visual background. Text and whiteout edits are rendered as DOM overlays above the canvas and never repaint or mutate PDF content. Export is deferred and will need to combine original PDF bytes with deterministic editor state.
 
 ## Rules
 
@@ -38,12 +31,12 @@ These examples define intent, not final implementation details.
 
 ## Coordinate systems
 
-The system must explicitly distinguish:
+The current coordinate utility covers:
 
-- PDF coordinates, usually bottom-left origin;
-- viewport coordinates, usually top-left origin;
-- CSS pixels;
-- device pixels;
-- normalized editor coordinates.
+- page-to-screen point conversion;
+- screen-to-page point conversion;
+- page-to-screen rectangle conversion;
+- screen-to-page rectangle conversion;
+- cursor-anchor scroll calculation for wheel zoom.
 
-Conversions must be centralized, unit-tested, and never duplicated inside components.
+Do not expand this into a generic matrix framework until a feature requires it.
