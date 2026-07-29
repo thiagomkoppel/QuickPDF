@@ -24,7 +24,24 @@ Do not turn the product into a cloud document platform, account system, collabor
 3. No user account is required.
 4. No watermark or artificial export limitation is allowed.
 5. The original PDF must remain unchanged in memory. Edits are represented as operations or overlay elements until export.
-6. Closing or refreshing the page may discard the document. The application must clearly warn about unsaved work.
+6. QuickPDF does not automatically save documents or editing progress. All edits exist only in the active browser session.
+
+   When the active document is dirty, the application must warn the user before any action that would discard the session, including:
+
+   - opening another local PDF;
+   - closing the current document;
+   - returning to the landing page;
+   - refreshing the page;
+   - closing the tab or browser window;
+   - navigating away from the application;
+   - replacing or disposing the active document session.
+
+   The warning must clearly state that unsaved changes will be permanently lost.
+
+   No warning should appear when the document is not dirty.
+
+   Downloading an edited PDF does not close the session. The user may continue editing after download.
+
 7. Visual whiteout is not secure redaction and must never be described as such.
 8. Existing arbitrary PDF text editing is outside the initial scope unless explicitly approved in a later architectural decision.
 
@@ -114,6 +131,54 @@ Prefer commands such as:
 - `DeletePage`
 
 Undo and redo must operate on explicit state transitions. Avoid storing closures as history entries.
+
+### 4.6 Session lifecycle and data-loss warnings
+
+QuickPDF is an in-memory, session-based editor.
+
+The application layer must be the authoritative source for:
+
+- whether an active document exists;
+- whether the document is dirty;
+- whether an action would discard unsaved edits;
+- whether disposal may proceed.
+
+Presentation components must not independently decide whether a warning is required.
+
+Before replacing or closing a dirty document:
+
+1. Request confirmation from the user.
+2. If the user cancels, preserve the current session exactly as it is.
+3. If the user confirms:
+   - cancel active render operations;
+   - dispose PDF engine resources;
+   - clear document bytes and temporary editing state;
+   - remove application references;
+   - continue with the requested navigation or replacement.
+
+When opening another PDF:
+
+1. Validate and open the replacement successfully first where practical.
+2. Preserve the current session if the replacement fails.
+3. Ask for confirmation before discarding a dirty current session.
+4. Dispose the previous session only after replacement is valid and the user confirms.
+
+Browser refresh, tab close, and navigation-away warnings must use `beforeunload` where supported. Modern browsers may display their own generic message.
+
+Document data and editing progress must not be persisted in:
+
+- localStorage;
+- sessionStorage;
+- IndexedDB;
+- cookies;
+- service-worker caches;
+- databases;
+- cloud storage.
+
+This policy is further defined in:
+
+- `docs/04-security/SESSION_LIFECYCLE.md`
+- `docs/05-ui/USER_WARNINGS.md`
 
 ## 5. Code quality rules
 
@@ -257,7 +322,11 @@ unless a new approved decision record explicitly changes scope.
 ## 11. Required workflow for each task
 
 1. Read `README.md`, `PROJECT_STATUS.md`, and `docs/DOCUMENT_INDEX.md`.
-2. Read the relevant product, architecture, domain, and security documents.
+2. Read all documents under `docs/`, including product, architecture, domain, engineering, security, UI, delivery, and decision records. At minimum, every task affecting document lifecycle or navigation must read:
+
+   - `docs/04-security/SESSION_LIFECYCLE.md`
+   - `docs/05-ui/USER_WARNINGS.md`
+
 3. Identify affected invariants and boundaries.
 4. Add failing tests first.
 5. Implement the smallest cohesive change.

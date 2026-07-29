@@ -35,6 +35,7 @@
 
 - `04-security/PRIVACY_MODEL.md`
 - `04-security/FILE_SECURITY.md`
+- `04-security/SESSION_LIFECYCLE.md`
 - `04-security/THREAT_MODEL.md`
 
 ## UI
@@ -42,6 +43,7 @@
 - `05-ui/EDITOR_INTERFACE.md`
 - `05-ui/RESPONSIVE_DESIGN.md`
 - `05-ui/ACCESSIBILITY.md`
+- `05-ui/USER_WARNINGS.md`
 
 ## Delivery
 
