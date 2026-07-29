@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color: #16201b;
   background: #f8faf7;
   font-family:
@@ -30,17 +30,29 @@ a {
 }
 
 a:focus-visible,
-button:focus-visible {
+button:focus-visible,
+input:focus-visible,
+.file-drop-zone:focus-within {
   outline: 3px solid #b65b2e;
   outline-offset: 4px;
 }
 
+button,
+input {
+  font: inherit;
+}
+
 button {
   min-height: 44px;
-  border: 1px solid #9aa69d;
+  border: 1px solid #8d9b94;
   border-radius: 6px;
   padding: 0.75rem 1rem;
-  font: inherit;
+  color: #16201b;
+  background: #ffffff;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
 }
 
 button:disabled {
@@ -141,6 +153,44 @@ p {
   color: #24352d;
 }
 
+.file-drop-zone {
+  width: min(100%, 620px);
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  gap: 0.4rem;
+  border: 2px dashed #6e8075;
+  border-radius: 8px;
+  padding: 2rem;
+  background: #ffffff;
+  text-align: center;
+  cursor: pointer;
+}
+
+.file-drop-zone-active {
+  border-color: #245e47;
+  background: #eef6f0;
+}
+
+.file-drop-zone input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.file-drop-title {
+  font-size: 1.4rem;
+  font-weight: 750;
+}
+
+.file-drop-note,
+.status-note,
+.editor-subtitle {
+  color: #4e5a53;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -149,24 +199,117 @@ p {
   margin-top: 0.5rem;
 }
 
-.development-link {
-  min-height: 44px;
-  display: inline-flex;
+.error-message {
+  color: #721f1f;
+  font-weight: 650;
+}
+
+.editor-viewer {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: #eef1ec;
+}
+
+.editor-header,
+.viewer-toolbar {
+  display: flex;
   align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem);
+  border-bottom: 1px solid #cfd8d1;
+  background: #ffffff;
 }
 
-.status-note {
-  color: #4e5a53;
+.editor-header {
+  justify-content: space-between;
 }
 
-@media (max-width: 640px) {
-  .site-header {
-    align-items: flex-start;
+.editor-header h1 {
+  max-width: min(48rem, 55vw);
+  overflow: hidden;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-toolbar {
+  flex-wrap: wrap;
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.page-jump input {
+  width: 4.5rem;
+  min-height: 44px;
+  border: 1px solid #8d9b94;
+  border-radius: 6px;
+  padding: 0.55rem;
+  text-align: center;
+}
+
+.viewer-main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: start center;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.viewer-status,
+.viewer-error {
+  position: sticky;
+  top: 1rem;
+  z-index: 1;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.pdf-page-canvas {
+  max-width: none;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(22 32 27 / 18%);
+}
+
+@media (max-width: 720px) {
+  .site-header,
+  .editor-header,
+  .viewer-toolbar {
+    align-items: stretch;
     flex-direction: column;
   }
 
   .primary-nav,
-  .action-row {
+  .action-row,
+  .editor-header > *,
+  .viewer-toolbar > *,
+  .viewer-toolbar button,
+  .page-jump {
     width: 100%;
+  }
+
+  .editor-header h1 {
+    max-width: 100%;
+  }
+
+  .page-jump {
+    justify-content: space-between;
+  }
+
+  .page-jump input {
+    flex: 1;
+  }
+
+  .viewer-main {
+    padding: 0.75rem;
   }
 }

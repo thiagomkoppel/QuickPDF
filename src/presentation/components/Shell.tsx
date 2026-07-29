@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+﻿import type { MouseEvent, ReactNode } from "react";
 
 interface ShellProps {
   readonly children: ReactNode;
@@ -26,8 +26,8 @@ export const Shell = ({ children }: ShellProps): React.ReactElement => (
         QuickPDF home
       </a>
       <nav aria-label="Primary" className="primary-nav">
-        <a href="/editor" onClick={handleInternalNavigation("/editor")}>
-          Open editor shell
+        <a href="/" onClick={handleInternalNavigation("/")}>
+          Open local PDF
         </a>
       </nav>
     </header>
