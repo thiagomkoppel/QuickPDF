@@ -1,4 +1,4 @@
-﻿type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
+type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
 
 export type DocumentSessionId = Brand<string, "DocumentSessionId">;
 export type PageId = Brand<string, "PageId">;
@@ -128,11 +128,21 @@ const cloneElement = (element: EditorElement): EditorElement => ({
 
 const validRotations: ReadonlySet<number> = new Set([0, 90, 180, 270]);
 
+const isFiniteNumber = (value: number): boolean => Number.isFinite(value);
+
 const validatePage = (page: DocumentPage): DocumentPage => {
   toPageId(page.id);
 
-  if (page.width <= 0 || page.height <= 0) {
-    throw new DomainError("InvalidPageDimensions", "Page width and height must be positive.");
+  if (
+    !isFiniteNumber(page.width) ||
+    !isFiniteNumber(page.height) ||
+    page.width <= 0 ||
+    page.height <= 0
+  ) {
+    throw new DomainError(
+      "InvalidPageDimensions",
+      "Page width and height must be positive finite numbers.",
+    );
   }
 
   if (!validRotations.has(page.rotation)) {
@@ -143,8 +153,18 @@ const validatePage = (page: DocumentPage): DocumentPage => {
 };
 
 const validateElementBounds = (bounds: Bounds): void => {
-  if (bounds.width <= 0 || bounds.height <= 0) {
-    throw new DomainError("InvalidElementBounds", "Element width and height must be positive.");
+  if (
+    !isFiniteNumber(bounds.x) ||
+    !isFiniteNumber(bounds.y) ||
+    !isFiniteNumber(bounds.width) ||
+    !isFiniteNumber(bounds.height) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0
+  ) {
+    throw new DomainError(
+      "InvalidElementBounds",
+      "Element bounds must use finite coordinates and positive finite dimensions.",
+    );
   }
 };
 

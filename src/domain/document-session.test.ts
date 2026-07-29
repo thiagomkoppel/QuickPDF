@@ -129,6 +129,20 @@ describe("DocumentSession", () => {
     expect(session.elements()).toEqual([]);
     expect(session.isDirty).toBe(false);
   });
+  it("rejects non-finite element bounds without mutating state", () => {
+    const session = DocumentSession.create({ id: "session-1", pages: [page("page-1")] });
+
+    expectDomainError(
+      session.addElement({
+        ...element("element-1", "page-1"),
+        bounds: { x: Number.NaN, y: 24, width: 120, height: 32 },
+      }),
+      "InvalidElementBounds",
+    );
+
+    expect(session.elements()).toEqual([]);
+    expect(session.isDirty).toBe(false);
+  });
 
   it("rejects duplicate element identities atomically", () => {
     const session = DocumentSession.create({ id: "session-1", pages: [page("page-1")] });

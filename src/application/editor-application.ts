@@ -169,6 +169,10 @@ const emptyState = (): EditorState => ({
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 const clampZoom = (zoom: number): number => clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+const isFinitePoint = (point: { readonly x: number; readonly y: number }): boolean =>
+  Number.isFinite(point.x) && Number.isFinite(point.y);
+const isFiniteBounds = (bounds: Bounds): boolean =>
+  isFinitePoint(bounds) && Number.isFinite(bounds.width) && Number.isFinite(bounds.height);
 
 const cloneBounds = (bounds: Bounds): Bounds => ({ ...bounds });
 
@@ -288,6 +292,13 @@ export class PdfEditorApplication {
   }
 
   public addText(point: { readonly x: number; readonly y: number }, text = "Text"): EditorSnapshot {
+    if (!isFinitePoint(point)) {
+      return this.#operationError(
+        "InvalidElementBounds",
+        "Text element coordinates must be finite numbers.",
+      );
+    }
+
     return this.#addElement({
       type: "text",
       bounds: { x: point.x, y: point.y, width: 160, height: 40 },
@@ -321,6 +332,13 @@ export class PdfEditorApplication {
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
+    if (!isFinitePoint(nextOrigin)) {
+      return this.#operationError(
+        "InvalidElementBounds",
+        "Element coordinates must be finite numbers.",
+      );
+    }
+
     return this.#replaceElement({
       ...element,
       bounds: this.#constrainBounds({ ...element.bounds, x: nextOrigin.x, y: nextOrigin.y }),
@@ -335,6 +353,13 @@ export class PdfEditorApplication {
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
+    if (!Number.isFinite(size.width) || !Number.isFinite(size.height)) {
+      return this.#operationError(
+        "InvalidElementBounds",
+        "Element dimensions must be finite numbers.",
+      );
+    }
+
     return this.#replaceElement({
       ...element,
       bounds: this.#constrainBounds({ ...element.bounds, width: size.width, height: size.height }),
@@ -531,6 +556,9 @@ export class PdfEditorApplication {
   }): EditorSnapshot {
     if (this.#session === undefined) {
       return this.#operationError("NoActiveDocument", "Open a PDF before adding elements.");
+    }
+    if (!isFiniteBounds(request.bounds)) {
+      return this.#operationError("InvalidElementBounds", "Element bounds must be finite numbers.");
     }
     const pageId = this.#session.currentPageId;
     if (pageId === undefined) {

@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,6 +38,31 @@ const testFile = (bytes: Uint8Array, name: string): File => {
 
 const pdfFile = (name = "sample.pdf") => testFile(new Uint8Array([37, 80, 68, 70, 45]), name);
 
+const numericStyleValue = (value: string): number => Number.parseFloat(value.replace("px", ""));
+
+const expectFiniteOverlayGeometry = (element: HTMLElement): void => {
+  expect(Number.isFinite(numericStyleValue(element.style.left))).toBe(true);
+  expect(Number.isFinite(numericStyleValue(element.style.top))).toBe(true);
+  expect(Number.isFinite(numericStyleValue(element.style.width))).toBe(true);
+  expect(Number.isFinite(numericStyleValue(element.style.height))).toBe(true);
+};
+
+const dispatchPointerDown = (element: HTMLElement, clientX: number, clientY: number): void => {
+  fireEvent(
+    element,
+    new MouseEvent("pointerdown", { bubbles: true, clientX, clientY, cancelable: true }),
+  );
+};
+
+const dispatchNonFinitePointerDown = (element: HTMLElement): void => {
+  const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientX: { value: Number.NaN },
+    clientY: { value: 80 },
+  });
+  fireEvent(element, event);
+};
+
 beforeEach(() => {
   renderPage.mockClear();
   dispose.mockClear();
@@ -67,9 +92,12 @@ describe("QuickPDF application shell", () => {
     await screen.findByRole("heading", { name: "sample.pdf" });
 
     await user.click(screen.getByRole("button", { name: "Text" }));
-    fireEvent.pointerDown(screen.getByLabelText("PDF overlay"), { clientX: 60, clientY: 80 });
+    dispatchPointerDown(screen.getByLabelText("PDF overlay"), 60, 80);
 
     const textBox = await screen.findByLabelText("Edit text element");
+    const textElement = screen.getByRole("group", { name: /text element selected/i });
+    expectFiniteOverlayGeometry(textElement);
+
     await user.clear(textBox);
     await user.type(textBox, "Hello PDF{Backspace}");
 
@@ -77,6 +105,18 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
   });
 
+  it("ignores non-finite text placement before it can render invalid CSS coordinates", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.upload(screen.getByLabelText(/open a local pdf/i), pdfFile());
+    await screen.findByRole("heading", { name: "sample.pdf" });
+
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    dispatchNonFinitePointerDown(screen.getByLabelText("PDF overlay"));
+
+    expect(screen.queryByLabelText("Edit text element")).not.toBeInTheDocument();
+    expect(screen.getByText("No unsaved edits")).toBeInTheDocument();
+  });
   it("creates whiteout, duplicates, deletes, and warns before dirty close", async () => {
     const user = userEvent.setup();
     renderAt("/");
@@ -84,7 +124,7 @@ describe("QuickPDF application shell", () => {
     await screen.findByRole("heading", { name: "sample.pdf" });
 
     await user.click(screen.getByRole("button", { name: "Whiteout" }));
-    fireEvent.pointerDown(screen.getByLabelText("PDF overlay"), { clientX: 80, clientY: 90 });
+    dispatchPointerDown(screen.getByLabelText("PDF overlay"), 80, 90);
     expect(await screen.findByLabelText(/whiteout element selected/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Duplicate" }));
@@ -107,7 +147,7 @@ describe("QuickPDF application shell", () => {
     await user.upload(screen.getByLabelText(/open a local pdf/i), pdfFile());
     await screen.findByRole("heading", { name: "sample.pdf" });
     await user.click(screen.getByRole("button", { name: "Text" }));
-    fireEvent.pointerDown(screen.getByLabelText("PDF overlay"), { clientX: 60, clientY: 80 });
+    dispatchPointerDown(screen.getByLabelText("PDF overlay"), 60, 80);
     await screen.findByLabelText("Edit text element");
 
     await user.click(screen.getByRole("link", { name: "QuickPDF home" }));
@@ -124,13 +164,21 @@ describe("QuickPDF application shell", () => {
     await screen.findByRole("heading", { name: "sample.pdf" });
 
     const workspace = screen.getByLabelText("PDF workspace");
-    const ordinaryWheel = fireEvent.wheel(workspace, { deltaY: -100 });
+    let ordinaryWheel = false;
+    act(() => {
+      ordinaryWheel = fireEvent.wheel(workspace, { deltaY: -100 });
+    });
     expect(ordinaryWheel).toBe(true);
     expect(screen.getByRole("button", { name: "100%" })).toBeInTheDocument();
 
-    const modifiedWheel = fireEvent.wheel(workspace, { deltaY: -100, ctrlKey: true });
+    let modifiedWheel = false;
+    act(() => {
+      modifiedWheel = fireEvent.wheel(workspace, { deltaY: -100, ctrlKey: true });
+    });
     expect(modifiedWheel).toBe(true);
-    expect(screen.getByRole("button", { name: "125%" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "125%" })).toBeInTheDocument();
+    });
     expect(screen.getByText("No unsaved edits")).toBeInTheDocument();
   });
 

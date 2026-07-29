@@ -170,6 +170,17 @@ describe("PdfEditorApplication", () => {
     expect(snapshot.state.error).toMatchObject({ code: "MissingElement" });
     expect(snapshot.state.visibleElements).toEqual(before);
   });
+  it("rejects non-finite geometry without mutating editor state", () => {
+    const before = app.snapshot().state.visibleElements;
+
+    const addSnapshot = app.addText({ x: Number.NaN, y: 50 }, "Nope");
+    const whiteoutSnapshot = app.addWhiteout({ x: 20, y: 30, width: Number.NaN, height: 40 });
+
+    expect(addSnapshot.state.error).toMatchObject({ code: "InvalidElementBounds" });
+    expect(whiteoutSnapshot.state.error).toMatchObject({ code: "InvalidElementBounds" });
+    expect(app.snapshot().state.visibleElements).toEqual(before);
+    expect(app.snapshot().state.isDirty).toBe(false);
+  });
 
   it("warns before dirty close and cancel preserves edits", () => {
     app.addText({ x: 40, y: 50 }, "Hello");

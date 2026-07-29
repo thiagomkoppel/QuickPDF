@@ -1,4 +1,4 @@
-﻿import {
+import {
   useEffect,
   useRef,
   useState,
@@ -30,6 +30,17 @@ interface DragState {
 }
 
 const formatZoom = (zoom: number): string => `${String(Math.round(zoom * 100))}%`;
+
+const isFiniteRect = (rect: {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}): boolean =>
+  Number.isFinite(rect.x) &&
+  Number.isFinite(rect.y) &&
+  Number.isFinite(rect.width) &&
+  Number.isFinite(rect.height);
 
 export const EditorPage = ({
   editor,
@@ -73,10 +84,18 @@ export const EditorPage = ({
       return undefined;
     }
     const rect = pageElement.getBoundingClientRect();
-    return screenToPagePoint(
-      { x: event.clientX - rect.left, y: event.clientY - rect.top },
-      { pageWidth: currentPage.width, pageHeight: currentPage.height, scale: state.zoom },
-    );
+    const rectLeft = Number.isFinite(rect.left) ? rect.left : 0;
+    const rectTop = Number.isFinite(rect.top) ? rect.top : 0;
+    const point = { x: event.clientX - rectLeft, y: event.clientY - rectTop };
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(state.zoom)) {
+      return undefined;
+    }
+
+    return screenToPagePoint(point, {
+      pageWidth: currentPage.width,
+      pageHeight: currentPage.height,
+      scale: state.zoom,
+    });
   };
 
   const closeDocument = (): void => {
@@ -398,6 +417,9 @@ export const EditorPage = ({
                 pageHeight: currentPage.height,
                 scale: state.zoom,
               });
+              if (!isFiniteRect(rect)) {
+                return null;
+              }
               const selected = element.id === state.selectedElementId;
               return (
                 <div
