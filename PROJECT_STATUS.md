@@ -10,6 +10,8 @@ Repository foundation initialized. The project now has a Vite, React, and TypeSc
 
 The first pure domain foundation is implemented: `DocumentSession`, page identity/order handling, minimal editor elements, selection, dirty-state tracking, page deletion, typed domain failures, and disposal behavior.
 
+The first application boundary is implemented: `DocumentSessionService` owns one active session, exposes explicit use-case methods, maps domain failures to application errors, and returns readonly snapshots instead of domain objects.
+
 No PDF product functionality exists yet.
 
 ## Current objective
@@ -29,10 +31,10 @@ Prove that the application can safely and reliably:
 - Test runner and browser test environment. Done for unit/component tests; Playwright is configured for later end-to-end tests.
 - PDF engine abstraction. Not started.
 - Local file adapter. Not started.
-- In-memory document session. Started with pure domain model; application use case integration not started.
+- In-memory document session. Started with pure domain model and application service; browser/file integration not started.
 - PDF rendering proof of concept. Not started.
 - PDF export proof of concept. Not started.
-- Text element. Started as minimal domain element type only; no UI or export behavior.
+- Text element. Started as minimal domain/application element type only; no UI or export behavior.
 - Signature element. Not started.
 - Undo and redo proof of concept. Not started.
 - Privacy verification showing no document network requests. Started with static privacy baseline tests only.
@@ -40,13 +42,13 @@ Prove that the application can safely and reliably:
 
 ## Not started
 
-- PDF loading, rendering, editing, signing, and export.
-- Application use cases for document opening or editing.
+- PDF loading, rendering, editing canvas, signing, and export.
+- Browser file APIs.
 - Production UI.
 - Interactive form filling.
 - Page organization UI.
 - Mobile interaction design beyond the initial responsive shell.
-- Whiteout and correction tools beyond a minimal domain element type.
+- Whiteout and correction tools beyond a minimal domain/application element type.
 - Accessibility audit.
 - Large-document performance work.
 
@@ -57,7 +59,7 @@ Prove that the application can safely and reliably:
 
 ## Recent assessment
 
-Document-session domain foundation implemented on 2026-07-28 using strict TDD and pure TypeScript. Repository foundation implemented on 2026-07-28 using Vite, React, TypeScript, npm, Vitest, React Testing Library, jsdom, ESLint, Prettier, and Playwright configuration. The Vite SPA choice is documented in ADR-004.
+Application boundary implemented on 2026-07-28 using strict TDD and pure TypeScript. Document-session domain foundation implemented on 2026-07-28 using strict TDD and pure TypeScript. Repository foundation implemented on 2026-07-28 using Vite, React, TypeScript, npm, Vitest, React Testing Library, jsdom, ESLint, Prettier, and Playwright configuration. The Vite SPA choice is documented in ADR-004.
 
 ## Runtime baseline
 
