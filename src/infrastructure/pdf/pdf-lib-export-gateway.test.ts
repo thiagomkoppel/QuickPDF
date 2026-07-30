@@ -1,4 +1,4 @@
-﻿import { PDFDocument } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 
 import type { ExportElement } from "../../application/editor-application";
@@ -79,5 +79,52 @@ describe("PdfLibExportGateway", () => {
     });
 
     expect(result).toMatchObject({ ok: false, error: { code: "ExportFailed" } });
+  });
+});
+
+const transparentPngDataUrl =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+
+const typedSignatureElement = (id: string, pageId: string): ExportElement => ({
+  id,
+  pageId,
+  type: "signature",
+  bounds: { x: 70, y: 250, width: 180, height: 70 },
+  text: "Ada Lovelace",
+  textAppearance: { fontSize: 34, color: "#111111", fontFamily: "serif" },
+  source: "type",
+});
+
+const imageInitialsElement = (id: string, pageId: string): ExportElement => ({
+  id,
+  pageId,
+  type: "initials",
+  bounds: { x: 70, y: 170, width: 90, height: 45 },
+  image: { dataUrl: transparentPngDataUrl, mimeType: "image/png" },
+  source: "draw",
+});
+
+describe("PdfLibExportGateway signature overlays", () => {
+  it("embeds typed signatures and image initials while preserving the PDF", async () => {
+    const originalBytes = await createPdf();
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes,
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+      elements: [
+        typedSignatureElement("signature-1", "page-1"),
+        imageInitialsElement("initials-1", "page-1"),
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.bytes.length).toBeGreaterThan(originalBytes.length);
+    const exported = await PDFDocument.load(result.bytes);
+    expect(exported.getPageCount()).toBe(2);
+    expect(exported.getPage(0).getWidth()).toBe(300);
   });
 });

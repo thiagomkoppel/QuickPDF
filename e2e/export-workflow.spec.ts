@@ -75,6 +75,47 @@ const canvasRegionIsMostlyWhite = (
       }
       return whitePixels / pixelCount > 0.9;
     }, region);
+const canvasRegionHasDarkContent = (
+  page: Page,
+  region: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  },
+): Promise<boolean> =>
+  page
+    .locator('canvas[aria-label="Rendered PDF page"]')
+    .evaluate((node: SVGElement | HTMLElement, sampleRegion) => {
+      const canvas = node as HTMLCanvasElement;
+      const context = canvas.getContext("2d");
+      if (context === null) {
+        return false;
+      }
+      const cssWidth = Number.parseFloat(
+        canvas.style.width.length > 0 ? canvas.style.width : String(canvas.width),
+      );
+      const cssHeight = Number.parseFloat(
+        canvas.style.height.length > 0 ? canvas.style.height : String(canvas.height),
+      );
+      const scaleX = canvas.width / cssWidth;
+      const scaleY = canvas.height / cssHeight;
+      const x = Math.floor(sampleRegion.x * scaleX);
+      const y = Math.floor(sampleRegion.y * scaleY);
+      const width = Math.max(1, Math.floor(sampleRegion.width * scaleX));
+      const height = Math.max(1, Math.floor(sampleRegion.height * scaleY));
+      const data = context.getImageData(x, y, width, height).data;
+      for (let index = 0; index < data.length; index += 4) {
+        const red = data[index] ?? 255;
+        const green = data[index + 1] ?? 255;
+        const blue = data[index + 2] ?? 255;
+        const alpha = data[index + 3] ?? 0;
+        if (alpha > 0 && red < 80 && green < 80 && blue < 80) {
+          return true;
+        }
+      }
+      return false;
+    }, region);
 
 const browserScaleSnapshot = (
   page: Page,
@@ -94,6 +135,25 @@ const modifiedWheel = async (page: Page, direction: "in" | "out", count = 1): Pr
   }
   await page.keyboard.up("Control");
 };
+const dragWhiteout = async (
+  page: Page,
+  start: { readonly x: number; readonly y: number },
+  end: { readonly x: number; readonly y: number },
+): Promise<void> => {
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await expect(page.getByLabel("Whiteout preview")).toBeVisible();
+  await page.mouse.move(end.x, end.y);
+  await expect(page.getByLabel("Whiteout preview")).toBeVisible();
+  await page.mouse.up();
+  await expect(page.getByLabel("Whiteout preview")).toHaveCount(0);
+};
+
+const borderWidthsFor = (page: Page, selector: string): Promise<string> =>
+  page.locator(selector).evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return `${style.borderTopWidth} ${style.borderRightWidth} ${style.borderBottomWidth} ${style.borderLeftWidth}`;
+  });
 
 interface WheelListenerRecord {
   readonly tagName: string;
@@ -202,6 +262,53 @@ const wheelEventRecords = (page: Page): Promise<WheelEventRecord[]> =>
     type EventWindow = Window & { readonly __quickPdfWheelEvents?: WheelEventRecord[] };
     return (window as EventWindow).__quickPdfWheelEvents ?? [];
   });
+const addDrawnSignature = async (page: Page): Promise<void> => {
+  await page.getByRole("button", { name: "Signature" }).click();
+  const signaturePad = page.getByLabel("Draw signature");
+  const padBox = await signaturePad.boundingBox();
+  expect(padBox).not.toBeNull();
+  if (padBox === null) {
+    return;
+  }
+  await page.mouse.move(padBox.x + 60, padBox.y + 90);
+  await page.mouse.down();
+  await page.mouse.move(padBox.x + 160, padBox.y + 45);
+  await page.mouse.move(padBox.x + 280, padBox.y + 100);
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByRole("group", { name: "signature element" })).toBeVisible();
+};
+
+const addTypedSignature = async (page: Page, name: string): Promise<void> => {
+  await page.getByRole("button", { name: "Signature" }).click();
+  await page.getByRole("tab", { name: "Type" }).click();
+  await page.getByLabel("Signature name").fill(name);
+  await page.getByLabel("Font").selectOption("serif");
+  await expect(page.getByLabel("Signature preview")).toHaveText(name);
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByRole("group", { name: "signature element" })).toBeVisible();
+};
+
+const addTypedInitials = async (page: Page, initials: string): Promise<void> => {
+  await page.getByRole("button", { name: "Initials" }).click();
+  await page.getByRole("tab", { name: "Type" }).click();
+  await page.getByLabel("Initials text").fill(initials);
+  await expect(page.getByLabel("Signature preview")).toHaveText(initials);
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByRole("group", { name: "initials element" })).toBeVisible();
+};
+
+const downloadEditedPdf = async (
+  page: Page,
+  suggestedFilename: string,
+  outputPath: string,
+): Promise<void> => {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(suggestedFilename);
+  await download.saveAs(outputPath);
+};
 const expectBoxNear = (
   box: {
     readonly x: number;
@@ -240,17 +347,23 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   }
 
   await page.getByRole("button", { name: "Whiteout" }).click();
-  await page.mouse.click(overlayBox.x + 40, overlayBox.y + 50);
+  await dragWhiteout(
+    page,
+    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
+    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+  );
   const whiteout = page.getByRole("group", { name: "whiteout element" });
   await expect(whiteout).toBeVisible();
   expectBoxNear(await whiteout.boundingBox(), { x: overlayBox.x + 40, y: overlayBox.y + 50 });
+  await expect.poll(() => borderWidthsFor(page, ".overlay-whiteout")).toBe("0px 0px 0px 0px");
 
   await page.getByRole("button", { name: "Text" }).click();
-  await page.mouse.click(overlayBox.x + 45, overlayBox.y + 55);
+  await page.mouse.click(overlayBox.x + 130, overlayBox.y + 110);
   const textBox = page.getByLabel("Edit text element");
   await textBox.fill("Replacement");
+  await textBox.press("Escape");
   const textOverlay = page.getByRole("group", { name: "text element" });
-  expectBoxNear(await textOverlay.boundingBox(), { x: overlayBox.x + 45, y: overlayBox.y + 55 });
+  expectBoxNear(await textOverlay.boundingBox(), { x: overlayBox.x + 130, y: overlayBox.y + 110 });
 
   await expect
     .poll(() => wheelListenerRecords(page))
@@ -311,5 +424,204 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   await expect(page.getByRole("heading", { name: "export-fixture-edited.pdf" })).toBeVisible();
   await expect
     .poll(() => canvasRegionIsMostlyWhite(page, { x: 130, y: 84, width: 20, height: 10 }))
+    .toBe(true);
+});
+
+test("selects text with one click and edits text only through explicit edit actions", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("text-interaction-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "text-interaction-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 130);
+  const initialEditor = page.getByLabel("Edit text element");
+  await expect(initialEditor).toBeFocused();
+  await initialEditor.fill("Click selectable text");
+  await initialEditor.press("Escape");
+  await expect(page.getByLabel("Edit text element")).toHaveCount(0);
+
+  const firstTextContent = page.getByLabel("Text element content");
+  const firstTextBox = await firstTextContent.boundingBox();
+  expect(firstTextBox).not.toBeNull();
+  if (firstTextBox === null) {
+    return;
+  }
+  await page.mouse.click(
+    firstTextBox.x + firstTextBox.width / 2,
+    firstTextBox.y + firstTextBox.height / 2,
+  );
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  await expect(page.getByLabel("Edit text element")).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+
+  await page.mouse.click(overlayBox.x + 90, overlayBox.y + 180);
+  const secondEditor = page.getByLabel("Edit text element");
+  await secondEditor.fill("Draft text");
+  await secondEditor.press("Escape");
+  await page.getByLabel("Text element content").dblclick();
+  const reopenedEditor = page.getByLabel("Edit text element");
+  await reopenedEditor.fill("Edited text");
+  await reopenedEditor.press("Escape");
+  await expect(page.getByText("Edited text")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+
+  const selectedText = page.getByRole("group", { name: "text element" });
+  const beforeMove = await selectedText.boundingBox();
+  expect(beforeMove).not.toBeNull();
+  if (beforeMove === null) {
+    return;
+  }
+  await page.mouse.move(beforeMove.x + beforeMove.width / 2, beforeMove.y + beforeMove.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    beforeMove.x + beforeMove.width / 2 + 24,
+    beforeMove.y + beforeMove.height / 2 + 18,
+  );
+  await page.mouse.up();
+  const afterMove = await selectedText.boundingBox();
+  expect(afterMove).not.toBeNull();
+  if (afterMove === null) {
+    return;
+  }
+  expect(afterMove.x).toBeGreaterThan(beforeMove.x + 10);
+  expect(afterMove.y).toBeGreaterThan(beforeMove.y + 8);
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+});
+test("deletes every selected overlay type and excludes deleted overlays from export", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("delete-overlays-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "delete-overlays-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 45, overlayBox.y + 120);
+  const textToDelete = page.getByLabel("Edit text element");
+  await textToDelete.fill("Delete me");
+  await textToDelete.press("Escape");
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Whiteout" }).click();
+  await dragWhiteout(
+    page,
+    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
+    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+  );
+  await expect(page.getByRole("group", { name: "whiteout element" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "whiteout element" })).toHaveCount(0);
+
+  await addTypedSignature(page, "Delete Me");
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "signature element" })).toHaveCount(0);
+
+  await addTypedInitials(page, "DM");
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("group", { name: "initials element" })).toHaveCount(0);
+
+  const downloadedPath = testInfo.outputPath("delete-overlays-fixture-edited.pdf");
+  await downloadEditedPdf(page, "delete-overlays-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(
+    page.getByRole("heading", { name: "delete-overlays-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 40, y: 50, width: 120, height: 48 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 45, y: 120, width: 120, height: 48 }))
+    .toBe(false);
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 180, width: 96, height: 52 }))
+    .toBe(false);
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
+    .toBe(false);
+});
+test("draws, resizes, exports, and reopens a signature", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("draw-signature-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "draw-signature-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await addDrawnSignature(page);
+
+  const signature = page.getByRole("group", { name: "signature element" });
+  await page.getByLabel("Selected element width").fill("260");
+  const resizedBox = await signature.boundingBox();
+  expect(resizedBox?.width).toBeGreaterThan(220);
+
+  const downloadedPath = testInfo.outputPath("draw-signature-fixture-edited.pdf");
+  await downloadEditedPdf(page, "draw-signature-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(
+    page.getByRole("heading", { name: "draw-signature-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 240, height: 90 }))
+    .toBe(true);
+});
+
+test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("typed-signature-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "typed-signature-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await addTypedSignature(page, "Ada Lovelace");
+
+  const downloadedPath = testInfo.outputPath("typed-signature-fixture-edited.pdf");
+  await downloadEditedPdf(page, "typed-signature-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(
+    page.getByRole("heading", { name: "typed-signature-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
     .toBe(true);
 });

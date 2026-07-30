@@ -194,6 +194,7 @@ p {
 }
 
 .editor-viewer {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto auto 1fr;
   min-height: 100%;
@@ -268,7 +269,22 @@ p {
 
 .overlay-element {
   position: absolute;
-  border: 1px solid #245e47;
+  border: 0;
+}
+
+.overlay-text {
+  cursor: move;
+  user-select: none;
+}
+
+.text-element-display {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 0.15rem;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  cursor: move;
 }
 
 .overlay-text textarea {
@@ -278,10 +294,224 @@ p {
   resize: none;
   background: transparent;
   color: #111111;
+  cursor: text;
   font: inherit;
   line-height: 1.2;
+  user-select: text;
 }
 
 .overlay-whiteout {
   background: #ffffff;
+}
+
+.element-inspector {
+  position: absolute;
+  right: clamp(1rem, 4vw, 2rem);
+  bottom: 1rem;
+  left: clamp(1rem, 4vw, 2rem);
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 0.75rem clamp(1rem, 4vw, 2rem);
+  border: 1px solid #d7ded8;
+  background: #ffffff;
+}
+
+.element-inspector label {
+  display: grid;
+  gap: 0.25rem;
+  color: #4e5a53;
+  font-size: 0.9rem;
+}
+
+.element-inspector input {
+  width: 6rem;
+  min-height: 40px;
+  border: 1px solid #9aa69d;
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+}
+
+.overlay-element {
+  touch-action: none;
+}
+
+.overlay-element.is-selected {
+  outline: 2px solid #5b4dff;
+  outline-offset: 2px;
+}
+
+.overlay-signature,
+.overlay-initials {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  cursor: move;
+}
+
+.overlay-signature img,
+.overlay-initials img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.signature-text {
+  width: 100%;
+  overflow: hidden;
+  color: #111111;
+  line-height: 1.1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.signature-font-cursive {
+  font-family: "Brush Script MT", "Segoe Script", cursive;
+}
+
+.signature-font-serif {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+}
+
+.signature-font-marker {
+  font-family: "Arial Black", Impact, sans-serif;
+  font-weight: 700;
+}
+
+.signature-font-hand {
+  font-family: "Comic Sans MS", "Segoe Print", cursive;
+}
+
+.resize-handle {
+  position: absolute;
+  right: -14px;
+  bottom: -14px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  padding: 0;
+  background: #5b4dff;
+  cursor: nwse-resize;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(17 24 39 / 45%);
+}
+
+.signature-dialog {
+  width: min(100%, 640px);
+  display: grid;
+  gap: 1rem;
+  border-radius: 18px;
+  padding: 1rem;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgb(17 24 39 / 28%);
+}
+
+.dialog-header,
+.dialog-actions,
+.dialog-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dialog-header {
+  justify-content: space-between;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.dialog-tabs button[aria-selected="true"] {
+  color: #ffffff;
+  border-color: #5b4dff;
+  background: #5b4dff;
+}
+
+.signature-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.signature-panel label {
+  display: grid;
+  gap: 0.35rem;
+  color: #4e5a53;
+  font-weight: 650;
+}
+
+.signature-panel input,
+.signature-panel select {
+  min-height: 44px;
+  border: 1px solid #9aa69d;
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+
+.signature-pad {
+  width: 100%;
+  height: auto;
+  border: 1px solid #d7ded8;
+  border-radius: 12px;
+  background: transparent;
+  touch-action: none;
+}
+
+.signature-panel [aria-label="Signature preview"] {
+  min-height: 86px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #d7ded8;
+  border-radius: 12px;
+  padding: 0.75rem;
+  font-size: 2.4rem;
+}
+
+.viewer-toolbar button[aria-pressed="true"] {
+  border-color: #5b4dff;
+  background: #5b4dff;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 2px #111827;
+}
+
+.viewer-toolbar button[aria-pressed="true"]:focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+}
+
+.active-tool-label {
+  margin-left: 0.35rem;
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+  background: rgb(255 255 255 / 22%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.whiteout-preview {
+  position: absolute;
+  z-index: 3;
+  border: 2px dashed #5b4dff;
+  background: rgb(255 255 255 / 72%);
+  pointer-events: none;
 }

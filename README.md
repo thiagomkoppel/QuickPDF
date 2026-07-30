@@ -2,7 +2,7 @@
 
 QuickPDF is a free, privacy-first browser application for completing common PDF tasks quickly.
 
-Users can now open a local PDF, render the current page with PDF.js, place temporary text and whiteout overlays aligned to that page, and download a new edited PDF generated entirely in the browser. Signatures, forms, page organization, undo/redo, and advanced editing remain deferred.
+Users can now open a local PDF, render the current page with PDF.js, place temporary text, whiteout, signature, and initials overlays aligned to that page, and download a new edited PDF generated entirely in the browser. Forms, page organization, undo/redo, and advanced editing remain deferred.
 
 ## Product promise
 
@@ -14,7 +14,7 @@ QuickPDF is in Phase 0 proof-of-concept work. The current static Vite, React, an
 
 1. choose a local PDF;
 2. render the current PDF page locally with PDF.js;
-3. create text and whiteout overlays aligned over the rendered page;
+3. create text, drag-drawn whiteout, signature, and initials overlays aligned over the rendered page;
 4. export a new PDF with those overlays embedded;
 5. keep editing after download.
 
@@ -64,7 +64,7 @@ To try the editor locally:
 npm run dev
 ```
 
-Then open the printed local Vite URL, usually `http://127.0.0.1:5173/`, choose or drop a PDF, add Text or Whiteout overlays, and use Download to save `*-edited.pdf`.
+Then open the printed local Vite URL, usually `http://127.0.0.1:5173/`, choose or drop a PDF, add Text, drag Whiteout rectangles, Signature, or Initials overlays, and use Download to save `*-edited.pdf`.
 
 ## Project structure
 

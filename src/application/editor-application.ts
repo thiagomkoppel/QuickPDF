@@ -3,10 +3,15 @@ import {
   type Bounds,
   type DocumentPage,
   type EditorElement,
+  type SignatureElementContent,
+  type TextElementContent,
 } from "../domain/document-session";
 
 export type EditorStatus = "empty" | "loading" | "ready" | "exporting" | "error";
-export type EditorTool = "select" | "text" | "whiteout";
+export type EditorTool = "select" | "text" | "whiteout" | "signature" | "initials";
+export type SignatureFont = "cursive" | "serif" | "marker" | "hand";
+export type SignatureSource = "draw" | "type" | "upload";
+export type SignatureElementType = "signature" | "initials";
 export type EditorErrorCode =
   | "UnsupportedFile"
   | "EmptyFile"
@@ -15,6 +20,10 @@ export type EditorErrorCode =
   | "NoActiveDocument"
   | "MissingElement"
   | "InvalidElementBounds"
+  | "InvalidTextAppearance"
+  | "InvalidSignature"
+  | "UnsupportedSignatureImage"
+  | "SignatureImageTooLarge"
   | "OperationRejected"
   | "RenderFailed"
   | "ExportFailed"
@@ -76,15 +85,23 @@ export interface PdfRenderDocumentGateway {
 export interface TextAppearance {
   readonly fontSize: number;
   readonly color: string;
+  readonly fontFamily?: string;
+}
+
+export interface ImageAppearance {
+  readonly dataUrl: string;
+  readonly mimeType: "image/png" | "image/jpeg";
 }
 
 export interface ExportElement {
   readonly id: string;
   readonly pageId: string;
-  readonly type: "text" | "whiteout";
+  readonly type: "text" | "whiteout" | "signature" | "initials";
   readonly bounds: Bounds;
   readonly text?: string;
   readonly textAppearance?: TextAppearance;
+  readonly image?: ImageAppearance;
+  readonly source?: SignatureSource;
 }
 
 export interface PdfExportRequest {
@@ -129,6 +146,7 @@ export interface EditorState {
   readonly tool: EditorTool;
   readonly isDirty: boolean;
   readonly selectedElementId?: string;
+  readonly selectedElement?: ExportElement;
   readonly elements: readonly ExportElement[];
   readonly visibleElements: readonly ExportElement[];
   readonly exportFilename?: string;
@@ -140,9 +158,35 @@ export interface EditorSnapshot {
   readonly canExport: boolean;
 }
 
+export interface SignatureImageInput {
+  readonly dataUrl: string;
+  readonly mimeType: "image/png" | "image/jpeg";
+  readonly width: number;
+  readonly height: number;
+  readonly source: "draw" | "upload";
+}
+
+export interface TypedSignatureInput {
+  readonly text: string;
+  readonly fontFamily: SignatureFont;
+}
+
+export const MIN_TEXT_FONT_SIZE = 8;
+export const MAX_TEXT_FONT_SIZE = 96;
 export const DEFAULT_TEXT_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
+export const DEFAULT_SIGNATURE_APPEARANCE: TextAppearance = {
+  fontSize: 34,
+  color: "#111111",
+  fontFamily: "cursive",
+};
+export const DEFAULT_INITIALS_APPEARANCE: TextAppearance = {
+  fontSize: 26,
+  color: "#111111",
+  fontFamily: "cursive",
+};
 export const MIN_ELEMENT_WIDTH = 16;
 export const MIN_ELEMENT_HEIGHT = 16;
+export const MAX_SIGNATURE_IMAGE_BYTES = 2 * 1024 * 1024;
 
 const emptyState = (): EditorState => ({
   status: "empty",
@@ -164,18 +208,70 @@ const isFiniteBounds = (bounds: Bounds): boolean =>
   bounds.width > 0 &&
   bounds.height > 0;
 
-const textFromElement = (element: EditorElement): string =>
-  element.type === "text" && element.content !== undefined ? element.content.text : "";
+const isTextContent = (content: EditorElement["content"]): content is TextElementContent =>
+  content !== undefined && !("kind" in content);
 
-const toExportElement = (element: EditorElement): ExportElement => ({
-  id: element.id,
-  pageId: element.pageId,
-  type: element.type === "whiteout" ? "whiteout" : "text",
-  bounds: cloneBounds(element.bounds),
-  ...(element.type === "text"
-    ? { text: textFromElement(element), textAppearance: DEFAULT_TEXT_APPEARANCE }
-    : {}),
-});
+const isSignatureContent = (
+  content: EditorElement["content"],
+): content is SignatureElementContent => content !== undefined && "kind" in content;
+
+const textFromElement = (element: EditorElement): string =>
+  element.type === "text" && isTextContent(element.content) ? element.content.text : "";
+
+const textFontSizeFromElement = (element: EditorElement): number => {
+  const content = element.content;
+  return element.type === "text" && isTextContent(content) && content.fontSize !== undefined
+    ? content.fontSize
+    : DEFAULT_TEXT_APPEARANCE.fontSize;
+};
+
+const clampTextFontSize = (fontSize: number): number =>
+  Math.min(MAX_TEXT_FONT_SIZE, Math.max(MIN_TEXT_FONT_SIZE, fontSize));
+
+const toExportElement = (element: EditorElement): ExportElement => {
+  if (element.type === "whiteout") {
+    return {
+      id: element.id,
+      pageId: element.pageId,
+      type: "whiteout",
+      bounds: cloneBounds(element.bounds),
+    };
+  }
+  if (element.type === "signature" || element.type === "initials") {
+    const content = isSignatureContent(element.content) ? element.content : undefined;
+    if (content?.kind === "typed") {
+      const appearance =
+        element.type === "signature" ? DEFAULT_SIGNATURE_APPEARANCE : DEFAULT_INITIALS_APPEARANCE;
+      return {
+        id: element.id,
+        pageId: element.pageId,
+        type: element.type,
+        bounds: cloneBounds(element.bounds),
+        text: content.text,
+        textAppearance: { ...appearance, fontFamily: content.fontFamily },
+        source: "type",
+      };
+    }
+    if (content?.kind === "image") {
+      return {
+        id: element.id,
+        pageId: element.pageId,
+        type: element.type,
+        bounds: cloneBounds(element.bounds),
+        image: { dataUrl: content.dataUrl, mimeType: content.mimeType },
+        source: content.source,
+      };
+    }
+  }
+  return {
+    id: element.id,
+    pageId: element.pageId,
+    type: "text",
+    bounds: cloneBounds(element.bounds),
+    text: textFromElement(element),
+    textAppearance: { ...DEFAULT_TEXT_APPEARANCE, fontSize: textFontSizeFromElement(element) },
+  };
+};
 
 const safeExportFilename = (fileName: string | undefined): string => {
   const fallback = "quickpdf-edited";
@@ -186,6 +282,24 @@ const safeExportFilename = (fileName: string | undefined): string => {
     .trim()
     .replace(/[. ]+$/g, "");
   return `${safeBase.length === 0 ? fallback : safeBase}-edited.pdf`;
+};
+
+export const validateSignatureImageFile = (
+  file: Pick<LocalPdfFile, "name" | "size" | "type">,
+): EditorError | undefined => {
+  const extension = file.name.split(".").at(-1)?.toLowerCase();
+  const isSupportedType = file.type === "image/png" || file.type === "image/jpeg";
+  const isSupportedExtension = extension === "png" || extension === "jpg" || extension === "jpeg";
+  if (!isSupportedType || !isSupportedExtension) {
+    return {
+      code: "UnsupportedSignatureImage",
+      message: "Use a PNG, JPG, or JPEG signature image.",
+    };
+  }
+  if (file.size > MAX_SIGNATURE_IMAGE_BYTES) {
+    return { code: "SignatureImageTooLarge", message: "Signature images must be 2 MB or smaller." };
+  }
+  return undefined;
 };
 
 export class SequentialIdGenerator implements IdGenerator {
@@ -285,11 +399,21 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
+  public selectElement(elementId: string): EditorSnapshot {
+    const result = this.#session?.selectElement(elementId);
+    if (result?.ok !== true) {
+      return this.#operationError("MissingElement", "The selected element no longer exists.");
+    }
+    this.#syncState();
+    return this.snapshot();
+  }
+
   public addText(point: { readonly x: number; readonly y: number }, text = "Text"): EditorSnapshot {
     return this.#addElement({
       type: "text",
       bounds: { x: point.x, y: point.y, width: 160, height: 40 },
       text,
+      fontSize: DEFAULT_TEXT_APPEARANCE.fontSize,
     });
   }
 
@@ -297,12 +421,127 @@ export class PdfEditorApplication {
     return this.#addElement({ type: "whiteout", bounds });
   }
 
+  public addTypedSignature(
+    point: { readonly x: number; readonly y: number },
+    input: TypedSignatureInput,
+  ): EditorSnapshot {
+    return this.#addElement({
+      type: "signature",
+      bounds: { x: point.x, y: point.y, width: 220, height: 70 },
+      signatureContent: { kind: "typed", text: input.text, fontFamily: input.fontFamily },
+    });
+  }
+
+  public addDrawnSignature(
+    point: { readonly x: number; readonly y: number },
+    image: SignatureImageInput,
+  ): EditorSnapshot {
+    return this.#addImageSignature("signature", point, image);
+  }
+
+  public addUploadedSignature(
+    point: { readonly x: number; readonly y: number },
+    image: SignatureImageInput,
+  ): EditorSnapshot {
+    return this.#addImageSignature("signature", point, { ...image, source: "upload" });
+  }
+
+  public addTypedInitials(
+    point: { readonly x: number; readonly y: number },
+    input: TypedSignatureInput,
+  ): EditorSnapshot {
+    return this.#addElement({
+      type: "initials",
+      bounds: { x: point.x, y: point.y, width: 96, height: 52 },
+      signatureContent: { kind: "typed", text: input.text, fontFamily: input.fontFamily },
+    });
+  }
+
+  public addDrawnInitials(
+    point: { readonly x: number; readonly y: number },
+    image: SignatureImageInput,
+  ): EditorSnapshot {
+    return this.#addImageSignature("initials", point, image);
+  }
+
   public updateText(elementId: string, text: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
     if (element?.type !== "text") {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
-    return this.#replaceElement({ ...element, content: { text } });
+    const content = element.content;
+    const fontSize = isTextContent(content) ? content.fontSize : undefined;
+    return this.#replaceElement({
+      ...element,
+      content: { text, ...(fontSize === undefined ? {} : { fontSize }) },
+    });
+  }
+
+  public updateTextFontSize(elementId: string, fontSize: number): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element?.type !== "text") {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    if (!Number.isFinite(fontSize)) {
+      return this.#operationError("InvalidTextAppearance", "Text size must be a finite number.");
+    }
+    const text = textFromElement(element);
+    return this.#replaceElement({
+      ...element,
+      content: { text, fontSize: clampTextFontSize(fontSize) },
+    });
+  }
+
+  public moveElement(
+    elementId: string,
+    point: { readonly x: number; readonly y: number },
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    return this.#replaceElement({
+      ...element,
+      bounds: this.#constrainBounds({ ...element.bounds, x: point.x, y: point.y }),
+    });
+  }
+
+  public resizeElement(
+    elementId: string,
+    size: { readonly width: number; readonly height: number },
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    return this.#replaceElement({
+      ...element,
+      bounds: this.#constrainBounds({ ...element.bounds, width: size.width, height: size.height }),
+    });
+  }
+
+  public duplicateElement(elementId: string): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    return this.#addElement({
+      type: element.type,
+      bounds: { ...element.bounds, x: element.bounds.x + 12, y: element.bounds.y + 12 },
+      ...(isTextContent(element.content)
+        ? { text: element.content.text, fontSize: textFontSizeFromElement(element) }
+        : {}),
+      ...(isSignatureContent(element.content) ? { signatureContent: element.content } : {}),
+    });
+  }
+
+  public deleteElement(elementId: string): EditorSnapshot {
+    const result = this.#session?.deleteElement(elementId);
+    if (result?.ok !== true) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    this.#syncState();
+    return this.snapshot();
   }
 
   public async exportCurrentPdf(): Promise<EditorSnapshot> {
@@ -346,10 +585,39 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
+  #addImageSignature(
+    type: SignatureElementType,
+    point: { readonly x: number; readonly y: number },
+    image: SignatureImageInput,
+  ): EditorSnapshot {
+    if (
+      !Number.isFinite(image.width) ||
+      !Number.isFinite(image.height) ||
+      image.width <= 0 ||
+      image.height <= 0
+    ) {
+      return this.#operationError("InvalidSignature", "Signature image dimensions must be valid.");
+    }
+    const width = type === "signature" ? 220 : 96;
+    const height = Math.max(MIN_ELEMENT_HEIGHT, width * (image.height / image.width));
+    return this.#addElement({
+      type,
+      bounds: { x: point.x, y: point.y, width, height },
+      signatureContent: {
+        kind: "image",
+        dataUrl: image.dataUrl,
+        mimeType: image.mimeType,
+        source: image.source,
+      },
+    });
+  }
+
   #addElement(request: {
-    readonly type: "text" | "whiteout";
+    readonly type: "text" | "whiteout" | "signature" | "initials";
     readonly bounds: Bounds;
     readonly text?: string;
+    readonly fontSize?: number;
+    readonly signatureContent?: SignatureElementContent;
   }): EditorSnapshot {
     const session = this.#session;
     const pageId = session?.currentPageId;
@@ -359,13 +627,32 @@ export class PdfEditorApplication {
     if (!isFiniteBounds(request.bounds)) {
       return this.#operationError("InvalidElementBounds", "Element bounds must be finite.");
     }
+    if (
+      (request.type === "signature" || request.type === "initials") &&
+      request.signatureContent === undefined
+    ) {
+      return this.#operationError("InvalidSignature", "Signature content is required.");
+    }
 
     const element: EditorElement = {
       id: this.#idGenerator.nextId("element"),
       pageId,
       type: request.type,
       bounds: this.#constrainBounds(request.bounds),
-      ...(request.type === "text" ? { content: { text: request.text ?? "Text" } } : {}),
+      ...(request.type === "text"
+        ? {
+            content: {
+              text: request.text ?? "Text",
+              fontSize:
+                request.fontSize === undefined
+                  ? DEFAULT_TEXT_APPEARANCE.fontSize
+                  : clampTextFontSize(request.fontSize),
+            },
+          }
+        : {}),
+      ...(request.type === "signature" || request.type === "initials"
+        ? { content: request.signatureContent }
+        : {}),
     };
     const result = session.addElement(element);
     if (!result.ok) {
@@ -381,6 +668,7 @@ export class PdfEditorApplication {
     if (result?.ok !== true) {
       return this.#operationError("OperationRejected", "The element could not be updated.");
     }
+    this.#session?.selectElement(element.id);
     this.#syncState();
     return this.snapshot();
   }
@@ -389,6 +677,7 @@ export class PdfEditorApplication {
     const elements = this.#session?.elements().map(toExportElement) ?? [];
     return [
       ...elements.filter((element) => element.type === "whiteout"),
+      ...elements.filter((element) => element.type === "signature" || element.type === "initials"),
       ...elements.filter(
         (element) => element.type === "text" && (element.text ?? "").trim().length > 0,
       ),
@@ -437,6 +726,7 @@ export class PdfEditorApplication {
     const elements = session.elements().map(toExportElement);
     const currentPage = pages[currentPageIndex];
     const originalFileName = session.temporaryPersonalInfo.originalFileName;
+    const selectedElement = elements.find((element) => element.id === session.selectedElementId);
     const baseState: EditorState = {
       status: "ready",
       pageCount: pages.length,
@@ -451,6 +741,7 @@ export class PdfEditorApplication {
       ...(session.selectedElementId === undefined
         ? {}
         : { selectedElementId: session.selectedElementId }),
+      ...(selectedElement === undefined ? {} : { selectedElement }),
     };
     this.#state = { ...baseState, ...overrides };
   }

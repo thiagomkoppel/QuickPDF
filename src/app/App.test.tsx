@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -81,6 +81,35 @@ const clickOverlay = (element: HTMLElement, clientX: number, clientY: number): v
     new MouseEvent("click", { bubbles: true, clientX, clientY, cancelable: true }),
   );
 };
+const pointerOverlay = (
+  element: HTMLElement,
+  type: string,
+  clientX: number,
+  clientY: number,
+  pointerId: number,
+): void => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+    pointerId: { value: pointerId },
+  });
+  act(() => {
+    element.dispatchEvent(event);
+  });
+};
+
+const dragWhiteout = (overlay: HTMLElement): void => {
+  Object.defineProperty(overlay, "setPointerCapture", { value: vi.fn(), configurable: true });
+  Object.defineProperty(overlay, "hasPointerCapture", {
+    value: vi.fn(() => false),
+    configurable: true,
+  });
+  Object.defineProperty(overlay, "releasePointerCapture", { value: vi.fn(), configurable: true });
+  pointerOverlay(overlay, "pointerdown", 40, 50, 10);
+  pointerOverlay(overlay, "pointermove", 160, 98, 10);
+  pointerOverlay(overlay, "pointerup", 160, 98, 10);
+};
 
 beforeEach(() => {
   download.mockClear();
@@ -117,12 +146,12 @@ describe("QuickPDF application shell", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Whiteout" }));
-    clickOverlay(screen.getByLabelText("PDF overlay"), 40, 50);
+    dragWhiteout(screen.getByLabelText("PDF overlay"));
     const whiteout = await screen.findByRole("group", { name: "whiteout element" });
     expect(whiteout).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Text" }));
-    clickOverlay(whiteout, 45, 55);
+    clickOverlay(screen.getByLabelText("PDF overlay"), 130, 110);
     const textBox = await screen.findByLabelText("Edit text element");
     await user.clear(textBox);
     await user.type(textBox, "Replacement");

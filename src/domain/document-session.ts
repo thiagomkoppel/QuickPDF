@@ -1,11 +1,11 @@
-﻿type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
+type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
 
 export type DocumentSessionId = Brand<string, "DocumentSessionId">;
 export type PageId = Brand<string, "PageId">;
 export type ElementId = Brand<string, "ElementId">;
 
 export type DocumentSessionStatus = "ready" | "disposed";
-export type EditorElementType = "text" | "date" | "checkmark" | "cross" | "whiteout" | "highlight";
+export type EditorElementType = "text" | "whiteout" | "signature" | "initials";
 export type PageRotation = 0 | 90 | 180 | 270;
 
 export interface Bounds {
@@ -17,9 +17,24 @@ export interface Bounds {
 
 export interface TextElementContent {
   readonly text: string;
+  readonly fontSize?: number;
 }
 
-export type EditorElementContent = TextElementContent;
+export interface TypedSignatureContent {
+  readonly kind: "typed";
+  readonly text: string;
+  readonly fontFamily: string;
+}
+
+export interface ImageSignatureContent {
+  readonly kind: "image";
+  readonly dataUrl: string;
+  readonly mimeType: "image/png" | "image/jpeg";
+  readonly source: "draw" | "upload";
+}
+
+export type SignatureElementContent = TypedSignatureContent | ImageSignatureContent;
+export type EditorElementContent = TextElementContent | SignatureElementContent;
 
 export interface DocumentPage {
   readonly id: string;

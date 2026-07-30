@@ -44,6 +44,18 @@ const pageNumberFromPageId = (pageId: string): number | undefined => {
 
 const lineHeight = (fontSize: number): number => fontSize * 1.2;
 
+const dataUrlBytes = (dataUrl: string): Uint8Array => {
+  const base64 = dataUrl.split(",")[1];
+  if (base64 === undefined) {
+    throw new Error("Invalid data URL.");
+  }
+  const binary = atob(base64);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+};
+
+const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFFont): PDFFont =>
+  element.type === "signature" || element.type === "initials" ? cursive : fallback;
+
 export class PdfLibExportGateway implements PdfExportGateway {
   public async open(bytes: Uint8Array): Promise<PdfOpenResult> {
     try {
@@ -64,8 +76,9 @@ export class PdfLibExportGateway implements PdfExportGateway {
     try {
       const document = await PDFDocument.load(request.originalBytes, { ignoreEncryption: false });
       const font = await document.embedFont(StandardFonts.Helvetica);
+      const signatureFont = await document.embedFont(StandardFonts.TimesRomanItalic);
       for (const element of request.elements) {
-        this.#drawElement(document, element, font);
+        await this.#drawElement(document, element, font, signatureFont);
       }
       const bytes = await document.save();
       return { ok: true, bytes };
@@ -74,7 +87,12 @@ export class PdfLibExportGateway implements PdfExportGateway {
     }
   }
 
-  #drawElement(document: PDFDocument, element: ExportElement, font: PDFFont): void {
+  async #drawElement(
+    document: PDFDocument,
+    element: ExportElement,
+    font: PDFFont,
+    signatureFont: PDFFont,
+  ): Promise<void> {
     const pageNumber = pageNumberFromPageId(element.pageId);
     if (pageNumber === undefined) {
       return;
@@ -99,12 +117,32 @@ export class PdfLibExportGateway implements PdfExportGateway {
       return;
     }
 
+    if (element.image !== undefined) {
+      const imageBytes = dataUrlBytes(element.image.dataUrl);
+      const embeddedImage =
+        element.image.mimeType === "image/png"
+          ? await document.embedPng(imageBytes)
+          : await document.embedJpg(imageBytes);
+      const rect = pageTopLeftRectToPdfRect(element.bounds, {
+        width: page.getWidth(),
+        height: page.getHeight(),
+      });
+      page.drawImage(embeddedImage, {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
+      return;
+    }
+
     const text = element.text ?? "";
     if (text.trim().length === 0) {
       return;
     }
     const fontSize = element.textAppearance?.fontSize ?? 16;
     const colorParts = parseHexColor(element.textAppearance?.color);
+    const activeFont = fontForElement(element, font, signatureFont);
     const start = pageTopLeftTextToPdfPoint({
       bounds: element.bounds,
       page: { width: page.getWidth(), height: page.getHeight() },
@@ -116,7 +154,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
         x: start.x,
         y: start.y - lineHeight(fontSize) * index,
         size: fontSize,
-        font,
+        font: activeFont,
         color: rgb(colorParts.red, colorParts.green, colorParts.blue),
       });
     });
