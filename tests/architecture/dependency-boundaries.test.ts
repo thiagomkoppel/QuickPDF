@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { readProjectFiles } from "./readProjectFiles";
 
@@ -17,6 +17,8 @@ const forbiddenApplicationImports = [
   "pdf-lib",
   "../presentation",
 ];
+
+const normalizePath = (filePath: string): string => filePath.replaceAll("\\", "/");
 
 describe("source dependency boundaries", () => {
   it("keeps the domain layer independent from UI, PDF libraries, and browser adapters", () => {
@@ -45,7 +47,7 @@ describe("source dependency boundaries", () => {
     const sourceFiles = readProjectFiles("src", [".ts", ".tsx"]);
     const violations = sourceFiles
       .filter((file) => file.contents.includes("pdfjs-dist"))
-      .filter((file) => !file.path.includes("src\\infrastructure\\pdf"))
+      .filter((file) => !normalizePath(file.path).includes("src/infrastructure/pdf"))
       .map((file) => `${file.path} imports pdfjs-dist outside PDF infrastructure`);
 
     expect(violations).toEqual([]);
