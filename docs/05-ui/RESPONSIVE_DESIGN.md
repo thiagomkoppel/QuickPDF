@@ -1,25 +1,65 @@
-# Responsive Design
+# RESPONSIVE_DESIGN.md
 
 ## Desktop
 
-Three-region editor with thumbnails, canvas, and properties.
+Three-column layout.
+
+Toolbar
+
+PDF
+
+Inspector
+
+---
 
 ## Tablet
 
-Collapsible thumbnails and properties. Main page remains centered and touch friendly.
+Inspector collapses.
+
+Larger touch targets.
+
+Bottom page navigation.
+
+---
 
 ## Mobile
 
-- PDF canvas occupies most of the viewport.
-- Primary toolbar: Text, Sign, Check, Date, More.
-- Properties open as a bottom sheet.
-- Page thumbnails open as a drawer.
-- Signature drawing may use a full-screen dialog.
-- Resize and rotation handles must be touch-sized.
+Toolbar moves to bottom.
 
-## Responsive requirements
+Properties become bottom sheets.
 
-- No horizontal page-level UI overflow.
-- Browser zoom up to 200% remains usable.
-- Portrait and landscape orientations are supported.
-- Controls remain reachable around mobile safe areas.
+PDF remains the largest visible element.
+
+---
+
+# Gestures
+
+Pinch zoom
+
+Drag
+
+Tap
+
+Long press
+
+Must work naturally.
+
+---
+
+# Accessibility
+
+Touch targets
+
+Minimum 44px
+
+No hover-only actions.
+
+Everything reachable from keyboard.
+
+---
+
+# Orientation
+
+Portrait and landscape must both work.
+
+Do not force one orientation.

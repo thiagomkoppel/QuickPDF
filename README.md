@@ -2,7 +2,7 @@
 
 QuickPDF is a free, privacy-first browser application for completing common PDF tasks quickly.
 
-Users will be able to open a local PDF, fill fields, add text, sign, mark checkboxes, make visual corrections, organize pages, and download the completed document. The document must never leave the browser and is discarded when the session ends.
+Users can now open a local PDF, render the current page with PDF.js, place temporary text and whiteout overlays aligned to that page, and download a new edited PDF generated entirely in the browser. Signatures, forms, page organization, undo/redo, and advanced editing remain deferred.
 
 ## Product promise
 
@@ -10,7 +10,15 @@ Users will be able to open a local PDF, fill fields, add text, sign, mark checkb
 
 ## Current status
 
-QuickPDF is in Phase 0 foundation work. The repository now contains a Vite, React, and TypeScript static client scaffold with tests and quality gates. PDF loading, rendering, editing, signing, and exporting are intentionally not implemented yet.
+QuickPDF is in Phase 0 proof-of-concept work. The current static Vite, React, and TypeScript client supports a first useful local workflow:
+
+1. choose a local PDF;
+2. render the current PDF page locally with PDF.js;
+3. create text and whiteout overlays aligned over the rendered page;
+4. export a new PDF with those overlays embedded;
+5. keep editing after download.
+
+Whiteout only covers content visually. It does not securely remove underlying PDF data.
 
 ## Core constraints
 
@@ -19,21 +27,22 @@ QuickPDF is in Phase 0 foundation work. The repository now contains a Vite, Reac
 - No cloud storage or backend document processing.
 - No document analytics, logging, or telemetry.
 - No watermark or export limit.
-- All document data is discarded when the tab or browser session closes.
-- The application must work on desktop, tablet, and mobile.
-- The application must remain usable offline after its static assets have been loaded, where browser capabilities permit.
+- The original PDF is preserved; edits are overlay operations until export.
+- All document and edit state is discarded when the session ends.
 
 ## Technology foundation
 
 - Vite static SPA.
 - React.
 - TypeScript with strict compiler settings.
+- PDF rendering through `pdfjs-dist` behind an infrastructure adapter.
+- PDF export through `pdf-lib` behind an infrastructure adapter.
+- Browser File, Blob, object URL, and download APIs behind adapters.
 - npm with `package-lock.json`.
-- Vitest, React Testing Library, and jsdom for unit/component tests.
-- Playwright configured for later end-to-end tests.
-- ESLint and Prettier for code quality.
+- Vitest, React Testing Library, jsdom, and Playwright.
+- ESLint and Prettier.
 
-Use Node.js 20.19 or newer. The CI workflow currently uses Node 20.
+Use Node.js 22 or newer. The CI workflow uses Node 22.
 
 ## Commands
 
@@ -49,26 +58,32 @@ npm run test:e2e
 npm run build
 ```
 
-`npm run test:e2e` is configured for future Playwright tests, but no end-to-end product tests are included yet because no PDF workflow exists.
+To try the editor locally:
+
+```sh
+npm run dev
+```
+
+Then open the printed local Vite URL, usually `http://127.0.0.1:5173/`, choose or drop a PDF, add Text or Whiteout overlays, and use Download to save `*-edited.pdf`.
 
 ## Project structure
 
 ```text
 src/
-├── app/
-├── domain/
-├── application/
-├── infrastructure/
-│   ├── browser/
-│   └── pdf/
-├── presentation/
-│   ├── components/
-│   ├── pages/
-│   └── styles/
-├── shared/
-└── test/
+|-- app/
+|-- domain/
+|-- application/
+|-- infrastructure/
+|   |-- browser/
+|   `-- pdf/
+|-- presentation/
+|   |-- components/
+|   |-- pages/
+|   `-- styles/
+|-- shared/
+`-- test/
 ```
 
-The domain layer must remain independent of React, DOM APIs, PDF libraries, and browser adapters. Presentation code renders state and routes user intent through application-facing boundaries. Infrastructure will hold browser and PDF adapter implementations when Phase 0 reaches those workstreams.
+The domain layer remains independent of React, DOM APIs, PDF libraries, and browser adapters. Presentation code renders snapshots and routes user intent through application-facing boundaries.
 
 See [AGENTS.md](AGENTS.md) before making any change.

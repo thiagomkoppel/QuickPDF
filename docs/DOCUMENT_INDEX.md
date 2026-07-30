@@ -27,6 +27,7 @@
 
 ## Engineering
 
+- `03-engineering/PROJECT_PHILOSOPHY.md`
 - `03-engineering/CODING_STANDARDS.md`
 - `03-engineering/TESTING_STRATEGY.md`
 - `03-engineering/ERROR_HANDLING.md`
@@ -36,12 +37,37 @@
 - `04-security/PRIVACY_MODEL.md`
 - `04-security/FILE_SECURITY.md`
 - `04-security/THREAT_MODEL.md`
+- `04-security/SESSION_LIFECYCLE.md`
 
 ## UI
 
-- `05-ui/EDITOR_INTERFACE.md`
-- `05-ui/RESPONSIVE_DESIGN.md`
+### ACCESSIBILITY.md
+
 - `05-ui/ACCESSIBILITY.md`
+
+### DESIGN_SYSTEM.md
+
+- Defines the complete visual language of QuickPDF, including colors, typography, spacing, buttons, cards, icons, animations, and general UI principles.
+
+### LANDING_PAGE.md
+
+- Defines the homepage layout, drag-and-drop workflow, messaging, and visual hierarchy for the application's entry experience.
+
+### EDITOR_INTERFACE.md
+
+- Defines the editor layout, toolbars, inspector, page navigation, layer ordering, zoom controls, and interaction model.
+
+### USER_EXPERIENCE.md
+
+- Defines the overall product philosophy and user journey, including the "Open → Edit → Download" workflow and feature decision principles.
+
+### RESPONSIVE_DESIGN.md
+
+- Defines responsive behavior across desktop, tablet, and mobile devices, including toolbar layout, touch interactions, and accessibility expectations.
+
+### USER_WARNINGS.md
+
+- Defines all mandatory user warnings, discard confirmations, browser unload behavior, and dirty-session interactions.
 
 ## Delivery
 

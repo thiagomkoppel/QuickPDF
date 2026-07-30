@@ -51,3 +51,9 @@ Examples:
 - Consecutive pointer-move events should be coalesced into one meaningful history item.
 - Selection-only changes do not need to enter document history.
 - Undo and redo must preserve domain invariants.
+
+## Export state
+
+Export uses deterministic editor snapshots. The application builds an export plan from the original PDF bytes plus current text and whiteout overlay elements. Whiteout elements are exported before text elements so replacement text remains visible above visual covers. Stable insertion order is preserved among elements of the same type.
+
+A successful export marks the active session clean and leaves the editor open. A failed export preserves the session and dirty state.

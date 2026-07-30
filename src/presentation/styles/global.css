@@ -170,3 +170,118 @@ p {
     width: 100%;
   }
 }
+
+.file-drop {
+  display: grid;
+  gap: 0.4rem;
+  border: 2px dashed #8aa096;
+  border-radius: 8px;
+  padding: 1.25rem;
+  background: #ffffff;
+}
+
+.file-drop-title {
+  font-weight: 750;
+}
+
+.file-drop input {
+  max-width: 100%;
+}
+
+.error-message {
+  color: #8a1f11;
+  font-weight: 650;
+}
+
+.editor-viewer {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  min-height: 100%;
+  background: #eef2ef;
+}
+
+.editor-header,
+.viewer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem clamp(1rem, 4vw, 2rem);
+  background: #ffffff;
+  border-bottom: 1px solid #d7ded8;
+}
+
+.editor-header {
+  justify-content: space-between;
+}
+
+.editor-header h1 {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.editor-subtitle,
+.whiteout-note {
+  color: #4e5a53;
+}
+
+.whiteout-note,
+.editor-viewer > .status-note,
+.editor-viewer > .error-message {
+  padding: 0.75rem clamp(1rem, 4vw, 2rem);
+}
+
+.editor-viewport {
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.viewer-main {
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+.pdf-page-frame {
+  position: relative;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow: 0 12px 40px rgb(22 32 27 / 18%);
+}
+
+.pdf-page-canvas,
+.overlay-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.pdf-page-canvas {
+  display: block;
+  z-index: 1;
+  background: #ffffff;
+}
+
+.overlay-layer {
+  z-index: 2;
+}
+
+.overlay-element {
+  position: absolute;
+  border: 1px solid #245e47;
+}
+
+.overlay-text textarea {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: #111111;
+  font: inherit;
+  line-height: 1.2;
+}
+
+.overlay-whiteout {
+  background: #ffffff;
+}
