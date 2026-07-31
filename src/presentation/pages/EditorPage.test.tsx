@@ -29,6 +29,8 @@ interface TestEditor extends PdfEditorApplication {
   readonly addWhiteout: Mock;
   readonly selectElement: Mock;
   readonly clearSelection: Mock;
+  readonly copySelectedElement: Mock;
+  readonly pasteCopiedElement: Mock;
   readonly moveElement: Mock;
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
@@ -52,6 +54,7 @@ const baseSnapshot = (overrides: Partial<EditorSnapshot["state"]> = {}): EditorS
   canExport: true,
   canUndo: false,
   canRedo: false,
+  canPaste: false,
   state: {
     status: "ready",
     fileName: "visible.pdf",
@@ -119,6 +122,8 @@ const createEditor = (): TestEditor =>
     addDrawnInitials: vi.fn(() => baseSnapshot()),
     selectElement: vi.fn(() => baseSnapshot()),
     clearSelection: vi.fn(() => baseSnapshot()),
+    copySelectedElement: vi.fn(() => baseSnapshot({ selectedElementId: "text-1" })),
+    pasteCopiedElement: vi.fn(() => baseSnapshot({ selectedElementId: "text-copy" })),
     moveElement: vi.fn(() => baseSnapshot()),
     resizeElement: vi.fn(() => baseSnapshot()),
     previewResizeElement: vi.fn(() => baseSnapshot()),
@@ -740,6 +745,162 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.redo).toHaveBeenCalledTimes(3);
   });
 
+  it("handles Ctrl and Cmd copy shortcuts for the selected overlay only", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const ctrlCopy = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "c",
+    });
+    const cmdCopy = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+      key: "C",
+    });
+
+    act(() => {
+      window.dispatchEvent(ctrlCopy);
+      window.dispatchEvent(cmdCopy);
+    });
+
+    expect(ctrlCopy.defaultPrevented).toBe(true);
+    expect(cmdCopy.defaultPrevented).toBe(true);
+    expect(editor.copySelectedElement).toHaveBeenCalledTimes(2);
+    expect(editor.pasteCopiedElement).not.toHaveBeenCalled();
+  });
+
+  it("handles Ctrl and Cmd paste shortcuts only when the private clipboard has an element", () => {
+    const editor = createEditor();
+    const onSnapshotChange = vi.fn<(nextSnapshot: EditorSnapshot) => void>();
+    const pasted = selectedElementForType("text");
+    editor.pasteCopiedElement.mockReturnValue(
+      baseSnapshot({
+        selectedElementId: "text-copy",
+        selectedElement: {
+          ...pasted,
+          id: "text-copy",
+          bounds: { x: 56, y: 66, width: 120, height: 48 },
+        },
+        visibleElements: [
+          pasted,
+          { ...pasted, id: "text-copy", bounds: { x: 56, y: 66, width: 120, height: 48 } },
+        ],
+        isDirty: true,
+      }),
+    );
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...selectedSnapshot("text"), canPaste: true }}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const ctrlPaste = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "v",
+    });
+    const cmdPaste = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+      key: "V",
+    });
+
+    act(() => {
+      window.dispatchEvent(ctrlPaste);
+      window.dispatchEvent(cmdPaste);
+    });
+
+    expect(ctrlPaste.defaultPrevented).toBe(true);
+    expect(cmdPaste.defaultPrevented).toBe(true);
+    expect(editor.pasteCopiedElement).toHaveBeenCalledTimes(2);
+    expect(onSnapshotChange.mock.calls.at(-1)?.[0].state.selectedElementId).toBe("text-copy");
+  });
+
+  it("leaves browser copy and paste untouched without a selection or private clipboard", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const copy = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "c",
+    });
+    const paste = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "v",
+    });
+
+    act(() => {
+      window.dispatchEvent(copy);
+      window.dispatchEvent(paste);
+    });
+
+    expect(copy.defaultPrevented).toBe(false);
+    expect(paste.defaultPrevented).toBe(false);
+    expect(editor.copySelectedElement).not.toHaveBeenCalled();
+    expect(editor.pasteCopiedElement).not.toHaveBeenCalled();
+  });
+
+  it("does not hijack copy or paste shortcuts inside active text editing controls", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...selectedSnapshot("text"), canPaste: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.dblClick(screen.getByLabelText("Text element content"));
+    const textArea = screen.getByLabelText("Edit text element");
+    const copy = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "c",
+    });
+    const paste = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "v",
+    });
+
+    act(() => {
+      textArea.dispatchEvent(copy);
+      textArea.dispatchEvent(paste);
+    });
+
+    expect(copy.defaultPrevented).toBe(false);
+    expect(paste.defaultPrevented).toBe(false);
+    expect(editor.copySelectedElement).not.toHaveBeenCalled();
+    expect(editor.pasteCopiedElement).not.toHaveBeenCalled();
+  });
   it("does not hijack history shortcuts inside active text editing controls", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -775,6 +936,7 @@ describe("EditorPage PDF rendering", () => {
           canExport: false,
           canUndo: false,
           canRedo: false,
+          canPaste: false,
           state: {
             status: "empty",
             pageCount: 0,

@@ -161,6 +161,7 @@ export interface EditorSnapshot {
   readonly canExport: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
+  readonly canPaste: boolean;
 }
 
 export interface SignatureImageInput {
@@ -177,6 +178,7 @@ export interface TypedSignatureInput {
 }
 
 export const COMMAND_HISTORY_LIMIT = 100;
+export const PASTE_OFFSET = 16;
 export const MIN_TEXT_FONT_SIZE = 8;
 export const MAX_TEXT_FONT_SIZE = 96;
 export const STANDARD_TEXT_FONTS: readonly TextFontFamily[] = ["helvetica", "times", "courier"];
@@ -335,18 +337,52 @@ export const validateSignatureImageFile = (
   return undefined;
 };
 
+interface ClipboardElement {
+  readonly type: "text" | "whiteout" | "signature" | "initials";
+  readonly bounds: Bounds;
+  readonly text?: string;
+  readonly fontSize?: number;
+  readonly fontFamily?: TextFontFamily;
+  readonly signatureContent?: SignatureElementContent;
+}
 interface HistoryState {
   readonly elements: readonly EditorElement[];
   readonly selectedElementId?: string;
 }
 
 interface HistoryEntry {
-  readonly type: "add-element" | "delete-element" | "duplicate-element" | "update-element";
+  readonly type:
+    "add-element" | "delete-element" | "duplicate-element" | "paste-element" | "update-element";
   readonly before: HistoryState;
   readonly after: HistoryState;
   readonly beforeRevision: number;
   readonly afterRevision: number;
 }
+
+const cloneSignatureContent = (
+  content: SignatureElementContent | undefined,
+): SignatureElementContent | undefined => {
+  if (content === undefined) {
+    return undefined;
+  }
+  return { ...content };
+};
+
+const clipboardElementFrom = (element: EditorElement): ClipboardElement => {
+  const base = { type: element.type, bounds: cloneBounds(element.bounds) };
+  if (isTextContent(element.content)) {
+    return {
+      ...base,
+      text: element.content.text,
+      fontSize: textFontSizeFromElement(element),
+      fontFamily: textFontFamilyFromElement(element),
+    };
+  }
+  if (isSignatureContent(element.content)) {
+    return { ...base, signatureContent: { ...element.content } };
+  }
+  return base;
+};
 
 const cloneHistoryElement = (element: EditorElement): EditorElement => ({
   ...element,
@@ -392,6 +428,7 @@ export class PdfEditorApplication {
   #redoStack: HistoryEntry[] = [];
   #currentRevision = 0;
   #cleanRevision = 0;
+  #clipboard: ClipboardElement | undefined;
 
   public constructor(
     fileReader: LocalPdfFileReader,
@@ -413,6 +450,7 @@ export class PdfEditorApplication {
       canExport: this.#session !== undefined,
       canUndo: this.#undoStack.length > 0,
       canRedo: this.#redoStack.length > 0,
+      canPaste: this.#session !== undefined && this.#clipboard !== undefined,
     };
   }
 
@@ -421,6 +459,7 @@ export class PdfEditorApplication {
     this.#session = undefined;
     this.#originalBytes = undefined;
     this.#resetHistory();
+    this.#clearClipboard();
     const {
       error: discardedOpenError,
       exportFilename: discardedExportFilename,
@@ -496,6 +535,37 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
+  public copySelectedElement(): EditorSnapshot {
+    const selectedElementId = this.#session?.selectedElementId;
+    if (selectedElementId === undefined) {
+      return this.snapshot();
+    }
+    const element = this.#session?.element(selectedElementId);
+    if (element === undefined) {
+      return this.snapshot();
+    }
+    this.#clipboard = clipboardElementFrom(element);
+    return this.snapshot();
+  }
+
+  public pasteCopiedElement(): EditorSnapshot {
+    const clipboardElement = this.#clipboard;
+    if (this.#session === undefined || clipboardElement === undefined) {
+      return this.snapshot();
+    }
+    const snapshot = this.#addElement({
+      historyType: "paste-element",
+      ...this.#clipboardAddRequest(clipboardElement),
+      bounds: this.#offsetPastedBounds(clipboardElement.bounds),
+    });
+    const pastedElementId = snapshot.state.selectedElementId;
+    const pastedElement =
+      pastedElementId === undefined ? undefined : this.#session.element(pastedElementId);
+    if (pastedElement !== undefined) {
+      this.#clipboard = clipboardElementFrom(pastedElement);
+    }
+    return this.snapshot();
+  }
   public addText(point: { readonly x: number; readonly y: number }, text = "Text"): EditorSnapshot {
     return this.#addElement({
       type: "text",
@@ -931,6 +1001,65 @@ export class PdfEditorApplication {
     this.#redoStack = [];
     this.#currentRevision = 0;
     this.#cleanRevision = 0;
+  }
+  #clearClipboard(): void {
+    this.#clipboard = undefined;
+  }
+
+  #clipboardAddRequest(element: ClipboardElement): {
+    readonly type: "text" | "whiteout" | "signature" | "initials";
+    readonly bounds: Bounds;
+    readonly text?: string;
+    readonly fontSize?: number;
+    readonly fontFamily?: TextFontFamily;
+    readonly signatureContent?: SignatureElementContent;
+  } {
+    const base = {
+      type: element.type,
+      bounds: cloneBounds(element.bounds),
+    };
+    if (element.type === "text") {
+      return {
+        ...base,
+        text: element.text ?? "Text",
+        fontSize: element.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
+        fontFamily: element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+      };
+    }
+    if (element.type === "signature" || element.type === "initials") {
+      const signatureContent = cloneSignatureContent(element.signatureContent);
+      return signatureContent === undefined ? base : { ...base, signatureContent };
+    }
+    return base;
+  }
+
+  #offsetPastedBounds(bounds: Bounds): Bounds {
+    const preferred = this.#constrainBounds({
+      ...bounds,
+      x: bounds.x + PASTE_OFFSET,
+      y: bounds.y + PASTE_OFFSET,
+    });
+    if (
+      (preferred.x !== bounds.x || preferred.y !== bounds.y) &&
+      !this.#matchesExistingBounds(preferred)
+    ) {
+      return preferred;
+    }
+    return this.#constrainBounds({
+      ...bounds,
+      x: bounds.x - PASTE_OFFSET,
+      y: bounds.y - PASTE_OFFSET,
+    });
+  }
+
+  #matchesExistingBounds(bounds: Bounds): boolean {
+    return (this.#session?.elements() ?? []).some(
+      (element) =>
+        element.bounds.x === bounds.x &&
+        element.bounds.y === bounds.y &&
+        element.bounds.width === bounds.width &&
+        element.bounds.height === bounds.height,
+    );
   }
   #addImageSignature(
     type: SignatureElementType,

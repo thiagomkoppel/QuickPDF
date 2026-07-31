@@ -650,6 +650,90 @@ test("undoes and redoes overlay add/delete history and exports the final state",
     .poll(() => canvasRegionIsMostlyWhite(page, { x: 40, y: 50, width: 120, height: 48 }))
     .toBe(false);
 });
+
+test("copies and pastes selected overlays without hijacking text editing", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("copy-paste-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "copy-paste-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 70, overlayBox.y + 150);
+  const textEditor = page.getByLabel("Edit text element");
+  await textEditor.fill("Copy me");
+  await textEditor.press("Escape");
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(1);
+
+  await page.keyboard.press("Control+C");
+  await page.keyboard.press("Control+V");
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(2);
+  const textBoxes = await page.getByRole("group", { name: "text element" }).evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { x: rect.x, y: rect.y };
+    }),
+  );
+  expect(textBoxes[1]?.x).toBeCloseTo((textBoxes[0]?.x ?? 0) + 16, 0);
+  expect(textBoxes[1]?.y).toBeCloseTo((textBoxes[0]?.y ?? 0) + 16, 0);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(2);
+
+  await page.getByLabel("Text element content").last().dblclick();
+  const editCopy = page.getByLabel("Edit text element");
+  await editCopy.press("Control+A");
+  await editCopy.press("Control+C");
+  await editCopy.press("End");
+  await editCopy.press("Control+V");
+  await expect(editCopy).toHaveValue("Copy meCopy me");
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(2);
+  await editCopy.press("Escape");
+
+  await page.getByRole("button", { name: "Whiteout" }).click();
+  await dragWhiteout(
+    page,
+    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
+    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+  );
+  await page.keyboard.press("Control+C");
+  await page.keyboard.press("Control+V");
+  await expect(page.getByRole("group", { name: "whiteout element" })).toHaveCount(2);
+
+  const downloadedPath = testInfo.outputPath("copy-paste-fixture-edited.pdf");
+  await downloadEditedPdf(page, "copy-paste-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(page.getByRole("heading", { name: "copy-paste-fixture-edited.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 70, y: 150, width: 120, height: 40 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 86, y: 166, width: 120, height: 40 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionIsMostlyWhite(page, { x: 40, y: 50, width: 120, height: 48 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionIsMostlyWhite(page, { x: 56, y: 66, width: 120, height: 48 }))
+    .toBe(true);
+});
 test("deletes every selected overlay type and excludes deleted overlays from export", async ({
   page,
 }, testInfo) => {

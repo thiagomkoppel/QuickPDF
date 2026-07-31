@@ -110,9 +110,10 @@ History entries should store the smallest reversible state needed for the operat
 - validated geometry;
 - safe element property values;
 - before/after values;
-- insertion position when required.
+- insertion position when required;
+- copied overlay content required to recreate a pasted text, whiteout, signature, or initials element.
 
-History must not:
+The private overlay clipboard follows the same session-only memory rules as command history. It stores a validated immutable element snapshot without the original element ID and is cleared when the active document is closed or replaced.`r`n`r`nHistory and the overlay clipboard must not:
 
 - persist to local storage, IndexedDB, cookies, a backend, or analytics;
 - contain duplicate copies of original PDF bytes;
@@ -128,7 +129,8 @@ The initial policy is:
 - one committed font-size field value equals one update-text-appearance entry;
 - one committed font-family select change equals one update-text-appearance entry;
 - separate element creations remain separate entries;
-- delete and duplicate remain separate entries;
+- delete, duplicate, and paste remain separate entries;
+- copy is not a command because it only updates the private session clipboard;
 - commands never merge across different elements or sessions.
 
 ## Selection after history navigation

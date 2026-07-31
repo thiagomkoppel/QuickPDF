@@ -12,7 +12,7 @@ Status: Completed
 - Whiteout overlays
 - Signatures
 - Initials
-- Selection, move, resize, duplicate, and delete
+- Selection, move, resize, duplicate, delete, and session-local copy/paste
 - Dirty-state warnings
 - Browser-local PDF export
 - No backend, database, accounts, cloud storage, or persistence
@@ -24,7 +24,7 @@ Status: Completed
 ### ✅ Phase 2.1 — History Foundation
 
 - Application-owned command history
-- Add, delete, and duplicate history
+- Add, paste, delete, and duplicate history
 - Undo and Redo toolbar controls
 - Keyboard shortcuts
 - Revision-based dirty tracking

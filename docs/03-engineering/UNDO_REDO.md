@@ -19,18 +19,20 @@ The initial implementation covers:
 | Add whiteout            | Yes  | Yes  |
 | Add signature           | Yes  | Yes  |
 | Add initials            | Yes  | Yes  |
+| Paste copied overlay    | Yes  | Yes  |
 | Move an element         | Yes  | Yes  |
 | Resize an element       | Yes  | Yes  |
 | Duplicate an element    | Yes  | Yes  |
 | Delete an element       | Yes  | Yes  |
 
-Future output-changing operations must define undo and redo before they are considered complete.
+Future output-changing operations must define undo and redo before they are considered complete. Paste is treated as an Add-style document command because it creates a new overlay element; Copy is not a document command and does not affect dirty state, history, redo availability, or selection.
 
 ## Not undoable
 
 These actions do not enter document history:
 
 - selecting or deselecting an element;
+- copying an element into the session-local QuickPDF clipboard;
 - entering or leaving text-editing mode;
 - changing the active tool, including one-shot return to Select after Text, Signature, or Initials placement;
 - opening or closing an inspector or dialog;
@@ -38,6 +40,7 @@ These actions do not enter document history:
 - page navigation;
 - rendering completion;
 - exporting or downloading;
+- native browser copy or paste inside active text fields, file inputs, contenteditable controls, or signature drawing surfaces;
 - opening a PDF;
 - closing a PDF;
 - browser refresh or navigation.
@@ -127,7 +130,7 @@ The visible status must reflect the actual revision, not merely whether history 
 
 Undo and redo history is available only while the current document remains open in the current browser session.
 
-History is destroyed when the document is closed, replaced, or the page is unloaded. QuickPDF does not persist history.
+History is destroyed when the document is closed, replaced, or the page is unloaded. The session-local overlay clipboard is cleared at the same boundaries. QuickPDF does not persist history or copied overlay snapshots.
 
 ## Accessibility
 
@@ -143,7 +146,7 @@ Required automated coverage includes:
 
 - toolbar and keyboard invocation;
 - disabled states;
-- add, edit, font-size, font-family, move, resize, duplicate, and delete for every current overlay type;
+- add, paste, edit, font-size, font-family, move, resize, duplicate, and delete for every current overlay type;
 - coalesced typing and pointer gestures;
 - native editing-control shortcut guards;
 - redo clearing after a new edit;

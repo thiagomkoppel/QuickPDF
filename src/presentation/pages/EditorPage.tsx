@@ -449,6 +449,17 @@ export const EditorPage = ({
         const key = event.key.toLowerCase();
         const wantsUndo = key === "z" && !event.shiftKey;
         const wantsRedo = (key === "z" && event.shiftKey) || (!event.metaKey && key === "y");
+        if (key === "c" && state.selectedElementId !== undefined) {
+          event.preventDefault();
+          applySnapshot(editor.copySelectedElement());
+          return;
+        }
+        if (key === "v" && snapshot.canPaste) {
+          event.preventDefault();
+          setWhiteoutDraft(undefined);
+          applySnapshot(editor.pasteCopiedElement());
+          return;
+        }
         if (wantsUndo && snapshot.canUndo) {
           event.preventDefault();
           finishTextEditing();
@@ -515,6 +526,7 @@ export const EditorPage = ({
     editingTextElementId,
     editor,
     pointerAction,
+    snapshot.canPaste,
     snapshot.canRedo,
     snapshot.canUndo,
     state.selectedElement,

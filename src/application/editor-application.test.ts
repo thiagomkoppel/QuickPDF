@@ -564,6 +564,145 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     },
   );
 
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "copies and pastes selected %s overlays through a private session clipboard",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Copy text")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 12, y: 24, width: 90, height: 36 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 14, y: 28 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 16, y: 32 }, { text: "AL", fontFamily: "hand" });
+      const original = added.state.selectedElement;
+      expect(original).toBeDefined();
+      if (original === undefined) {
+        return;
+      }
+      const beforeUndo = added.canUndo;
+
+      const copied = app.copySelectedElement();
+      expect(copied.canPaste).toBe(true);
+      expect(copied.canUndo).toBe(beforeUndo);
+      expect(copied.canRedo).toBe(false);
+      expect(copied.state.isDirty).toBe(true);
+      expect(copied.state.selectedElementId).toBe(original.id);
+
+      const pasted = app.pasteCopiedElement();
+      const pastedElement = pasted.state.selectedElement;
+      expect(pastedElement).toBeDefined();
+      if (pastedElement === undefined) {
+        return;
+      }
+      expect(pastedElement.id).not.toBe(original.id);
+      expect(pastedElement.type).toBe(type);
+      expect(pastedElement.pageId).toBe("page-1");
+      expect(pastedElement.bounds).toEqual({
+        ...original.bounds,
+        x: original.bounds.x + 16,
+        y: original.bounds.y + 16,
+      });
+      expect(pastedElement.text).toBe(original.text);
+      expect(pastedElement.textAppearance).toEqual(original.textAppearance);
+      expect(pastedElement.image).toEqual(original.image);
+      expect(pasted.state.visibleElements).toHaveLength(2);
+      expect(pasted.state.isDirty).toBe(true);
+      expect(pasted.canUndo).toBe(true);
+
+      const undone = app.undo();
+      expect(undone.state.visibleElements.map((element) => element.id)).toEqual([original.id]);
+      expect(undone.state.selectedElementId).toBe(original.id);
+      expect(undone.canRedo).toBe(true);
+
+      const redone = app.redo();
+      expect(redone.state.visibleElements.map((element) => element.id)).toEqual([
+        original.id,
+        pastedElement.id,
+      ]);
+      expect(redone.state.selectedElementId).toBe(pastedElement.id);
+    },
+  );
+
+  it("does not alter history, redo, dirty state, or selection when copying with no selection", async () => {
+    app.addText({ x: 10, y: 20 }, "Original");
+    await app.exportCurrentPdf();
+    app.undo();
+    expect(app.snapshot().canRedo).toBe(true);
+    app.clearSelection();
+
+    const copied = app.copySelectedElement();
+
+    expect(copied.canPaste).toBe(false);
+    expect(copied.canRedo).toBe(true);
+    expect(copied.state.isDirty).toBe(true);
+    expect(copied.state.selectedElementId).toBeUndefined();
+  });
+
+  it("leaves browser paste untouched when the element clipboard is empty", () => {
+    const snapshot = app.pasteCopiedElement();
+
+    expect(snapshot.canPaste).toBe(false);
+    expect(snapshot.state.visibleElements).toHaveLength(0);
+    expect(snapshot.canUndo).toBe(false);
+    expect(snapshot.state.isDirty).toBe(false);
+  });
+
+  it("offsets repeated paste from the most recent pasted position and clamps to page bounds", () => {
+    const originalId = app.addText({ x: 280, y: 370 }, "Edge").state.selectedElementId;
+    expect(originalId).toBeDefined();
+    if (originalId === undefined) {
+      return;
+    }
+    app.copySelectedElement();
+
+    const firstPaste = app.pasteCopiedElement();
+    const first = firstPaste.state.selectedElement;
+    expect(first).toBeDefined();
+    if (first === undefined) {
+      return;
+    }
+    expect(first.bounds).toEqual({ x: 124, y: 344, width: 160, height: 40 });
+
+    const secondPaste = app.pasteCopiedElement();
+    const second = secondPaste.state.selectedElement;
+    expect(second).toBeDefined();
+    if (second === undefined) {
+      return;
+    }
+    expect(second.id).not.toBe(first.id);
+    expect(second.bounds).toEqual({ x: 108, y: 328, width: 160, height: 40 });
+  });
+
+  it("clears copied elements when a document is replaced or closed", async () => {
+    app.addText({ x: 10, y: 20 }, "Copied");
+    expect(app.copySelectedElement().canPaste).toBe(true);
+
+    await app.openFile(file);
+    expect(app.snapshot().canPaste).toBe(false);
+    expect(app.pasteCopiedElement().state.visibleElements).toHaveLength(0);
+
+    app.addText({ x: 10, y: 20 }, "Copied again");
+    expect(app.copySelectedElement().canPaste).toBe(true);
+    expect(app.closeDocument().canPaste).toBe(false);
+  });
+
+  it("keeps copied snapshots immutable from later source element edits", () => {
+    const elementId = app.addText({ x: 10, y: 20 }, "Original").state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.updateTextFontFamily(elementId, "courier");
+    app.copySelectedElement();
+    app.commitTextEdit(elementId, "Original", "Changed");
+    app.updateTextFontFamily(elementId, "times");
+
+    const pasted = app.pasteCopiedElement().state.selectedElement;
+
+    expect(pasted?.text).toBe("Original");
+    expect(pasted?.textAppearance?.fontFamily).toBe("courier");
+  });
   it("redoing an added text element restores later text updates on the same element", () => {
     const added = app.addText({ x: 10, y: 20 }, "Text");
     const elementId = added.state.selectedElementId;

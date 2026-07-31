@@ -20,8 +20,8 @@ Implemented proof-of-concept behavior:
 - add temporary whiteout visual cover rectangles by click-drag creation;
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
 - add drawn and typed initials overlays as one-shot placements;
-- select, move, resize, duplicate, and delete text, whiteout, signature, and initials overlays;
-- undo and redo overlay add, duplicate, delete, move, resize, text-content, text font-size, and text font-family commands with revision-based dirty state;
+- select, move, resize, duplicate, delete, and session-locally copy/paste text, whiteout, signature, and initials overlays;
+- undo and redo overlay add, paste, duplicate, delete, move, resize, text-content, text font-size, and text font-family commands with revision-based dirty state;
 - export the current PDF with text, whiteout, signature, and initials overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;
 - download the edited PDF through a browser adapter using a temporary object URL;
@@ -49,4 +49,4 @@ Prove that the application can safely and reliably:
 
 ## Recent assessment
 
-Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio. Undo/redo now covers overlay lifecycle, completed move and resize gestures, text-content editing sessions, and standard text font-family/font-size changes.
+Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio. Undo/redo now covers overlay lifecycle, session-local paste, completed move and resize gestures, text-content editing sessions, and standard text font-family/font-size changes.

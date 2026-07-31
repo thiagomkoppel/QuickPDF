@@ -50,9 +50,11 @@ Keyboard shortcuts:
 
 - `Ctrl+Z` / `Cmd+Z`: Undo;
 - `Ctrl+Shift+Z` / `Cmd+Shift+Z`: Redo;
-- `Ctrl+Y`: Redo on Windows and Linux.
+- Ctrl+Y: Redo on Windows and Linux;
+- Ctrl+C / Cmd+C: Copy the selected overlay into QuickPDF's private session clipboard;
+- Ctrl+V / Cmd+V: Paste the copied overlay onto the current page when the private clipboard has an element.
 
-QuickPDF must not hijack native text-field undo while the user is actively editing text.
+QuickPDF must not hijack native text-field undo, copy, or paste while the user is actively editing text or using another editing control.
 
 ---
 
@@ -170,7 +172,7 @@ While the current page is rendering, the UI shows rendering status. If rendering
 
 The editor toolbar includes Undo and Redo controls. They are disabled when the application history cannot move in that direction. Keyboard shortcuts are Ctrl+Z for undo and Ctrl+Y or Ctrl+Shift+Z for redo on Windows/Linux; Cmd+Z and Cmd+Shift+Z on macOS. Shortcuts do not override active text fields, text editing, selects, contenteditable controls, or the signature drawing canvas.
 
-History covers adding, deleting, duplicating, moving, resizing, text-content editing, text font-size changes, and text font-family changes for the current overlay model. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate. Undoing text-content or text-appearance changes restores the previous committed value and keeps the element selected when possible.
+History covers adding, pasting, deleting, duplicating, moving, resizing, text-content editing, text font-size changes, and text font-family changes for the current overlay model. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate. Undoing Paste removes the pasted element and clears selection; redoing Paste restores and selects that same pasted element ID. Undoing text-content or text-appearance changes restores the previous committed value and keeps the element selected when possible.
 
 Export marks the current revision clean but does not clear undo or redo history.
 
@@ -182,7 +184,7 @@ Creating text is fast: activate Text, click the page, and the new selected text 
 
 After creation, text selection and text editing are separate. A single click anywhere inside the visible text box selects the element for moving, resizing, duplicating, deleting, or changing text appearance. Double-clicking selected or unselected text, or pressing Enter while selected, enters text editing. Escape exits text editing, preserves and commits the current text, and keeps the element selected. Native textarea undo is preserved while the textarea has focus.
 
-With the Select tool active, clicking empty page space clears the selected overlay. Clicking an overlay selects it, dragging a selected overlay moves it, and clicking resize handles or editor controls does not trigger empty-space deselection. Clicking empty workspace outside the PDF page follows the same clearing policy unless the click is on editor controls.
+Copy and paste are canvas-overlay operations only. Copying keeps the current selection and does not mark the document dirty. Pasting creates a new selected overlay on the current page, offsets it from the copied snapshot, clamps it inside the page bounds, and marks the document dirty. The private overlay clipboard never uses browser clipboard APIs and is cleared when the document closes or is replaced.`r`n`r`nWith the Select tool active, clicking empty page space clears the selected overlay. Clicking an overlay selects it, dragging a selected overlay moves it, and clicking resize handles or editor controls does not trigger empty-space deselection. Clicking empty workspace outside the PDF page follows the same clearing policy unless the click is on editor controls.
 
 Creating whiteout uses pointer drag: activate Whiteout, press on the page, drag to define the rectangle, and release to create it. Tiny accidental drags are ignored. Whiteout remains a visual cover only.
 
