@@ -18,6 +18,7 @@ import {
   MAX_TEXT_FONT_SIZE,
   MIN_TEXT_FONT_SIZE,
   PdfEditorApplication,
+  validateImageFile,
   validateSignatureImageFile,
 } from "./editor-application";
 
@@ -506,6 +507,21 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     },
   );
 
+  it("undoing a newly added text element removes it even after initial text edits", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Text");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.updateText(elementId, "");
+    app.updateText(elementId, "History text");
+
+    const undone = app.undo();
+
+    expect(undone.state.visibleElements).toHaveLength(0);
+    expect(undone.state.selectedElementId).toBeUndefined();
+  });
   it("redoing an added text element restores later text updates on the same element", () => {
     const added = app.addText({ x: 10, y: 20 }, "Text");
     const elementId = added.state.selectedElementId;
@@ -709,6 +725,274 @@ describe("PdfEditorApplication signature and initials overlays", () => {
 
     await app.exportCurrentPdf();
     expect(exportRequests[0]?.elements).toEqual([]);
+  });
+  it("adds image overlays centered on the click, clamps them, and includes them in export", async () => {
+    const pngDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+
+    const snapshot = app.addImage(
+      { x: 150, y: 200 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 120, height: 60 },
+    );
+
+    expect(snapshot.state.selectedElement?.type).toBe("image");
+    expect(snapshot.state.selectedElement?.bounds).toEqual({
+      x: 90,
+      y: 170,
+      width: 120,
+      height: 60,
+    });
+    expect(snapshot.state.selectedElement?.image).toEqual({
+      dataUrl: pngDataUrl,
+      mimeType: "image/png",
+    });
+    expect(snapshot.state.isDirty).toBe(true);
+
+    await app.exportCurrentPdf();
+    expect(exportRequests[0]?.elements.at(-1)).toMatchObject({
+      type: "image",
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+  });
+
+  it("preserves image aspect ratio during resize, duplicate, copy, paste, undo, and redo", () => {
+    const jpgDataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2w==";
+    const added = app.addImage(
+      { x: 100, y: 100 },
+      { dataUrl: jpgDataUrl, mimeType: "image/jpeg", width: 200, height: 100 },
+    );
+    const imageId = added.state.selectedElementId;
+    expect(imageId).toBeDefined();
+    if (imageId === undefined) {
+      return;
+    }
+
+    const resized = app.resizeElement(imageId, { width: 80, height: 200 });
+    expect(resized.state.selectedElement?.bounds).toMatchObject({ width: 80, height: 40 });
+
+    const duplicated = app.duplicateElement(imageId);
+    expect(duplicated.state.selectedElement?.type).toBe("image");
+    expect(duplicated.state.selectedElement?.image?.mimeType).toBe("image/jpeg");
+
+    app.copySelectedElement();
+    expect(app.snapshot().canPaste).toBe(true);
+    const pasted = app.pasteCopiedElement();
+    const pastedId = pasted.state.selectedElementId;
+    expect(pastedId).toBeDefined();
+    expect(pasted.state.selectedElement?.type).toBe("image");
+    expect(pasted.state.selectedElement?.id).not.toBe(imageId);
+
+    const undone = app.undo();
+    expect(undone.state.visibleElements.some((element) => element.id === pastedId)).toBe(false);
+    const redone = app.redo();
+    expect(redone.state.selectedElementId).toBe(pastedId);
+    expect(redone.state.selectedElement?.image?.dataUrl).toBe(jpgDataUrl);
+  });
+
+  it("records image move and resize as later history entries while preserving identity and payload", async () => {
+    const pngDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+    const added = app.addImage(
+      { x: 100, y: 100 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 100, height: 50 },
+    );
+    const imageId = added.state.selectedElementId;
+    const startBounds = added.state.selectedElement?.bounds;
+    expect(imageId).toBeDefined();
+    expect(startBounds).toEqual({ x: 50, y: 75, width: 100, height: 50 });
+    if (imageId === undefined || startBounds === undefined) {
+      return;
+    }
+
+    await app.exportCurrentPdf();
+    expect(app.snapshot().state.isDirty).toBe(false);
+
+    const movePreview = app.previewMoveElement(imageId, { x: 72, y: 91 });
+    expect(movePreview.state.selectedElement?.bounds).toEqual({ ...startBounds, x: 72, y: 91 });
+    const moved = app.commitMoveElement(imageId, startBounds, { ...startBounds, x: 72, y: 91 });
+    expect(moved.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: { ...startBounds, x: 72, y: 91 },
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+    expect(moved.state.isDirty).toBe(true);
+
+    const movedBounds = moved.state.selectedElement?.bounds;
+    expect(movedBounds).toEqual({ ...startBounds, x: 72, y: 91 });
+    if (movedBounds === undefined) {
+      return;
+    }
+    app.previewResizeElement(imageId, { ...movedBounds, width: 180, height: 110 });
+    const resized = app.commitResizeElement(imageId, movedBounds, {
+      ...movedBounds,
+      width: 180,
+      height: 110,
+    });
+    expect(resized.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: { x: 72, y: 91, width: 180, height: 90 },
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+
+    const undoResize = app.undo();
+    expect(undoResize.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: movedBounds,
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+    const undoMove = app.undo();
+    expect(undoMove.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: startBounds,
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+    expect(undoMove.state.isDirty).toBe(false);
+    exportRequests = [];
+    await app.exportCurrentPdf();
+    expect(exportRequests[0]?.elements.at(-1)?.bounds).toEqual(startBounds);
+
+    const undoAdd = app.undo();
+    expect(undoAdd.state.visibleElements.some((element) => element.id === imageId)).toBe(false);
+
+    const redoAdd = app.redo();
+    expect(redoAdd.state.selectedElement).toMatchObject({ id: imageId, bounds: startBounds });
+    const redoMove = app.redo();
+    expect(redoMove.state.selectedElement).toMatchObject({ id: imageId, bounds: movedBounds });
+    const redoResize = app.redo();
+    expect(redoResize.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: { x: 72, y: 91, width: 180, height: 90 },
+      image: { dataUrl: pngDataUrl, mimeType: "image/png" },
+    });
+    exportRequests = [];
+    await app.exportCurrentPdf();
+    expect(exportRequests[0]?.elements.at(-1)?.bounds).toEqual({
+      x: 72,
+      y: 91,
+      width: 180,
+      height: 90,
+    });
+  });
+
+  it("restores image geometry on cancelled move or resize without adding history", () => {
+    const pngDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+    const added = app.addImage(
+      { x: 100, y: 100 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 100, height: 50 },
+    );
+    const imageId = added.state.selectedElementId;
+    const startBounds = added.state.selectedElement?.bounds;
+    expect(imageId).toBeDefined();
+    expect(startBounds).toBeDefined();
+    if (imageId === undefined || startBounds === undefined) {
+      return;
+    }
+
+    app.previewMoveElement(imageId, { x: 90, y: 105 });
+    const cancelledMove = app.previewMoveElement(imageId, { x: startBounds.x, y: startBounds.y });
+    expect(cancelledMove.state.selectedElement).toMatchObject({ id: imageId, bounds: startBounds });
+    const undoAfterMoveCancel = app.undo();
+    expect(
+      undoAfterMoveCancel.state.visibleElements.some((element) => element.id === imageId),
+    ).toBe(false);
+
+    const restored = app.redo();
+    expect(restored.state.selectedElement?.bounds).toEqual(startBounds);
+    app.previewResizeElement(imageId, { ...startBounds, width: 180, height: 110 });
+    const cancelledResize = app.previewResizeElement(imageId, startBounds);
+    expect(cancelledResize.state.selectedElement).toMatchObject({
+      id: imageId,
+      bounds: startBounds,
+    });
+    const undoAfterResizeCancel = app.undo();
+    expect(
+      undoAfterResizeCancel.state.visibleElements.some((element) => element.id === imageId),
+    ).toBe(false);
+  });
+  it("commits image resize history from the starting bounds after live preview", async () => {
+    const pngDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+    const added = app.addImage(
+      { x: 100, y: 100 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 100, height: 50 },
+    );
+    const imageId = added.state.selectedElementId;
+    expect(imageId).toBeDefined();
+    if (imageId === undefined) {
+      return;
+    }
+    const startBounds = added.state.selectedElement?.bounds;
+    expect(startBounds).toEqual({ x: 50, y: 75, width: 100, height: 50 });
+    if (startBounds === undefined) {
+      return;
+    }
+
+    const preview = app.previewResizeElement(imageId, { ...startBounds, width: 160, height: 90 });
+    expect(preview.state.selectedElement?.bounds).toEqual({ x: 50, y: 75, width: 160, height: 80 });
+    expect(preview.state.isDirty).toBe(true);
+
+    const committed = app.commitResizeElement(imageId, startBounds, {
+      ...startBounds,
+      width: 160,
+      height: 90,
+    });
+    expect(committed.state.selectedElement?.bounds).toEqual({
+      x: 50,
+      y: 75,
+      width: 160,
+      height: 80,
+    });
+
+    const undone = app.undo();
+    expect(undone.state.selectedElement?.bounds).toEqual(startBounds);
+    const redone = app.redo();
+    expect(redone.state.selectedElement?.bounds).toEqual({ x: 50, y: 75, width: 160, height: 80 });
+
+    await app.exportCurrentPdf();
+    expect(exportRequests[0]?.elements.at(-1)?.bounds).toEqual({
+      x: 50,
+      y: 75,
+      width: 160,
+      height: 80,
+    });
+  });
+  it("clears copied image data when the image document session is replaced or closed", async () => {
+    const pngDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5n7WQAAAABJRU5ErkJggg==";
+    app.addImage(
+      { x: 50, y: 50 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 20, height: 20 },
+    );
+    app.copySelectedElement();
+    expect(app.snapshot().canPaste).toBe(true);
+
+    await app.openFile(file);
+    expect(app.snapshot().canPaste).toBe(false);
+
+    app.addImage(
+      { x: 50, y: 50 },
+      { dataUrl: pngDataUrl, mimeType: "image/png", width: 20, height: 20 },
+    );
+    app.copySelectedElement();
+    expect(app.closeDocument().canPaste).toBe(false);
+  });
+
+  it("validates general image uploads without reading or persisting content", () => {
+    expect(validateImageFile({ name: "logo.png", size: 1000, type: "image/png" })).toBeUndefined();
+    expect(
+      validateImageFile({ name: "photo.jpeg", size: 1000, type: "image/jpeg" }),
+    ).toBeUndefined();
+    expect(validateImageFile({ name: "stamp.webp", size: 1000, type: "image/webp" })).toMatchObject(
+      {
+        code: "UnsupportedImage",
+      },
+    );
+    expect(
+      validateImageFile({ name: "large.jpg", size: 6 * 1024 * 1024, type: "image/jpeg" }),
+    ).toMatchObject({
+      code: "ImageTooLarge",
+    });
   });
   it("validates signature image uploads without reading or persisting content", () => {
     expect(

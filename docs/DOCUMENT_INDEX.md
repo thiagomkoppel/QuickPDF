@@ -124,7 +124,7 @@ Defines the entry page, drag-and-drop workflow, privacy messaging, and visual hi
 
 ### `05-ui/EDITOR_INTERFACE.md`
 
-Defines the editor layout, tools, inspector, selection/editing model, zoom, overlays, and Undo/Redo controls.
+Defines the editor layout, tools, inspector, selection/editing model, zoom, image insertion, overlays, clipboard, and Undo/Redo controls.
 
 ### `05-ui/USER_EXPERIENCE.md`
 

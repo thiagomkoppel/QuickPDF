@@ -5,7 +5,7 @@ export type PageId = Brand<string, "PageId">;
 export type ElementId = Brand<string, "ElementId">;
 
 export type DocumentSessionStatus = "ready" | "disposed";
-export type EditorElementType = "text" | "whiteout" | "signature" | "initials";
+export type EditorElementType = "text" | "whiteout" | "signature" | "initials" | "image";
 export type PageRotation = 0 | 90 | 180 | 270;
 
 export interface Bounds {
@@ -34,7 +34,17 @@ export interface ImageSignatureContent {
 }
 
 export type SignatureElementContent = TypedSignatureContent | ImageSignatureContent;
-export type EditorElementContent = TextElementContent | SignatureElementContent;
+
+export interface ImageElementContent {
+  readonly kind: "image-element";
+  readonly dataUrl: string;
+  readonly mimeType: "image/png" | "image/jpeg";
+  readonly naturalWidth: number;
+  readonly naturalHeight: number;
+}
+
+export type EditorElementContent =
+  TextElementContent | SignatureElementContent | ImageElementContent;
 
 export interface DocumentPage {
   readonly id: string;

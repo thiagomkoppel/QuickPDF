@@ -20,24 +20,25 @@ Implemented proof-of-concept behavior:
 - add temporary whiteout visual cover rectangles by click-drag creation;
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
 - add drawn and typed initials overlays as one-shot placements;
-- select, move, resize, duplicate, and delete text, whiteout, signature, and initials overlays;
-- undo and redo overlay add, duplicate, delete, text font-size, and text resize commands with revision-based dirty state;
-- export the current PDF with text, whiteout, signature, and initials overlays embedded;
+- add PNG, JPG, and JPEG image overlays through a browser-local file picker and click-to-place workflow;
+- select, move, resize, duplicate, delete, and session-local copy/paste text, whiteout, signature, initials, and image overlays;
+- undo and redo overlay add, paste, duplicate, delete, text font-size, text resize, and image lifecycle commands with revision-based dirty state;
+- export the current PDF with text, whiteout, signature, initials, and image overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;
 - download the edited PDF through a browser adapter using a temporary object URL;
 - keep the editor session open after successful download;
 - mark the current session clean after successful download;
 - preserve the current session when export fails.
 
-Not implemented: checkmarks, images, form filling, undo/redo, page organization, OCR, secure redaction, native editing of existing PDF text, persistence, backend services.
+Not implemented: checkmarks, form filling, page organization, OCR, secure redaction, native editing of existing PDF text, image cropping, image rotation, image filters, image opacity, persistence, backend services.
 
 ## Current objective
 
 Prove that the application can safely and reliably:
 
 1. open a local PDF without uploading it; Done for proof of concept.
-2. add text, visual whiteout, signatures, and initials as overlay elements; Done for current page.
-3. export a valid PDF containing those additions; Done for text, whiteout, signature, and initials overlays.
+2. add text, visual whiteout, signatures, initials, and images as overlay elements; Done for current page.
+3. export a valid PDF containing those additions; Done for text, whiteout, signature, initials, and image overlays.
 4. discard the document and editing state when the session ends; Started; full warning lifecycle remains future work.
 
 ## Blocking decisions
@@ -49,4 +50,4 @@ Prove that the application can safely and reliably:
 
 ## Recent assessment
 
-Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio.
+Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature, initials, and image overlays, and keeps export coordinates independent from zoom and device pixel ratio.

@@ -1,88 +1,273 @@
-# LANDING_PAGE.md
+# QuickPDF Landing Page
 
 ## Purpose
 
-The landing page has one goal:
+The landing page has one primary job:
 
-Open a PDF.
+> Help the user open a local PDF immediately and confidently.
 
-Nothing else.
+It must not become a long marketing site or dashboard.
 
----
+## Product promise
 
-# User Journey
+Primary heading:
 
-User arrives.
+> Edit PDFs in seconds.
 
-↓
+Supporting message:
 
-Drops PDF.
+> Your files stay in your browser.
 
-↓
+The page should communicate:
 
-Editor opens.
+- no upload;
+- no account;
+- free to use;
+- session-only document handling.
 
-The ideal interaction takes less than ten seconds.
+## Information hierarchy
 
----
+1. QuickPDF identity
+2. Clear product promise
+3. Large drag-and-drop interaction
+4. Privacy reassurance
+5. Minimal supporting details
 
-# Layout
+Avoid testimonials, pricing tables, blog cards, comparison grids, and oversized navigation.
 
-Top
+## Desktop layout
 
-Logo
+Recommended structure:
 
-Center
+```text
+Header: QuickPDF logo/name
 
-Large drag-and-drop area
+Hero heading
+Supporting privacy message
 
-Bottom
+Large interactive drop zone
 
-Privacy reassurance
+Short reassurance row:
+Private · Browser-only · No account · Free
 
----
+Minimal footer links
+```
 
-# Drag & Drop
+The drop zone must be the dominant interactive object.
 
-The drag-and-drop area is the primary CTA.
+## Entire drop zone is interactive
 
-Requirements:
+The full drop zone must:
 
-- large
-- highly visible
-- works immediately
-- accepts click and drop
+- accept drag-and-drop;
+- open the file picker on click;
+- be keyboard activatable;
+- have a clear accessible name;
+- support focus styling;
+- not require clicking a small nested button.
 
----
+The nested **Choose PDF** button may remain as a secondary explicit affordance.
 
-# Primary Message
+## Drop-zone states
 
-Edit PDFs in seconds.
+### Idle
 
-Everything stays in your browser.
+Visual behavior:
 
----
+- large rounded surface;
+- subtle dashed or softly segmented border;
+- centered document/PDF icon;
+- calm low-opacity primary glow;
+- concise title and support text;
+- prominent Choose PDF button.
 
-# Supporting Text
+Suggested copy:
 
-No uploads.
+> Drop your PDF here
 
-No account.
+> or choose a file from your device
 
-100% private.
+Supporting line:
 
----
+> Your document never leaves this browser session.
 
-# Avoid
+### Keyboard focus
 
-Testimonials
+- visible focus ring around the complete drop zone;
+- no layout shift;
+- Enter and Space open the file picker;
+- screen reader announces accepted file type.
 
-Pricing
+### Drag enter
 
-Blog
+When a valid drag first enters the page:
 
-Feature comparison
+- drop zone brightens;
+- border becomes primary;
+- glow intensifies slightly;
+- surface lifts by approximately `2–4px`;
+- icon rises or tilts subtly;
+- message becomes `Release to open your PDF`.
 
-Marketing sections
+The response should be immediate but calm.
 
-Complex navigation
+### Drag over
+
+While the pointer remains over the drop zone:
+
+- keep the elevated state stable;
+- optionally render a subtle cursor-following radial highlight;
+- do not run distracting particles continuously;
+- do not obscure text;
+- keep motion under the reduced-motion policy.
+
+### Drag leave
+
+- return smoothly to idle within `150–200ms`;
+- avoid flickering when moving over child elements;
+- use drag-depth tracking or equivalent logic.
+
+### Valid drop
+
+Suggested sequence:
+
+1. Prevent browser navigation.
+2. Validate the file locally.
+3. Show a brief landing response: icon/card settles toward center.
+4. Replace idle content with `Opening your PDF…`.
+5. Show progress/spinner without delaying actual work.
+6. Transition into the editor without a full-screen visual flash.
+
+The file-opening operation must start immediately. Animation must never become a blocking preloader.
+
+### Loading
+
+- stable drop-zone dimensions;
+- progress indicator and plain-language message;
+- file name may be shown only locally and must not enter telemetry;
+- no layout jump;
+- prevent duplicate opens while loading;
+- provide cancellation only if the current architecture can do so safely.
+
+### Success transition
+
+- crossfade or shared-surface transition into the editor;
+- total transition target: approximately `180–300ms`;
+- keep the editor usable as soon as the PDF is ready;
+- avoid celebratory effects.
+
+### Invalid file
+
+Examples:
+
+- wrong extension/type;
+- malformed PDF;
+- unreadable file;
+- multiple files;
+- unsupported encrypted/password-protected PDF.
+
+Behavior:
+
+- keep the user on the landing page;
+- show a concise error inside or immediately below the drop zone;
+- use icon, text, and color;
+- optional small horizontal shake: maximum `4–6px`, one cycle;
+- return to ready state without requiring a page reload;
+- do not expose stack traces or raw library errors.
+
+Suggested copy:
+
+> That file could not be opened as a PDF. Choose another file and try again.
+
+### Multiple files
+
+QuickPDF initially accepts one PDF at a time.
+
+Suggested copy:
+
+> Open one PDF at a time.
+
+Do not silently choose the first file.
+
+### Password-protected PDF
+
+Until password entry is supported:
+
+> This PDF is password protected and cannot be opened yet.
+
+Do not imply that the password can be removed.
+
+### Oversized or resource-heavy PDF
+
+If the app enforces a practical limit or fails gracefully:
+
+- explain that the document is too large for the current browser session;
+- avoid claiming an arbitrary universal file-size maximum unless enforced;
+- keep the original file untouched.
+
+## Visual style
+
+- warm off-white application background;
+- large white drop zone;
+- low-opacity purple/indigo glow;
+- subtle document/page texture at `2–3%` opacity;
+- generous whitespace;
+- no stock photography;
+- no fake cloud illustrations.
+
+## Signature micro-interaction
+
+The drag-and-drop interaction is a defining QuickPDF experience.
+
+Preferred motion:
+
+- idle icon floating movement: optional and extremely subtle;
+- drag enter lift: `160–200ms`;
+- glow increase: `180ms`;
+- drop settle: `180–240ms`;
+- loading transition: immediate with no artificial delay.
+
+Reduced motion:
+
+- remove floating, tilt, ripple, and scale effects;
+- retain border, color, text, and progress changes.
+
+## Mobile
+
+- drop zone remains large and centered;
+- minimum touch height should comfortably exceed `180px`;
+- primary button spans most of the drop-zone width;
+- drag copy remains, but file-picker use is expected to dominate;
+- privacy message stays visible without requiring deep scrolling.
+
+## Accessibility
+
+- semantic button or label/input relationship;
+- drag-and-drop is never the only method;
+- errors announced through an appropriate live region;
+- loading state announced without repetitive updates;
+- full keyboard operation;
+- focus is restored appropriately after errors;
+- contrast meets WCAG AA.
+
+## Privacy copy
+
+Use accurate language:
+
+- `Your PDF stays in this browser session.`
+- `Nothing is uploaded to QuickPDF.`
+- `Closing the document or tab may discard your edits.`
+
+Avoid unverifiable claims such as cryptographic deletion from memory.
+
+## Explicitly avoid
+
+- account/sign-in prompts;
+- recent-files lists;
+- cloud import buttons;
+- pricing banners;
+- subscription upsells;
+- testimonial walls;
+- large feature grids before the drop zone;
+- automatic upload wording;
+- animations that delay file opening.

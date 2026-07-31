@@ -497,7 +497,8 @@ test("selects text with one click and edits text only through explicit edit acti
   const secondEditor = page.getByLabel("Edit text element");
   await secondEditor.fill("Draft text");
   await secondEditor.press("Escape");
-  await page.getByLabel("Text element content").dblclick();
+  await page.getByRole("group", { name: "text element" }).focus();
+  await page.keyboard.press("Enter");
   const reopenedEditor = page.getByLabel("Edit text element");
   await reopenedEditor.fill("Edited text");
   await reopenedEditor.press("Escape");
@@ -581,8 +582,8 @@ test("undoes and redoes overlay add/delete history and exports the final state",
   await page.getByRole("button", { name: "Text" }).click();
   await page.mouse.click(overlayBox.x + 170, overlayBox.y + 220);
   const firstText = page.getByLabel("Edit text element");
-  await firstText.fill("History text");
   await firstText.press("Escape");
+  await expect(page.getByLabel("Edit text element")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Undo" }).click();
@@ -590,13 +591,13 @@ test("undoes and redoes overlay add/delete history and exports the final state",
   await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Redo" }).click();
-  await expect(page.getByText("History text")).toBeVisible();
+  await expect(page.getByLabel("Text element content")).toHaveText("Text");
 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
 
-  await page.keyboard.press("Control+Z");
-  await expect(page.getByText("History text")).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Text element content")).toHaveText("Text");
 
   await page.keyboard.press("Control+Y");
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
@@ -721,6 +722,131 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
     .toBe(false);
+});
+test("inserts, edits, copies, pastes, exports, and reopens an image overlay", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("image-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+  const imagePath = testInfo.outputPath("quickpdf-image.png");
+  const blackPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mNkAAAAAAUAAY27m/MAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await import("node:fs/promises").then((fs) => fs.writeFile(imagePath, blackPng));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "image-fixture.pdf" })).toBeVisible();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  await expect(page.getByRole("button", { name: "Image" })).toHaveCount(1);
+  await expect(page.locator('input[aria-label="Choose image"]')).toBeHidden();
+  await expect(page.getByText(/Choose File|No file chosen/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Image" }).click();
+  await page.locator('input[aria-label="Choose image"]').setInputFiles(imagePath);
+  await expect(page.getByText("Click the PDF page to place the image.")).toBeVisible();
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+  await page.mouse.click(overlayBox.x + 140, overlayBox.y + 160);
+  const image = page.getByRole("group", { name: "image element" }).first();
+  await expect(image).toBeVisible();
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
+  const renderedImage = image.locator("img");
+  const placedSelectionBox = await image.boundingBox();
+  const placedImageBox = await renderedImage.boundingBox();
+  expect(placedSelectionBox).not.toBeNull();
+  expect(placedImageBox).not.toBeNull();
+  if (placedSelectionBox === null || placedImageBox === null) {
+    return;
+  }
+  expect(Math.abs(placedSelectionBox.x - placedImageBox.x)).toBeLessThan(1);
+  expect(Math.abs(placedSelectionBox.y - placedImageBox.y)).toBeLessThan(1);
+  expect(Math.abs(placedSelectionBox.width - placedImageBox.width)).toBeLessThan(1);
+  expect(Math.abs(placedSelectionBox.height - placedImageBox.height)).toBeLessThan(1);
+
+  const initialBox = await image.boundingBox();
+  expect(initialBox).not.toBeNull();
+  if (initialBox === null) {
+    return;
+  }
+  const resizeHandle = page.getByLabel("Resize image element");
+  const movedBox = initialBox;
+  const imageSourceBeforeResize = await renderedImage.getAttribute("src");
+  const intermediateBoxes: { width: number; height: number }[] = [];
+  await resizeHandle.hover();
+  await page.mouse.down();
+  for (const delta of [4, 7, 10, 13, 16, 18]) {
+    await page.mouse.move(
+      movedBox.x + movedBox.width + delta,
+      movedBox.y + movedBox.height + delta,
+    );
+    await page.waitForTimeout(20);
+    const intermediateBox = await image.boundingBox();
+    expect(intermediateBox).not.toBeNull();
+    if (intermediateBox !== null) {
+      intermediateBoxes.push({ width: intermediateBox.width, height: intermediateBox.height });
+    }
+    await expect(renderedImage).toBeVisible();
+  }
+  await page.mouse.up();
+  expect(await renderedImage.getAttribute("src")).toBe(imageSourceBeforeResize);
+  expect(intermediateBoxes.length).toBeGreaterThan(2);
+  for (let index = 1; index < intermediateBoxes.length; index += 1) {
+    const previousBox = intermediateBoxes[index - 1];
+    const currentBox = intermediateBoxes[index];
+    expect(previousBox).toBeDefined();
+    expect(currentBox).toBeDefined();
+    if (previousBox === undefined || currentBox === undefined) {
+      return;
+    }
+    expect(currentBox.width).toBeGreaterThanOrEqual(previousBox.width - 1);
+    expect(currentBox.height).toBeGreaterThanOrEqual(previousBox.height - 1);
+  }
+  const resizedSelectionBox = await image.boundingBox();
+  const resizedImageBox = await renderedImage.boundingBox();
+  expect(resizedSelectionBox).not.toBeNull();
+  expect(resizedImageBox).not.toBeNull();
+  if (resizedSelectionBox === null || resizedImageBox === null) {
+    return;
+  }
+  expect(resizedSelectionBox.width).toBeGreaterThan(movedBox.width);
+  expect(Math.abs(resizedSelectionBox.width - resizedImageBox.width)).toBeLessThan(1);
+  expect(Math.abs(resizedSelectionBox.height - resizedImageBox.height)).toBeLessThan(1);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  const undoneResizeBox = await image.boundingBox();
+  expect(undoneResizeBox).not.toBeNull();
+  if (undoneResizeBox === null) {
+    return;
+  }
+  expect(Math.abs(undoneResizeBox.width - movedBox.width)).toBeLessThan(1);
+  await page.getByRole("button", { name: "Redo" }).click();
+  const redoneResizeBox = await image.boundingBox();
+  expect(redoneResizeBox).not.toBeNull();
+  if (redoneResizeBox === null) {
+    return;
+  }
+  expect(Math.abs(redoneResizeBox.width - resizedSelectionBox.width)).toBeLessThan(1);
+
+  await page.keyboard.press("Control+C");
+  await page.keyboard.press("Control+V");
+  await expect(page.getByRole("group", { name: "image element" })).toHaveCount(2);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "image element" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByRole("group", { name: "image element" })).toHaveCount(2);
+
+  const downloadedPath = testInfo.outputPath("image-fixture-edited.pdf");
+  await downloadEditedPdf(page, "image-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(page.getByRole("heading", { name: "image-fixture-edited.pdf" })).toBeVisible();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 });
 test("draws, resizes, exports, and reopens a signature", async ({ page }, testInfo) => {
   const fixturePath = testInfo.outputPath("draw-signature-fixture.pdf");

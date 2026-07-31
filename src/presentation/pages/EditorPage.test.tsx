@@ -30,11 +30,14 @@ interface TestEditor extends PdfEditorApplication {
   readonly selectElement: Mock;
   readonly clearSelection: Mock;
   readonly moveElement: Mock;
+  readonly previewMoveElement: Mock;
+  readonly commitMoveElement: Mock;
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
   readonly updateText: Mock;
   readonly updateTextFontSize: Mock;
   readonly resizeElement: Mock;
+  readonly commitResizeElement: Mock;
   readonly previewResizeElement: Mock;
   readonly previewTextResizeElement: Mock;
   readonly commitTextResizeElement: Mock;
@@ -50,6 +53,7 @@ const baseSnapshot = (overrides: Partial<EditorSnapshot["state"]> = {}): EditorS
   canExport: true,
   canUndo: false,
   canRedo: false,
+  canPaste: false,
   state: {
     status: "ready",
     fileName: "visible.pdf",
@@ -85,6 +89,21 @@ const createEditor = (): TestEditor =>
       });
     }),
     addWhiteout: vi.fn(() => baseSnapshot()),
+    addImage: vi.fn(() => {
+      const element: ExportElement = {
+        id: "image-1",
+        pageId: "page-1",
+        type: "image",
+        bounds: { x: 70, y: 80, width: 80, height: 40 },
+        image: { dataUrl: "data:image/png;base64,image", mimeType: "image/png" },
+      };
+      return baseSnapshot({
+        selectedElementId: element.id,
+        selectedElement: element,
+        visibleElements: [element],
+        isDirty: true,
+      });
+    }),
     addTypedSignature: vi.fn(() =>
       baseSnapshot({
         selectedElementId: "signature-1",
@@ -117,8 +136,13 @@ const createEditor = (): TestEditor =>
     addDrawnInitials: vi.fn(() => baseSnapshot()),
     selectElement: vi.fn(() => baseSnapshot()),
     clearSelection: vi.fn(() => baseSnapshot()),
+    copySelectedElement: vi.fn(() => baseSnapshot({ selectedElementId: "image-1" })),
+    pasteCopiedElement: vi.fn(() => baseSnapshot({ selectedElementId: "image-copy" })),
     moveElement: vi.fn(() => baseSnapshot()),
+    previewMoveElement: vi.fn(() => baseSnapshot()),
+    commitMoveElement: vi.fn(() => baseSnapshot()),
     resizeElement: vi.fn(() => baseSnapshot()),
+    commitResizeElement: vi.fn(() => baseSnapshot()),
     previewResizeElement: vi.fn(() => baseSnapshot()),
     previewTextResizeElement: vi.fn(() => baseSnapshot()),
     commitTextResizeElement: vi.fn(() => baseSnapshot()),
@@ -158,6 +182,13 @@ const selectedElementForType = (type: ExportElement["type"]): ExportElement => {
       type,
       text: "Editable text",
       textAppearance: { fontSize: 16, color: "#111111" },
+    };
+  }
+  if (type === "image") {
+    return {
+      ...base,
+      type,
+      image: { dataUrl: "data:image/png;base64,image", mimeType: "image/png" },
     };
   }
   if (type === "signature" || type === "initials") {
@@ -221,6 +252,39 @@ const dispatchPointerEvent = (
   act(() => {
     target.dispatchEvent(event);
   });
+};
+
+const installControlledRaf = () => {
+  let nextId = 1;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const requestSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId;
+    nextId += 1;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancelSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    callbacks.delete(id);
+  });
+  return {
+    requestSpy,
+    cancelSpy,
+    pendingCount: () => callbacks.size,
+    flushLatest: () => {
+      const latest = Array.from(callbacks.entries()).at(-1);
+      callbacks.clear();
+      if (latest !== undefined) {
+        act(() => {
+          latest[1](performance.now());
+        });
+      }
+    },
+    restore: () => {
+      callbacks.clear();
+      requestSpy.mockRestore();
+      cancelSpy.mockRestore();
+    },
+  };
 };
 const textSnapshot = (text: string, fontSize = 16): EditorSnapshot => {
   const element: ExportElement = {
@@ -771,6 +835,7 @@ describe("EditorPage PDF rendering", () => {
           canExport: false,
           canUndo: false,
           canRedo: false,
+          canPaste: false,
           state: {
             status: "empty",
             pageCount: 0,
@@ -1089,19 +1154,27 @@ describe("EditorPage PDF rendering", () => {
     Object.defineProperties(move, {
       clientX: { value: 75 },
       clientY: { value: 85 },
+      pointerId: { value: 1 },
     });
     const up = new Event("pointerup", { bubbles: true });
+    Object.defineProperty(up, "pointerId", { value: 1 });
     act(() => {
-      window.dispatchEvent(move);
-      window.dispatchEvent(up);
+      text.dispatchEvent(move);
+      text.dispatchEvent(up);
     });
 
     await waitFor(() => {
-      expect(editor.moveElement).toHaveBeenCalledWith(
+      expect(editor.previewMoveElement).toHaveBeenCalledWith(
         "text-1",
         expect.objectContaining({ x: 60, y: 70 }),
       );
     });
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      "text-1",
+      { x: 40, y: 50, width: 120, height: 48 },
+      expect.objectContaining({ x: 60, y: 70, width: 120, height: 48 }),
+    );
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
   });
 
@@ -1307,7 +1380,7 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.updateTextFontSize).toHaveBeenCalledWith("text-1", 24);
   });
 
-  it.each(["whiteout", "signature", "initials"] as const)(
+  it.each(["whiteout", "signature", "initials", "image"] as const)(
     "hides the font-size control for selected %s overlays",
     (type) => {
       render(
@@ -1472,6 +1545,503 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByLabelText("Whiteout preview")).toBeNull();
   });
 
+  it("rejects unsupported image uploads without entering placement mode", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.upload(
+      screen.getByLabelText("Choose image"),
+      new File(["webp"], "stamp.webp", { type: "image/webp" }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Use a PNG, JPG, or JPEG image.");
+    expect(editor.setTool).not.toHaveBeenCalledWith("image");
+    expect((editor.addImage as Mock).mock.calls).toEqual([]);
+  });
+
+  it("loads a PNG locally, enters image placement mode, and places it on the clicked PDF page", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    const OriginalImage = window.Image;
+    class TestImage extends EventTarget {
+      public naturalWidth = 80;
+      public naturalHeight = 40;
+      public set src(_value: string) {
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    Object.defineProperty(window, "Image", { configurable: true, value: TestImage });
+    const { rerender } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const imageInput = screen.getByLabelText("Choose image");
+    const pngFile = new File(["png"], "logo.png", { type: "image/png" });
+    await user.upload(imageInput, pngFile);
+    await waitFor(() => {
+      expect(editor.setTool).toHaveBeenCalledWith("image");
+    });
+    expect(imageInput).toHaveValue("");
+    await user.upload(imageInput, pngFile);
+    await waitFor(() => {
+      expect(editor.setTool).toHaveBeenCalledTimes(2);
+    });
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({ tool: "image" })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 300, height: 400, right: 310, bottom: 420 }),
+    });
+
+    fireEvent.click(overlay, { clientX: 110, clientY: 140 });
+
+    expect((editor.addImage as Mock).mock.calls[0]).toEqual([
+      { x: 100, y: 120 },
+      expect.objectContaining({ mimeType: "image/png", width: 80, height: 40 }),
+    ]);
+    expect(editor.setTool).toHaveBeenLastCalledWith("select");
+    Object.defineProperty(window, "Image", { configurable: true, value: OriginalImage });
+  });
+
+  it("renders selected image overlays with shared inspector actions", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("image")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("group", { name: "image element" })).toBeVisible();
+    expect(
+      screen.getByRole("complementary", { name: "Selected element actions" }),
+    ).toHaveTextContent("Image");
+    expect(screen.getByRole("button", { name: "Duplicate" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
+    expect(screen.getByLabelText("Resize image element")).toBeVisible();
+  });
+
+  it("uses one geometry for selected image bounds, rendered img, and hit area", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("image")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const imageOverlay = screen.getByRole("group", { name: "image element" });
+    const image = imageOverlay.querySelector("img");
+
+    expect(imageOverlay).toHaveStyle({ left: "40px", top: "50px", width: "120px", height: "48px" });
+    expect(image).toHaveStyle({
+      width: "100%",
+      height: "100%",
+      objectFit: "fill",
+      display: "block",
+    });
+    expect(screen.getByLabelText("Resize image element")).toBeVisible();
+  });
+
+  it("moves image overlays through preview, one commit, undo, and redo without removing the image", async () => {
+    const editor = createEditor();
+    const initialElement = selectedElementForType("image");
+    const movedElement: ExportElement = {
+      ...initialElement,
+      bounds: { x: 64, y: 68, width: 120, height: 48 },
+    };
+    editor.selectElement.mockImplementation(() =>
+      baseSnapshot({
+        selectedElementId: initialElement.id,
+        selectedElement: initialElement,
+        visibleElements: [initialElement],
+      }),
+    );
+    editor.previewMoveElement.mockImplementation(() =>
+      baseSnapshot({
+        selectedElementId: movedElement.id,
+        selectedElement: movedElement,
+        visibleElements: [movedElement],
+      }),
+    );
+    editor.commitMoveElement.mockImplementation(() => ({
+      ...baseSnapshot({
+        selectedElementId: movedElement.id,
+        selectedElement: movedElement,
+        visibleElements: [movedElement],
+      }),
+      canUndo: true,
+    }));
+    editor.undo.mockImplementation(() => ({
+      ...baseSnapshot({
+        selectedElementId: initialElement.id,
+        selectedElement: initialElement,
+        visibleElements: [initialElement],
+      }),
+      canRedo: true,
+    }));
+    editor.redo.mockImplementation(() =>
+      baseSnapshot({
+        selectedElementId: movedElement.id,
+        selectedElement: movedElement,
+        visibleElements: [movedElement],
+      }),
+    );
+    renderStatefulEditor(editor, selectedSnapshot("image"));
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByRole("group", { name: "image element" }), "pointerdown", {
+      clientX: 52,
+      clientY: 62,
+      pointerId: 31,
+    });
+    const imageElement = screen.getByRole("group", { name: "image element" });
+    dispatchPointerEvent(imageElement, "pointermove", { clientX: 76, clientY: 80, pointerId: 31 });
+    dispatchPointerEvent(imageElement, "pointerup", { clientX: 76, clientY: 80, pointerId: 31 });
+
+    expect(editor.previewMoveElement).toHaveBeenCalledWith("image-1", { x: 64, y: 68 });
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      "image-1",
+      { x: 40, y: 50, width: 120, height: 48 },
+      { x: 64, y: 68, width: 120, height: 48 },
+    );
+    expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+      left: "64px",
+      top: "68px",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+      left: "40px",
+      top: "50px",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+      left: "64px",
+      top: "68px",
+    });
+  });
+  it("keeps the image node and src stable while batching resize previews to one frame", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    const renderer = createRenderer();
+    try {
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("image")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={renderer}
+        />,
+      );
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+      const imageOverlay = screen.getByRole("group", { name: "image element" });
+      const image = imageOverlay.querySelector("img");
+      expect(image).toBeInstanceOf(HTMLImageElement);
+      const startingSrc = image?.getAttribute("src");
+
+      dispatchPointerEvent(screen.getByLabelText("Resize image element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 21,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 180, clientY: 106, pointerId: 21 });
+      dispatchPointerEvent(window, "pointermove", { clientX: 200, clientY: 114, pointerId: 21 });
+      dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 21 });
+
+      expect(raf.requestSpy).toHaveBeenCalledTimes(1);
+      expect(raf.pendingCount()).toBe(1);
+      expect(editor.previewResizeElement).not.toHaveBeenCalled();
+      expect(imageOverlay).toHaveStyle({ width: "120px", height: "48px" });
+
+      raf.flushLatest();
+
+      const updatedOverlay = screen.getByRole("group", { name: "image element" });
+      const updatedImage = updatedOverlay.querySelector("img");
+      expect(updatedImage).toBe(image);
+      expect(updatedImage?.getAttribute("src")).toBe(startingSrc);
+      expect(updatedOverlay).toHaveStyle({ width: "180px", height: "72px" });
+      expect(updatedOverlay).toHaveClass("is-resizing");
+      expect(updatedImage).toHaveStyle({ width: "100%", height: "100%" });
+      expect(renderer.startRenderPage).toHaveBeenCalledTimes(1);
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("commits the latest image resize geometry even when the pending frame has not painted", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    const resizedElement: ExportElement = {
+      ...selectedElementForType("image"),
+      bounds: { x: 40, y: 50, width: 180, height: 72 },
+    };
+    editor.commitResizeElement.mockImplementation(() =>
+      baseSnapshot({
+        selectedElementId: resizedElement.id,
+        selectedElement: resizedElement,
+        visibleElements: [resizedElement],
+        isDirty: true,
+      }),
+    );
+    try {
+      renderStatefulEditor(editor, selectedSnapshot("image"));
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+
+      dispatchPointerEvent(screen.getByLabelText("Resize image element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 21,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 200, clientY: 114, pointerId: 21 });
+      dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 21 });
+      dispatchPointerEvent(window, "pointerup", { clientX: 220, clientY: 122, pointerId: 21 });
+
+      expect(raf.cancelSpy).toHaveBeenCalled();
+      expect(editor.previewResizeElement).not.toHaveBeenCalled();
+      expect(editor.commitResizeElement).toHaveBeenCalledTimes(1);
+      expect(editor.commitResizeElement).toHaveBeenCalledWith(
+        "image-1",
+        { x: 40, y: 50, width: 120, height: 48 },
+        { x: 40, y: 50, width: 180, height: 72 },
+      );
+      expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+        width: "180px",
+        height: "72px",
+      });
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("cancels image resize by restoring original dimensions without history", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    try {
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("image")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+
+      dispatchPointerEvent(screen.getByLabelText("Resize image element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 22,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 22 });
+      raf.flushLatest();
+      expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+        width: "180px",
+        height: "72px",
+      });
+
+      dispatchPointerEvent(window, "pointercancel", { clientX: 220, clientY: 122, pointerId: 22 });
+
+      expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+        width: "120px",
+        height: "48px",
+      });
+      expect(editor.previewResizeElement).not.toHaveBeenCalled();
+      expect(editor.commitResizeElement).not.toHaveBeenCalled();
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("cancels pending image resize frames on Escape", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    try {
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("image")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+
+      dispatchPointerEvent(screen.getByLabelText("Resize image element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 23,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 23 });
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+
+      expect(raf.cancelSpy).toHaveBeenCalled();
+      expect(raf.pendingCount()).toBe(0);
+      expect(screen.getByRole("group", { name: "image element" })).toHaveStyle({
+        width: "120px",
+        height: "48px",
+      });
+      expect(editor.previewResizeElement).not.toHaveBeenCalled();
+      expect(editor.commitResizeElement).not.toHaveBeenCalled();
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("cancels pending image resize frames on unmount and document close", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    try {
+      const view = render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("image")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+
+      dispatchPointerEvent(screen.getByLabelText("Resize image element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 24,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 24 });
+      const openSnapshot = baseSnapshot();
+      const { currentPage, selectedElement, selectedElementId, ...closedState } =
+        openSnapshot.state;
+      void currentPage;
+      void selectedElement;
+      void selectedElementId;
+      view.rerender(
+        <EditorPage
+          editor={editor}
+          snapshot={{
+            ...openSnapshot,
+            state: { ...closedState, elements: [], visibleElements: [] },
+          }}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+
+      expect(raf.cancelSpy).toHaveBeenCalled();
+      expect(raf.pendingCount()).toBe(0);
+
+      dispatchPointerEvent(window, "pointermove", { clientX: 230, clientY: 126, pointerId: 24 });
+      view.unmount();
+
+      expect(raf.pendingCount()).toBe(0);
+      expect(editor.commitResizeElement).not.toHaveBeenCalled();
+    } finally {
+      raf.restore();
+    }
+  });
+  it("exposes one visible Image button backed by a hidden reusable file input", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("Rendering PDF page...")).toBeNull();
+    });
+    const imageButton = screen.getByRole("button", { name: "Image" });
+    const imageInput = screen.getByLabelText("Choose image");
+    const clickSpy = vi.spyOn(imageInput, "click");
+
+    expect(screen.getAllByRole("button", { name: "Image" })).toHaveLength(1);
+    expect(imageInput).not.toBeVisible();
+    expect(screen.queryByText(/No file chosen/i)).toBeNull();
+
+    await user.click(imageButton);
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(imageInput).toHaveValue("");
+  });
+  it("handles copy and paste shortcuts for selected image overlays through the private clipboard", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...selectedSnapshot("image"), canPaste: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const copy = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "c",
+    });
+    const paste = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+      key: "v",
+    });
+
+    act(() => {
+      window.dispatchEvent(copy);
+      window.dispatchEvent(paste);
+    });
+
+    expect(copy.defaultPrevented).toBe(true);
+    expect(paste.defaultPrevented).toBe(true);
+    expect((editor.copySelectedElement as Mock).mock.calls).toHaveLength(1);
+    expect((editor.pasteCopiedElement as Mock).mock.calls).toHaveLength(1);
+  });
   it.each(["select", "text", "whiteout", "signature", "initials"] as const)(
     "marks the %s tool as active with aria-pressed",
     async (tool) => {
@@ -1491,7 +2061,7 @@ describe("EditorPage PDF rendering", () => {
       expect(editor.setTool).toHaveBeenCalledWith(tool);
     },
   );
-  it.each(["whiteout", "signature", "initials"] as const)(
+  it.each(["whiteout", "signature", "initials", "image"] as const)(
     "keeps %s selection behavior unchanged",
     async (type) => {
       const user = userEvent.setup();
@@ -1512,7 +2082,7 @@ describe("EditorPage PDF rendering", () => {
       expect(screen.queryByLabelText("Edit text element")).toBeNull();
     },
   );
-  it.each(["text", "whiteout", "signature", "initials"] as const)(
+  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
     "shows shared delete and duplicate actions for selected %s overlays",
     (type) => {
       const editor = createEditor();
@@ -1532,7 +2102,7 @@ describe("EditorPage PDF rendering", () => {
     },
   );
 
-  it.each(["text", "whiteout", "signature", "initials"] as const)(
+  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
     "routes shared delete and duplicate controls for selected %s overlays through application use cases",
     async (type) => {
       const user = userEvent.setup();
@@ -1553,7 +2123,7 @@ describe("EditorPage PDF rendering", () => {
     },
   );
 
-  it.each(["text", "whiteout", "signature", "initials"] as const)(
+  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
     "deletes selected %s overlays with the keyboard",
     (type) => {
       const editor = createEditor();

@@ -104,7 +104,32 @@ const imageInitialsElement = (id: string, pageId: string): ExportElement => ({
   source: "draw",
 });
 
+const generalImageElement = (id: string, pageId: string): ExportElement => ({
+  id,
+  pageId,
+  type: "image",
+  bounds: { x: 30, y: 60, width: 80, height: 40 },
+  image: { dataUrl: transparentPngDataUrl, mimeType: "image/png" },
+});
 describe("PdfLibExportGateway signature overlays", () => {
+  it("embeds general image overlays while preserving the PDF", async () => {
+    const originalBytes = await createPdf();
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes,
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+      elements: [generalImageElement("image-1", "page-1")],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.bytes.length).toBeGreaterThan(originalBytes.length);
+    const exported = await PDFDocument.load(result.bytes);
+    expect(exported.getPageCount()).toBe(2);
+  });
   it("embeds typed signatures and image initials while preserving the PDF", async () => {
     const originalBytes = await createPdf();
     const gateway = new PdfLibExportGateway();
