@@ -309,6 +309,31 @@ const downloadEditedPdf = async (
   expect(download.suggestedFilename()).toBe(suggestedFilename);
   await download.saveAs(outputPath);
 };
+const dragElementBy = async (
+  page: Page,
+  selector: string,
+  delta: { readonly x: number; readonly y: number },
+): Promise<void> => {
+  const box = await page.locator(selector).boundingBox();
+  expect(box).not.toBeNull();
+  if (box === null) {
+    return;
+  }
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + delta.x / 2, start.y + delta.y / 2);
+  await page.mouse.move(start.x + delta.x, start.y + delta.y);
+  await page.mouse.up();
+};
+
+const resizeElementBy = async (
+  page: Page,
+  label: string,
+  delta: { readonly x: number; readonly y: number },
+): Promise<void> => {
+  await dragElementBy(page, `[aria-label="${label}"]`, delta);
+};
 const expectBoxNear = (
   box: {
     readonly x: number;
@@ -555,6 +580,115 @@ test("selects text with one click and edits text only through explicit edit acti
   ).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+});
+
+test("undoes and redoes completed move, resize, and font-size gestures before export", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("gesture-history-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "gesture-history-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 130);
+  const textEditor = page.getByLabel("Edit text element");
+  await textEditor.fill("Gesture text");
+  await textEditor.press("Escape");
+  const textElement = page.getByRole("group", { name: "text element" });
+  const textBeforeMove = await textElement.boundingBox();
+  expect(textBeforeMove).not.toBeNull();
+  if (textBeforeMove === null) {
+    return;
+  }
+
+  await dragElementBy(page, '[aria-label="text element"]', { x: 45, y: 30 });
+  const textAfterMove = await textElement.boundingBox();
+  expect(textAfterMove?.x).toBeGreaterThan(textBeforeMove.x + 35);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(textElement).toHaveCount(1);
+  await expect
+    .poll(async () => (await textElement.boundingBox())?.x ?? 0)
+    .toBeLessThan((textAfterMove?.x ?? 0) - 20);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await textElement.boundingBox())?.x ?? 0)
+    .toBeGreaterThan(textBeforeMove.x + 35);
+
+  const textBeforeResize = await textElement.boundingBox();
+  expect(textBeforeResize).not.toBeNull();
+  if (textBeforeResize === null) {
+    return;
+  }
+  await resizeElementBy(page, "Resize text element", { x: 80, y: 48 });
+  const textAfterResize = await textElement.boundingBox();
+  expect(textAfterResize?.width).toBeGreaterThan(textBeforeResize.width + 20);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect
+    .poll(async () => (await textElement.boundingBox())?.width ?? 0)
+    .toBeLessThan((textAfterResize?.width ?? 0) - 10);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await textElement.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(textBeforeResize.width + 20);
+
+  const fontSize = page.getByLabel("Text font size");
+  const fontSizeBeforeInspectorChange = await fontSize.inputValue();
+  const changedFontSize = String(Number.parseInt(fontSizeBeforeInspectorChange, 10) + 4);
+  await fontSize.fill(changedFontSize);
+  await expect(fontSize).toHaveValue(changedFontSize);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(fontSize).toHaveValue(fontSizeBeforeInspectorChange);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(fontSize).toHaveValue(changedFontSize);
+
+  await page.getByRole("button", { name: "Whiteout" }).click();
+  await dragWhiteout(
+    page,
+    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
+    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+  );
+  const whiteoutElement = page.getByRole("group", { name: "whiteout element" });
+  const whiteoutBeforeMove = await whiteoutElement.boundingBox();
+  expect(whiteoutBeforeMove).not.toBeNull();
+  if (whiteoutBeforeMove === null) {
+    return;
+  }
+  await dragElementBy(page, '[aria-label="whiteout element"]', { x: 25, y: 25 });
+  const whiteoutAfterMove = await whiteoutElement.boundingBox();
+  expect(whiteoutAfterMove?.x).toBeGreaterThan(whiteoutBeforeMove.x + 15);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect
+    .poll(async () => (await whiteoutElement.boundingBox())?.x ?? 0)
+    .toBeLessThan((whiteoutAfterMove?.x ?? 0) - 10);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await whiteoutElement.boundingBox())?.x ?? 0)
+    .toBeGreaterThan(whiteoutBeforeMove.x + 15);
+
+  const downloadedPath = testInfo.outputPath("gesture-history-fixture-edited.pdf");
+  await downloadEditedPdf(page, "gesture-history-fixture-edited.pdf", downloadedPath);
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(
+    page.getByRole("heading", { name: "gesture-history-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 120, y: 160, width: 120, height: 60 }))
+    .toBe(true);
 });
 test("undoes and redoes overlay add/delete history and exports the final state", async ({
   page,

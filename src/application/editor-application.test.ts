@@ -506,6 +506,130 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     },
   );
 
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "undoes and redoes committed move gestures for %s overlays",
+    async (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Move me")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 10, y: 20 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 10, y: 20 }, { text: "AL", fontFamily: "hand" });
+      const elementId = added.state.selectedElementId;
+      expect(elementId).toBeDefined();
+      if (elementId === undefined) {
+        return;
+      }
+      await app.exportCurrentPdf();
+
+      const moved = app.commitMoveElement(elementId, { x: 10, y: 20 }, { x: 70, y: 90 });
+      expect(moved.state.selectedElement?.bounds).toMatchObject({ x: 70, y: 90 });
+      expect(moved.state.selectedElementId).toBe(elementId);
+      expect(moved.state.isDirty).toBe(true);
+
+      const undone = app.undo();
+      expect(undone.state.selectedElement?.bounds).toMatchObject({ x: 10, y: 20 });
+      expect(undone.state.selectedElementId).toBe(elementId);
+      expect(undone.state.isDirty).toBe(false);
+
+      const redone = app.redo();
+      expect(redone.state.selectedElement?.bounds).toMatchObject({ x: 70, y: 90 });
+      expect(redone.state.selectedElementId).toBe(elementId);
+      expect(redone.state.isDirty).toBe(true);
+    },
+  );
+
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "undoes and redoes committed resize gestures for %s overlays",
+    async (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Resize me")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 10, y: 20 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 10, y: 20 }, { text: "AL", fontFamily: "hand" });
+      const element = added.state.selectedElement;
+      expect(element).toBeDefined();
+      if (element === undefined) {
+        return;
+      }
+      await app.exportCurrentPdf();
+
+      const resized = app.commitResizeElement(element.id, element.bounds, {
+        ...element.bounds,
+        width: 140,
+        height: 70,
+      });
+      expect(resized.state.selectedElement?.bounds).toMatchObject({ width: 140, height: 70 });
+      expect(resized.state.selectedElementId).toBe(element.id);
+      expect(resized.state.isDirty).toBe(true);
+
+      const undone = app.undo();
+      expect(undone.state.selectedElement?.bounds).toEqual(element.bounds);
+      expect(undone.state.selectedElementId).toBe(element.id);
+      expect(undone.state.isDirty).toBe(false);
+
+      const redone = app.redo();
+      expect(redone.state.selectedElement?.bounds).toMatchObject({ width: 140, height: 70 });
+      expect(redone.state.selectedElementId).toBe(element.id);
+      expect(redone.state.isDirty).toBe(true);
+    },
+  );
+
+  it("previews move and resize without marking dirty or creating history", async () => {
+    const added = app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 });
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    const movedPreview = app.previewMoveElement(elementId, { x: 60, y: 70 });
+    expect(movedPreview.state.selectedElement?.bounds).toMatchObject({ x: 60, y: 70 });
+    expect(movedPreview.state.isDirty).toBe(false);
+    expect(movedPreview.canUndo).toBe(true);
+
+    const restoredMove = app.previewMoveElement(elementId, { x: 10, y: 20 });
+    expect(restoredMove.state.selectedElement?.bounds).toMatchObject({ x: 10, y: 20 });
+    expect(restoredMove.state.isDirty).toBe(false);
+
+    const resizePreview = app.previewResizeElement(elementId, {
+      x: 10,
+      y: 20,
+      width: 140,
+      height: 70,
+    });
+    expect(resizePreview.state.selectedElement?.bounds).toEqual({
+      x: 10,
+      y: 20,
+      width: 140,
+      height: 70,
+    });
+    expect(resizePreview.state.isDirty).toBe(false);
+
+    const restoredResize = app.previewResizeElement(elementId, {
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 40,
+    });
+    expect(restoredResize.state.selectedElement?.bounds).toEqual({
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 40,
+    });
+    expect(restoredResize.state.isDirty).toBe(false);
+
+    const undone = app.undo();
+    expect(undone.state.visibleElements).toHaveLength(0);
+    expect(undone.canRedo).toBe(true);
+  });
   it("redoing an added text element restores later text updates on the same element", () => {
     const added = app.addText({ x: 10, y: 20 }, "Text");
     const elementId = added.state.selectedElementId;

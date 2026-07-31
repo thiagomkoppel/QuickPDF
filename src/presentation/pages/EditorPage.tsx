@@ -35,24 +35,38 @@ interface EditorPageProps {
 
 type RenderStatus = "idle" | "loading" | "ready" | "error";
 type SignatureDialogMode = "draw" | "type" | "upload";
-type PointerAction =
+type PointerGesture =
   | {
-      readonly kind: "move";
-      readonly elementId: string;
-      readonly offsetX: number;
-      readonly offsetY: number;
+      kind: "move";
+      elementId: string;
+      pointerId?: number;
+      pointerTarget: HTMLElement;
+      offsetX: number;
+      offsetY: number;
+      startBounds: ExportElement["bounds"];
+      latestBounds: ExportElement["bounds"];
+      moved: boolean;
+      finalized: boolean;
     }
   | {
-      readonly kind: "resize";
-      readonly elementId: string;
-      readonly type: ExportElement["type"];
-      readonly startBounds: ExportElement["bounds"];
-      readonly startFontSize?: number;
+      kind: "resize";
+      elementId: string;
+      pointerId?: number;
+      pointerTarget: HTMLElement;
+      type: ExportElement["type"];
+      startBounds: ExportElement["bounds"];
+      latestBounds: ExportElement["bounds"];
+      startFontSize?: number;
+      latestFontSize?: number;
+      moved: boolean;
+      finalized: boolean;
     };
 
-interface ResizePreview {
-  readonly bounds: ExportElement["bounds"];
-  readonly fontSize?: number;
+interface PointerGestureListeners {
+  readonly move: (event: globalThis.PointerEvent) => void;
+  readonly up: (event: globalThis.PointerEvent) => void;
+  readonly cancel: (event: globalThis.PointerEvent) => void;
+  readonly lostCapture: (event: globalThis.PointerEvent) => void;
 }
 
 interface WhiteoutDraft {
@@ -72,6 +86,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
 const MIN_WHITEOUT_DRAG_DISTANCE = 4;
+const MIN_GESTURE_MOVEMENT = 0.5;
 const SIGNATURE_FONTS: readonly { readonly value: SignatureFont; readonly label: string }[] = [
   { value: "cursive", label: "Signature Script" },
   { value: "serif", label: "Serif Italic" },
@@ -198,12 +213,12 @@ export const EditorPage = ({
   const zoomRef = useRef(1);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
   const [dialogType, setDialogType] = useState<SignatureElementType | undefined>();
-  const [pointerAction, setPointerAction] = useState<PointerAction | undefined>();
   const [whiteoutDraft, setWhiteoutDraft] = useState<WhiteoutDraft | undefined>();
   const [editingTextElementId, setEditingTextElementId] = useState<string | undefined>();
   const editingTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const textFocusRetryRef = useRef<number | undefined>(undefined);
-  const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
+  const pointerGestureRef = useRef<PointerGesture | undefined>(undefined);
+  const pointerGestureListenersRef = useRef<PointerGestureListeners | undefined>(undefined);
 
   const applySnapshot = useCallback(
     (nextSnapshot: EditorSnapshot): void => {
@@ -353,29 +368,259 @@ export const EditorPage = ({
     };
   }, [applyZoom, currentPageId]);
 
+  const releasePointerCaptureForGesture = (gesture: PointerGesture): void => {
+    if (
+      gesture.pointerId === undefined ||
+      typeof gesture.pointerTarget.releasePointerCapture !== "function"
+    ) {
+      return;
+    }
+    try {
+      gesture.pointerTarget.releasePointerCapture(gesture.pointerId);
+    } catch {
+      // The browser may have already released capture after cancellation or DOM replacement.
+    }
+  };
+
+  const detachPointerGestureListeners = useCallback((): void => {
+    const listeners = pointerGestureListenersRef.current;
+    if (listeners === undefined) {
+      return;
+    }
+    document.removeEventListener("pointermove", listeners.move, { capture: true });
+    document.removeEventListener("pointerup", listeners.up, { capture: true });
+    document.removeEventListener("pointercancel", listeners.cancel, { capture: true });
+    document.removeEventListener("lostpointercapture", listeners.lostCapture, { capture: true });
+    pointerGestureListenersRef.current = undefined;
+  }, []);
+
+  const pointFromClient = useCallback(
+    (
+      event: Pick<globalThis.PointerEvent, "clientX" | "clientY">,
+    ): { readonly x: number; readonly y: number } | undefined => {
+      const overlayLayer = overlayLayerRef.current;
+      if (overlayLayer === null) {
+        return undefined;
+      }
+      const rect = overlayLayer.getBoundingClientRect();
+      const point = {
+        x: (event.clientX - rect.left) / zoom,
+        y: (event.clientY - rect.top) / zoom,
+      };
+      return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
+    },
+    [zoom],
+  );
+
+  const markGestureMovement = (gesture: PointerGesture): void => {
+    gesture.moved =
+      gesture.moved ||
+      Math.abs(gesture.latestBounds.x - gesture.startBounds.x) > MIN_GESTURE_MOVEMENT ||
+      Math.abs(gesture.latestBounds.y - gesture.startBounds.y) > MIN_GESTURE_MOVEMENT ||
+      Math.abs(gesture.latestBounds.width - gesture.startBounds.width) > MIN_GESTURE_MOVEMENT ||
+      Math.abs(gesture.latestBounds.height - gesture.startBounds.height) > MIN_GESTURE_MOVEMENT ||
+      (gesture.kind === "resize" &&
+        gesture.startFontSize !== undefined &&
+        gesture.latestFontSize !== undefined &&
+        Math.abs(gesture.latestFontSize - gesture.startFontSize) > 0.01);
+  };
+
+  const updatePointerGesturePreview = useCallback(
+    (
+      event: Pick<globalThis.PointerEvent, "clientX" | "clientY" | "pointerId"> & {
+        readonly preventDefault?: () => void;
+      },
+      options: { readonly preview: boolean } = { preview: true },
+    ): void => {
+      const gesture = pointerGestureRef.current;
+      if (
+        gesture === undefined ||
+        gesture.finalized ||
+        (gesture.pointerId !== undefined && event.pointerId !== gesture.pointerId)
+      ) {
+        return;
+      }
+      const point = pointFromClient(event);
+      if (point === undefined) {
+        return;
+      }
+      if (gesture.kind === "move") {
+        const bounds = {
+          ...gesture.startBounds,
+          x: point.x - gesture.offsetX,
+          y: point.y - gesture.offsetY,
+        };
+        gesture.latestBounds = bounds;
+        markGestureMovement(gesture);
+        if (options.preview && gesture.moved) {
+          event.preventDefault?.();
+          applySnapshot(editor.previewMoveElement(gesture.elementId, { x: bounds.x, y: bounds.y }));
+        }
+        return;
+      }
+      if (gesture.type === "text" && gesture.startFontSize !== undefined) {
+        const rawScale =
+          Math.max(point.x - gesture.startBounds.x, point.y - gesture.startBounds.y) /
+          Math.max(gesture.startBounds.width, gesture.startBounds.height);
+        const nextFontSize = Math.min(
+          MAX_TEXT_FONT_SIZE,
+          Math.max(MIN_TEXT_FONT_SIZE, gesture.startFontSize * rawScale),
+        );
+        const scale = nextFontSize / gesture.startFontSize;
+        const bounds = {
+          ...gesture.startBounds,
+          width: gesture.startBounds.width * scale,
+          height: gesture.startBounds.height * scale,
+        };
+        gesture.latestBounds = bounds;
+        gesture.latestFontSize = nextFontSize;
+        markGestureMovement(gesture);
+        if (options.preview && gesture.moved) {
+          applySnapshot(editor.previewTextResizeElement(gesture.elementId, bounds, nextFontSize));
+        }
+        return;
+      }
+      const bounds = {
+        ...gesture.startBounds,
+        width: point.x - gesture.startBounds.x,
+        height: point.y - gesture.startBounds.y,
+      };
+      gesture.latestBounds = bounds;
+      markGestureMovement(gesture);
+      if (options.preview && gesture.moved) {
+        applySnapshot(editor.previewResizeElement(gesture.elementId, bounds));
+      }
+    },
+    [applySnapshot, editor, pointFromClient],
+  );
+
+  const finishPointerGesture = useCallback(
+    (event?: Pick<globalThis.PointerEvent, "clientX" | "clientY" | "pointerId">): void => {
+      const gesture = pointerGestureRef.current;
+      if (gesture === undefined || gesture.finalized) {
+        return;
+      }
+      if (
+        event !== undefined &&
+        gesture.pointerId !== undefined &&
+        event.pointerId !== gesture.pointerId
+      ) {
+        return;
+      }
+      if (event !== undefined) {
+        updatePointerGesturePreview(event, { preview: false });
+      }
+      gesture.finalized = true;
+      detachPointerGestureListeners();
+      releasePointerCaptureForGesture(gesture);
+      pointerGestureRef.current = undefined;
+      if (!gesture.moved) {
+        return;
+      }
+      if (gesture.kind === "move") {
+        applySnapshot(
+          editor.commitMoveElement(
+            gesture.elementId,
+            { x: gesture.startBounds.x, y: gesture.startBounds.y },
+            { x: gesture.latestBounds.x, y: gesture.latestBounds.y },
+          ),
+        );
+        return;
+      }
+      if (
+        gesture.type === "text" &&
+        gesture.startFontSize !== undefined &&
+        gesture.latestFontSize !== undefined
+      ) {
+        applySnapshot(
+          editor.commitTextResizeElement(
+            gesture.elementId,
+            { bounds: gesture.startBounds, fontSize: gesture.startFontSize },
+            { bounds: gesture.latestBounds, fontSize: gesture.latestFontSize },
+          ),
+        );
+        return;
+      }
+      applySnapshot(
+        editor.commitResizeElement(gesture.elementId, gesture.startBounds, gesture.latestBounds),
+      );
+    },
+    [applySnapshot, detachPointerGestureListeners, editor, updatePointerGesturePreview],
+  );
+
+  const cancelPointerGesture = useCallback((): void => {
+    const gesture = pointerGestureRef.current;
+    if (gesture === undefined || gesture.finalized) {
+      return;
+    }
+    gesture.finalized = true;
+    detachPointerGestureListeners();
+    releasePointerCaptureForGesture(gesture);
+    pointerGestureRef.current = undefined;
+    if (gesture.kind === "move") {
+      applySnapshot(
+        editor.previewMoveElement(gesture.elementId, {
+          x: gesture.startBounds.x,
+          y: gesture.startBounds.y,
+        }),
+      );
+      return;
+    }
+    if (gesture.type === "text" && gesture.startFontSize !== undefined) {
+      applySnapshot(
+        editor.previewTextResizeElement(
+          gesture.elementId,
+          gesture.startBounds,
+          gesture.startFontSize,
+        ),
+      );
+      return;
+    }
+    applySnapshot(editor.previewResizeElement(gesture.elementId, gesture.startBounds));
+  }, [applySnapshot, detachPointerGestureListeners, editor]);
+
+  const attachPointerGestureListeners = useCallback(
+    (gesture: PointerGesture): void => {
+      detachPointerGestureListeners();
+      pointerGestureRef.current = gesture;
+      const listeners: PointerGestureListeners = {
+        move: (event) => {
+          updatePointerGesturePreview(event);
+        },
+        up: (event) => {
+          finishPointerGesture(event);
+        },
+        cancel: (event) => {
+          if (gesture.pointerId === undefined || event.pointerId === gesture.pointerId) {
+            cancelPointerGesture();
+          }
+        },
+        lostCapture: () => {
+          // Document-level listeners remain authoritative if capture is lost during a rerender.
+        },
+      };
+      pointerGestureListenersRef.current = listeners;
+      document.addEventListener("pointermove", listeners.move, { capture: true });
+      document.addEventListener("pointerup", listeners.up, { capture: true });
+      document.addEventListener("pointercancel", listeners.cancel, { capture: true });
+      document.addEventListener("lostpointercapture", listeners.lostCapture, { capture: true });
+    },
+    [
+      cancelPointerGesture,
+      detachPointerGestureListeners,
+      finishPointerGesture,
+      updatePointerGesturePreview,
+    ],
+  );
   useEffect(() => {
     if (currentPageId === undefined) {
       return;
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (pointerAction?.kind === "resize" && event.key === "Escape") {
+      if (pointerGestureRef.current !== undefined && event.key === "Escape") {
         event.preventDefault();
-        if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
-          applySnapshot(
-            editor.previewTextResizeElement(
-              pointerAction.elementId,
-              pointerAction.startBounds,
-              pointerAction.startFontSize,
-            ),
-          );
-        } else {
-          applySnapshot(
-            editor.previewResizeElement(pointerAction.elementId, pointerAction.startBounds),
-          );
-        }
-        resizePreviewRef.current = undefined;
-        setPointerAction(undefined);
+        cancelPointerGesture();
         return;
       }
       if (whiteoutDraft !== undefined && event.key === "Escape") {
@@ -457,108 +702,16 @@ export const EditorPage = ({
   }, [
     applySnapshot,
     applyZoom,
+    cancelPointerGesture,
     currentPageId,
     editingTextElementId,
     editor,
-    pointerAction,
     snapshot.canRedo,
     snapshot.canUndo,
     state.selectedElement,
     state.selectedElementId,
     whiteoutDraft,
   ]);
-
-  useEffect(() => {
-    if (pointerAction === undefined) {
-      return;
-    }
-
-    const handlePointerMove = (event: globalThis.PointerEvent): void => {
-      const overlayLayer = overlayLayerRef.current;
-      if (overlayLayer === null) {
-        return;
-      }
-      const rect = overlayLayer.getBoundingClientRect();
-      const point = {
-        x: (event.clientX - rect.left) / zoom,
-        y: (event.clientY - rect.top) / zoom,
-      };
-      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-        return;
-      }
-      if (pointerAction.kind === "move") {
-        applySnapshot(
-          editor.moveElement(pointerAction.elementId, {
-            x: point.x - pointerAction.offsetX,
-            y: point.y - pointerAction.offsetY,
-          }),
-        );
-        return;
-      }
-      if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
-        const rawScale =
-          Math.max(point.x - pointerAction.startBounds.x, point.y - pointerAction.startBounds.y) /
-          Math.max(pointerAction.startBounds.width, pointerAction.startBounds.height);
-        const nextFontSize = Math.min(
-          MAX_TEXT_FONT_SIZE,
-          Math.max(MIN_TEXT_FONT_SIZE, pointerAction.startFontSize * rawScale),
-        );
-        const scale = nextFontSize / pointerAction.startFontSize;
-        const bounds = {
-          ...pointerAction.startBounds,
-          width: pointerAction.startBounds.width * scale,
-          height: pointerAction.startBounds.height * scale,
-        };
-        resizePreviewRef.current = { bounds, fontSize: nextFontSize };
-        applySnapshot(
-          editor.previewTextResizeElement(pointerAction.elementId, bounds, nextFontSize),
-        );
-        return;
-      }
-      const bounds = {
-        ...pointerAction.startBounds,
-        width: point.x - pointerAction.startBounds.x,
-        height: point.y - pointerAction.startBounds.y,
-      };
-      resizePreviewRef.current = { bounds };
-      applySnapshot(editor.previewResizeElement(pointerAction.elementId, bounds));
-    };
-
-    const stopPointerAction = (): void => {
-      if (pointerAction.kind === "resize") {
-        const preview = resizePreviewRef.current;
-        if (
-          pointerAction.type === "text" &&
-          pointerAction.startFontSize !== undefined &&
-          preview?.fontSize !== undefined
-        ) {
-          applySnapshot(
-            editor.commitTextResizeElement(
-              pointerAction.elementId,
-              { bounds: pointerAction.startBounds, fontSize: pointerAction.startFontSize },
-              { bounds: preview.bounds, fontSize: preview.fontSize },
-            ),
-          );
-        } else if (preview !== undefined) {
-          applySnapshot(
-            editor.resizeElement(pointerAction.elementId, {
-              width: preview.bounds.width,
-              height: preview.bounds.height,
-            }),
-          );
-        }
-      }
-      resizePreviewRef.current = undefined;
-      setPointerAction(undefined);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopPointerAction, { once: true });
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopPointerAction);
-    };
-  }, [applySnapshot, editor, pointerAction, zoom]);
 
   const pointFromOverlayEvent = (
     event: Pick<PointerEvent<HTMLDivElement>, "clientX" | "clientY" | "currentTarget">,
@@ -685,6 +838,17 @@ export const EditorPage = ({
     clearSelection();
   };
 
+  const capturePointerForGesture = (target: HTMLElement, pointerId: number | undefined): void => {
+    if (pointerId === undefined || typeof target.setPointerCapture !== "function") {
+      return;
+    }
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      // Synthetic pointer events used by tests do not always create an active pointer capture target.
+    }
+  };
+
   const startElementMove = (element: ExportElement, event: PointerEvent<HTMLDivElement>): void => {
     if (
       event.target instanceof HTMLTextAreaElement ||
@@ -692,29 +856,29 @@ export const EditorPage = ({
     ) {
       return;
     }
-    event.preventDefault();
-    event.currentTarget.focus();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    capturePointerForGesture(target, event.pointerId);
+    target.focus();
     if (editingTextElementId !== undefined && editingTextElementId !== element.id) {
       setEditingTextElementId(undefined);
     }
     applySnapshot(editor.selectElement(element.id));
-    const overlayLayer = overlayLayerRef.current;
-    if (overlayLayer === null) {
+    const point = pointFromClient(event.nativeEvent);
+    if (point === undefined) {
       return;
     }
-    const rect = overlayLayer.getBoundingClientRect();
-    const point = {
-      x: (event.clientX - rect.left) / zoom,
-      y: (event.clientY - rect.top) / zoom,
-    };
-    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-      return;
-    }
-    setPointerAction({
+    attachPointerGestureListeners({
       kind: "move",
       elementId: element.id,
+      pointerId: event.pointerId,
+      pointerTarget: target,
       offsetX: point.x - element.bounds.x,
       offsetY: point.y - element.bounds.y,
+      startBounds: element.bounds,
+      latestBounds: element.bounds,
+      moved: false,
+      finalized: false,
     });
   };
 
@@ -724,24 +888,27 @@ export const EditorPage = ({
   ): void => {
     event.preventDefault();
     event.stopPropagation();
+    const target = event.currentTarget;
+    capturePointerForGesture(target, event.pointerId);
     applySnapshot(editor.selectElement(element.id));
-    resizePreviewRef.current = {
-      bounds: element.bounds,
-      ...(element.textAppearance?.fontSize === undefined
-        ? {}
-        : { fontSize: element.textAppearance.fontSize }),
-    };
-    setPointerAction({
+    attachPointerGestureListeners({
       kind: "resize",
       elementId: element.id,
+      pointerId: event.pointerId,
+      pointerTarget: target,
       type: element.type,
       startBounds: element.bounds,
+      latestBounds: element.bounds,
       ...(element.type === "text"
-        ? { startFontSize: element.textAppearance?.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize }
+        ? {
+            startFontSize: element.textAppearance?.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
+            latestFontSize: element.textAppearance?.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
+          }
         : {}),
+      moved: false,
+      finalized: false,
     });
   };
-
   const undo = (): void => {
     setEditingTextElementId(undefined);
     setWhiteoutDraft(undefined);
@@ -1069,6 +1236,13 @@ export const EditorPage = ({
                   tabIndex={element.type === "text" ? 0 : undefined}
                   onPointerDown={(event) => {
                     startElementMove(element, event);
+                  }}
+                  onClick={(event) => {
+                    if (element.type === "text" && event.detail >= 2) {
+                      event.stopPropagation();
+                      applySnapshot(editor.selectElement(element.id));
+                      setEditingTextElementId(element.id);
+                    }
                   }}
                 >
                   {element.type === "text" ? (

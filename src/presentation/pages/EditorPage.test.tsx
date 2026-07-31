@@ -30,12 +30,15 @@ interface TestEditor extends PdfEditorApplication {
   readonly selectElement: Mock;
   readonly clearSelection: Mock;
   readonly moveElement: Mock;
+  readonly previewMoveElement: Mock;
+  readonly commitMoveElement: Mock;
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
   readonly updateText: Mock;
   readonly updateTextFontSize: Mock;
   readonly resizeElement: Mock;
   readonly previewResizeElement: Mock;
+  readonly commitResizeElement: Mock;
   readonly previewTextResizeElement: Mock;
   readonly commitTextResizeElement: Mock;
   readonly undo: Mock;
@@ -118,8 +121,11 @@ const createEditor = (): TestEditor =>
     selectElement: vi.fn(() => baseSnapshot()),
     clearSelection: vi.fn(() => baseSnapshot()),
     moveElement: vi.fn(() => baseSnapshot()),
+    previewMoveElement: vi.fn(() => baseSnapshot()),
+    commitMoveElement: vi.fn(() => baseSnapshot()),
     resizeElement: vi.fn(() => baseSnapshot()),
     previewResizeElement: vi.fn(() => baseSnapshot()),
+    commitResizeElement: vi.fn(() => baseSnapshot()),
     previewTextResizeElement: vi.fn(() => baseSnapshot()),
     commitTextResizeElement: vi.fn(() => baseSnapshot()),
     duplicateElement: vi.fn(() => baseSnapshot()),
@@ -208,7 +214,7 @@ const renderStatefulEditor = (editor: TestEditor, initialSnapshot: EditorSnapsho
 };
 
 const dispatchPointerEvent = (
-  target: HTMLElement | Window,
+  target: HTMLElement | Window | Document,
   type: string,
   init: { readonly clientX: number; readonly clientY: number; readonly pointerId: number },
 ): void => {
@@ -1089,19 +1095,31 @@ describe("EditorPage PDF rendering", () => {
     Object.defineProperties(move, {
       clientX: { value: 75 },
       clientY: { value: 85 },
+      pointerId: { value: 1 },
     });
     const up = new Event("pointerup", { bubbles: true });
+    Object.defineProperties(up, {
+      clientX: { value: 75 },
+      clientY: { value: 85 },
+      pointerId: { value: 1 },
+    });
     act(() => {
-      window.dispatchEvent(move);
-      window.dispatchEvent(up);
+      document.dispatchEvent(move);
+      document.dispatchEvent(up);
     });
 
     await waitFor(() => {
-      expect(editor.moveElement).toHaveBeenCalledWith(
+      expect(editor.previewMoveElement).toHaveBeenCalledWith(
         "text-1",
         expect.objectContaining({ x: 60, y: 70 }),
       );
     });
+    expect(editor.moveElement).not.toHaveBeenCalled();
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      "text-1",
+      expect.objectContaining({ x: 40, y: 50 }),
+      expect.objectContaining({ x: 60, y: 70 }),
+    );
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
   });
 
@@ -1239,8 +1257,8 @@ describe("EditorPage PDF rendering", () => {
       clientY: 98,
       pointerId: 9,
     });
-    dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 9 });
-    dispatchPointerEvent(window, "pointerup", { clientX: 280, clientY: 122, pointerId: 9 });
+    dispatchPointerEvent(document, "pointermove", { clientX: 280, clientY: 122, pointerId: 9 });
+    dispatchPointerEvent(document, "pointerup", { clientX: 280, clientY: 122, pointerId: 9 });
 
     expect(editor.previewTextResizeElement).toHaveBeenCalledWith(
       "text-1",
@@ -1275,7 +1293,7 @@ describe("EditorPage PDF rendering", () => {
       clientY: 98,
       pointerId: 10,
     });
-    dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 10 });
+    dispatchPointerEvent(document, "pointermove", { clientX: 280, clientY: 122, pointerId: 10 });
     const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });
     act(() => {
       window.dispatchEvent(escape);
@@ -1288,6 +1306,201 @@ describe("EditorPage PDF rendering", () => {
       16,
     );
     expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
+  });
+  it("commits one generic resize command after a non-text resize preview", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("whiteout")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByLabelText("Resize whiteout element"), "pointerdown", {
+      clientX: 160,
+      clientY: 98,
+      pointerId: 11,
+    });
+    dispatchPointerEvent(document, "pointermove", { clientX: 190, clientY: 118, pointerId: 11 });
+    expect(editor.previewResizeElement).toHaveBeenCalledWith("whiteout-1", {
+      x: 40,
+      y: 50,
+      width: 150,
+      height: 68,
+    });
+    expect(editor.commitResizeElement).not.toHaveBeenCalled();
+
+    dispatchPointerEvent(document, "pointerup", { clientX: 190, clientY: 118, pointerId: 11 });
+
+    expect(editor.resizeElement).not.toHaveBeenCalled();
+    expect(editor.commitResizeElement).toHaveBeenCalledWith(
+      "whiteout-1",
+      { x: 40, y: 50, width: 120, height: 48 },
+      { x: 40, y: 50, width: 150, height: 68 },
+    );
+  });
+
+  it("cancels move with Escape by restoring the starting position without a commit", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("signature")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByRole("group", { name: "signature element" }), "pointerdown", {
+      clientX: 55,
+      clientY: 65,
+      pointerId: 12,
+    });
+    dispatchPointerEvent(document, "pointermove", { clientX: 85, clientY: 105, pointerId: 12 });
+    const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });
+    act(() => {
+      window.dispatchEvent(escape);
+    });
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(editor.previewMoveElement).toHaveBeenLastCalledWith("signature-1", { x: 40, y: 50 });
+    expect(editor.commitMoveElement).not.toHaveBeenCalled();
+  });
+
+  it("cancels resize on pointer cancel by restoring geometry without a commit", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("initials")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByLabelText("Resize initials element"), "pointerdown", {
+      clientX: 160,
+      clientY: 98,
+      pointerId: 13,
+    });
+    dispatchPointerEvent(document, "pointermove", { clientX: 190, clientY: 118, pointerId: 13 });
+    dispatchPointerEvent(document, "pointercancel", { clientX: 190, clientY: 118, pointerId: 13 });
+
+    expect(editor.previewResizeElement).toHaveBeenLastCalledWith("initials-1", {
+      x: 40,
+      y: 50,
+      width: 120,
+      height: 48,
+    });
+    expect(editor.commitResizeElement).not.toHaveBeenCalled();
+  });
+  it("does not commit a move command for a no-op pointer click", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByRole("group", { name: "text element" }), "pointerdown", {
+      clientX: 55,
+      clientY: 65,
+      pointerId: 21,
+    });
+    dispatchPointerEvent(document, "pointerup", { clientX: 55, clientY: 65, pointerId: 21 });
+
+    expect(editor.previewMoveElement).not.toHaveBeenCalled();
+    expect(editor.commitMoveElement).not.toHaveBeenCalled();
+  });
+
+  it("commits a completed move only once when pointerup is repeated", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByRole("group", { name: "text element" }), "pointerdown", {
+      clientX: 55,
+      clientY: 65,
+      pointerId: 22,
+    });
+    dispatchPointerEvent(document, "pointermove", { clientX: 85, clientY: 95, pointerId: 22 });
+    dispatchPointerEvent(document, "pointerup", { clientX: 85, clientY: 95, pointerId: 22 });
+    dispatchPointerEvent(document, "pointerup", { clientX: 85, clientY: 95, pointerId: 22 });
+
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      "text-1",
+      { x: 40, y: 50 },
+      { x: 70, y: 80 },
+    );
+  });
+
+  it("continues to finalize after lost pointer capture without duplicate commits", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("whiteout")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByRole("group", { name: "whiteout element" }), "pointerdown", {
+      clientX: 55,
+      clientY: 65,
+      pointerId: 23,
+    });
+    dispatchPointerEvent(document, "pointermove", { clientX: 95, clientY: 105, pointerId: 23 });
+    dispatchPointerEvent(document, "lostpointercapture", {
+      clientX: 95,
+      clientY: 105,
+      pointerId: 23,
+    });
+    dispatchPointerEvent(document, "pointerup", { clientX: 95, clientY: 105, pointerId: 23 });
+    dispatchPointerEvent(document, "pointerup", { clientX: 95, clientY: 105, pointerId: 23 });
+
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      "whiteout-1",
+      { x: 40, y: 50 },
+      { x: 80, y: 90 },
+    );
   });
   it("shows a text-only font-size control and updates text appearance through the editor use case", () => {
     const editor = createEditor();

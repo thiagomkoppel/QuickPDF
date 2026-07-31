@@ -608,6 +608,57 @@ export class PdfEditorApplication {
     );
   }
 
+  public previewMoveElement(
+    elementId: string,
+    point: { readonly x: number; readonly y: number },
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return this.#operationError("InvalidElementBounds", "Element position must be finite.");
+    }
+    return this.#previewElementUpdate({
+      ...element,
+      bounds: this.#constrainBounds({ ...element.bounds, x: point.x, y: point.y }),
+    });
+  }
+
+  public commitMoveElement(
+    elementId: string,
+    start: { readonly x: number; readonly y: number },
+    end: { readonly x: number; readonly y: number },
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    if (
+      !Number.isFinite(start.x) ||
+      !Number.isFinite(start.y) ||
+      !Number.isFinite(end.x) ||
+      !Number.isFinite(end.y)
+    ) {
+      return this.#operationError("InvalidElementBounds", "Element position must be finite.");
+    }
+    const beforeElement: EditorElement = {
+      ...element,
+      bounds: this.#constrainBounds({ ...element.bounds, x: start.x, y: start.y }),
+    };
+    const afterElement: EditorElement = {
+      ...element,
+      bounds: this.#constrainBounds({ ...element.bounds, x: end.x, y: end.y }),
+    };
+    if (elementsMatch(beforeElement, afterElement)) {
+      return this.#previewElementUpdate(afterElement);
+    }
+    return this.#commitElementUpdate(
+      afterElement,
+      this.#historyStateWithElement(beforeElement, elementId),
+    );
+  }
+
   public moveElement(
     elementId: string,
     point: { readonly x: number; readonly y: number },
@@ -616,7 +667,7 @@ export class PdfEditorApplication {
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
-    return this.#untrackedElementUpdate({
+    return this.#commitElementUpdate({
       ...element,
       bounds: this.#constrainBounds({ ...element.bounds, x: point.x, y: point.y }),
     });
@@ -633,6 +684,25 @@ export class PdfEditorApplication {
     return this.#previewElementUpdate({ ...element, bounds: this.#constrainBounds(bounds) });
   }
 
+  public commitResizeElement(elementId: string, start: Bounds, end: Bounds): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    if (!isFiniteBounds(start) || !isFiniteBounds(end)) {
+      return this.#operationError("InvalidElementBounds", "Element bounds must be finite.");
+    }
+    const beforeElement: EditorElement = { ...element, bounds: this.#constrainBounds(start) };
+    const afterElement: EditorElement = { ...element, bounds: this.#constrainBounds(end) };
+    if (elementsMatch(beforeElement, afterElement)) {
+      return this.#previewElementUpdate(afterElement);
+    }
+    return this.#commitElementUpdate(
+      afterElement,
+      this.#historyStateWithElement(beforeElement, elementId),
+    );
+  }
+
   public resizeElement(
     elementId: string,
     size: { readonly width: number; readonly height: number },
@@ -646,7 +716,6 @@ export class PdfEditorApplication {
       bounds: this.#constrainBounds({ ...element.bounds, width: size.width, height: size.height }),
     });
   }
-
   public duplicateElement(elementId: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
     if (element === undefined) {

@@ -8,20 +8,20 @@ The feature applies to document-output changes only.
 
 ## Undoable operations
 
-The initial implementation covers:
+The current implementation covers committed overlay lifecycle and gesture commands:
 
-| Operation             | Undo | Redo |
-| --------------------- | :--: | :--: |
-| Add text              | Yes  | Yes  |
-| Edit text             | Yes  | Yes  |
-| Change text font size | Yes  | Yes  |
-| Add whiteout          | Yes  | Yes  |
-| Add signature         | Yes  | Yes  |
-| Add initials          | Yes  | Yes  |
-| Move an element       | Yes  | Yes  |
-| Resize an element     | Yes  | Yes  |
-| Duplicate an element  | Yes  | Yes  |
-| Delete an element     | Yes  | Yes  |
+| Operation             |  Undo   |  Redo   |
+| --------------------- | :-----: | :-----: |
+| Add text              |   Yes   |   Yes   |
+| Edit text typing      | Phase 3 | Phase 3 |
+| Change text font size |   Yes   |   Yes   |
+| Add whiteout          |   Yes   |   Yes   |
+| Add signature         |   Yes   |   Yes   |
+| Add initials          |   Yes   |   Yes   |
+| Move an element       |   Yes   |   Yes   |
+| Resize an element     |   Yes   |   Yes   |
+| Duplicate an element  |   Yes   |   Yes   |
+| Delete an element     |   Yes   |   Yes   |
 
 Future output-changing operations must define undo and redo before they are considered complete.
 
@@ -77,7 +77,7 @@ Shortcut handling must:
 Typing should feel natural.
 
 - A newly created text element may enter editing immediately.
-- Changes made during one continuous editing session should undo as one meaningful text change.
+- Changes made during one continuous editing session are Phase 3 work and should undo as one meaningful text change once implemented.
 - Undo while the textarea has focus should first follow the textarea's native editing behavior unless the product explicitly commits and exits editing before invoking document history.
 - Once text editing is committed, application Undo restores the prior element text.
 - Redo reapplies the committed text.
@@ -86,11 +86,13 @@ The implementation must choose one consistent focus rule and cover it with compo
 
 ## Pointer gestures
 
-Dragging and resizing use preview state during the gesture.
+Dragging and resizing use preview state during the gesture. Phase 2 implements this for text, whiteout, signature, and initials overlays.
 
-- Pointer movement must not create hundreds of history entries.
-- Releasing the pointer commits one command.
+- Pointer down creates one transient gesture record with the element ID, start geometry, latest preview geometry, pointer ID when available, gesture type, movement flag, and finalized flag.
+- Pointer movement updates the latest preview geometry and must not create hundreds of history entries.
+- Releasing the pointer through the document-level pointer listener commits one command when geometry changed.
 - Pointer cancellation or Escape restores the pre-gesture geometry and adds no history entry.
+- Lost pointer capture does not drop the active gesture; the document listener still finalizes or cancels it.
 - A gesture that ends at the original geometry is a no-op and adds no history entry.
 
 Whiteout creation follows the same principle: the live rectangle is a preview, and a valid pointer release commits one Add Whiteout command.
@@ -107,7 +109,7 @@ Undoing creation or duplication of the selected element clears selection because
 
 Undoing deletion may select the restored element to provide clear feedback. Redoing deletion then clears selection again.
 
-For move, resize, text, and font-size changes, the affected element should remain selected when possible.
+For move, resize, and font-size changes, the affected element remains selected when possible. Text typing selection behavior remains part of the later coalescing phase.
 
 ## Dirty state and export
 

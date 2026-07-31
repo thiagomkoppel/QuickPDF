@@ -172,6 +172,8 @@ The editor toolbar includes Undo and Redo controls. They are disabled when the a
 
 Phase 1 history covers adding, deleting, and duplicating text, whiteout, signature, and initials overlays. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate.
 
+Phase 2 history covers completed move gestures, completed resize gestures, and committed inspector font-size changes. Pointer movement previews geometry only. Pointer release commits one history entry when the output changed. Escape or pointer cancellation restores the original geometry, creates no history entry, and leaves committed export state unchanged. Text resize preserves proportional scaling and stores both geometry and font size in the same history command. The browser drag path finalizes through the same pointer gesture session as component interactions, so Undo after a completed drag restores the previous geometry instead of undoing the original element creation.
+
 Export marks the current revision clean but does not clear undo or redo history.
 
 ## Tools And Overlays
@@ -186,7 +188,7 @@ With the Select tool active, clicking empty page space clears the selected overl
 
 Creating whiteout uses pointer drag: activate Whiteout, press on the page, drag to define the rectangle, and release to create it. Tiny accidental drags are ignored. Whiteout remains a visual cover only.
 
-Unselected text, whiteout, signature, and initials overlays have no decorative borders. Selected overlays may show temporary editor-only outlines and resize handles. Text uses a corner resize handle that preserves aspect ratio and scales the text font size between 8 and 96 pt; the inspector font-size value stays synchronized and export uses the displayed size. These selection affordances are never exported.
+Unselected text, whiteout, signature, and initials overlays have no decorative borders. Selected overlays may show temporary editor-only outlines and resize handles. Text uses a corner resize handle that preserves aspect ratio and scales the text font size between 8 and 96 pt; the inspector font-size value stays synchronized, Undo/Redo restores the exact committed size, and export uses the displayed committed size. These selection affordances are never exported.
 
 ## Signatures And Initials
 
