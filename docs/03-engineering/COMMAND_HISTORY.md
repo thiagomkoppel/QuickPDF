@@ -110,10 +110,11 @@ History entries should store the smallest reversible state needed for the operat
 - validated geometry;
 - safe element property values;
 - session-local image overlay data URLs and natural dimensions when required to undo/redo image operations;
+- captured annotation values such as Date text in `MM/DD/YYYY` format;
 - before/after values;
 - insertion position when required.
 
-The session-local overlay clipboard follows the same memory-only lifetime as history. It stores copied text, whiteout, signature, initials, and image overlay snapshots without retaining the original element ID.
+The session-local overlay clipboard follows the same memory-only lifetime as history. It stores copied text, whiteout, signature, initials, image, checkmark, cross, and date overlay snapshots without retaining the original element ID. Date snapshots preserve the captured date text; paste does not recalculate today.
 
 History and clipboard state must not:
 
@@ -129,7 +130,7 @@ The initial policy is:
 - one pointer gesture equals one move or resize entry;
 - one continuous text-editing focus session equals one update-text entry;
 - repeated font-size adjustments during one control interaction may merge;
-- separate element creations remain separate entries;
+- separate element creations remain separate entries, including one-shot Checkmark, Cross, and Date placement;
 - delete, duplicate, and paste remain separate entries;
 - copy is not a command because it does not change document output;
 - commands never merge across different elements or sessions.

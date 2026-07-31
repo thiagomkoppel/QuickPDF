@@ -27,11 +27,16 @@ interface TestEditor extends PdfEditorApplication {
   readonly setTool: Mock;
   readonly addText: Mock;
   readonly addWhiteout: Mock;
+  readonly addCheckmark: Mock;
+  readonly addCross: Mock;
+  readonly addDate: Mock;
   readonly selectElement: Mock;
   readonly clearSelection: Mock;
   readonly moveElement: Mock;
   readonly previewMoveElement: Mock;
   readonly commitMoveElement: Mock;
+  readonly copySelectedElement: Mock;
+  readonly pasteCopiedElement: Mock;
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
   readonly updateText: Mock;
@@ -89,6 +94,50 @@ const createEditor = (): TestEditor =>
       });
     }),
     addWhiteout: vi.fn(() => baseSnapshot()),
+    addCheckmark: vi.fn(() => {
+      const element: ExportElement = {
+        id: "checkmark-1",
+        pageId: "page-1",
+        type: "checkmark",
+        bounds: { x: 86, y: 106, width: 28, height: 28 },
+      };
+      return baseSnapshot({
+        selectedElementId: element.id,
+        selectedElement: element,
+        visibleElements: [element],
+        isDirty: true,
+      });
+    }),
+    addCross: vi.fn(() => {
+      const element: ExportElement = {
+        id: "cross-1",
+        pageId: "page-1",
+        type: "cross",
+        bounds: { x: 86, y: 106, width: 28, height: 28 },
+      };
+      return baseSnapshot({
+        selectedElementId: element.id,
+        selectedElement: element,
+        visibleElements: [element],
+        isDirty: true,
+      });
+    }),
+    addDate: vi.fn(() => {
+      const element: ExportElement = {
+        id: "date-1",
+        pageId: "page-1",
+        type: "date",
+        bounds: { x: 100, y: 120, width: 96, height: 28 },
+        text: "07/31/2026",
+        textAppearance: { fontSize: 16, color: "#111111" },
+      };
+      return baseSnapshot({
+        selectedElementId: element.id,
+        selectedElement: element,
+        visibleElements: [element],
+        isDirty: true,
+      });
+    }),
     addImage: vi.fn(() => {
       const element: ExportElement = {
         id: "image-1",
@@ -181,6 +230,14 @@ const selectedElementForType = (type: ExportElement["type"]): ExportElement => {
       ...base,
       type,
       text: "Editable text",
+      textAppearance: { fontSize: 16, color: "#111111" },
+    };
+  }
+  if (type === "date") {
+    return {
+      ...base,
+      type,
+      text: "07/31/2026",
       textAppearance: { fontSize: 16, color: "#111111" },
     };
   }
@@ -1799,6 +1856,120 @@ describe("EditorPage PDF rendering", () => {
     }
   });
 
+  it.each(["checkmark", "cross"] as const)(
+    "keeps the %s vector node stable while batching resize previews to one frame",
+    (type) => {
+      const raf = installControlledRaf();
+      const editor = createEditor();
+      const renderer = createRenderer();
+      try {
+        render(
+          <EditorPage
+            editor={editor}
+            snapshot={selectedSnapshot(type)}
+            onSnapshotChange={vi.fn()}
+            pdfRenderer={renderer}
+          />,
+        );
+        const overlay = screen.getByLabelText("PDF overlay");
+        Object.defineProperty(overlay, "getBoundingClientRect", {
+          value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+        });
+        const annotationOverlay = screen.getByRole("group", { name: `${type} element` });
+        const symbol = annotationOverlay.querySelector("svg");
+        expect(symbol).toBeInstanceOf(SVGSVGElement);
+
+        dispatchPointerEvent(screen.getByLabelText(`Resize ${type} element`), "pointerdown", {
+          clientX: 160,
+          clientY: 98,
+          pointerId: 31,
+        });
+        dispatchPointerEvent(window, "pointermove", { clientX: 180, clientY: 106, pointerId: 31 });
+        dispatchPointerEvent(window, "pointermove", { clientX: 200, clientY: 114, pointerId: 31 });
+        dispatchPointerEvent(window, "pointermove", { clientX: 220, clientY: 122, pointerId: 31 });
+
+        expect(raf.requestSpy).toHaveBeenCalledTimes(1);
+        expect(raf.pendingCount()).toBe(1);
+        expect(editor.previewResizeElement).not.toHaveBeenCalled();
+        expect(annotationOverlay).toHaveStyle({ width: "120px", height: "48px" });
+
+        raf.flushLatest();
+
+        const updatedOverlay = screen.getByRole("group", { name: `${type} element` });
+        const updatedSymbol = updatedOverlay.querySelector("svg");
+        expect(updatedSymbol).toBe(symbol);
+        expect(updatedOverlay).toHaveStyle({ width: "180px", height: "72px" });
+        expect(updatedOverlay).toHaveClass("is-resizing");
+        expect(updatedSymbol).toHaveClass(`annotation-${type}`);
+        expect(renderer.startRenderPage).toHaveBeenCalledTimes(1);
+      } finally {
+        raf.restore();
+      }
+    },
+  );
+
+  it("scales date font size during resize preview and commits text-like geometry history", async () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    const resizedElement: ExportElement = {
+      ...selectedElementForType("date"),
+      bounds: { x: 40, y: 50, width: 240, height: 96 },
+      textAppearance: { fontSize: 32, color: "#111111" },
+    };
+    editor.selectElement.mockImplementation(() => selectedSnapshot("date"));
+    editor.commitTextResizeElement.mockImplementation(() =>
+      baseSnapshot({
+        selectedElementId: resizedElement.id,
+        selectedElement: resizedElement,
+        visibleElements: [resizedElement],
+        isDirty: true,
+      }),
+    );
+    try {
+      renderStatefulEditor(editor, selectedSnapshot("date"));
+      const overlay = screen.getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+      const dateOverlay = screen.getByRole("group", { name: "date element" });
+      const dateText = screen.getByLabelText("Text element content");
+      expect(dateText).toHaveStyle({ fontSize: "16px" });
+
+      dispatchPointerEvent(screen.getByLabelText("Resize date element"), "pointerdown", {
+        clientX: 160,
+        clientY: 98,
+        pointerId: 32,
+      });
+      dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 32 });
+
+      expect(raf.requestSpy).toHaveBeenCalledTimes(1);
+      expect(editor.previewTextResizeElement).not.toHaveBeenCalled();
+      expect(dateOverlay).toHaveStyle({ width: "120px", height: "48px" });
+      act(() => {
+        raf.flushLatest();
+      });
+      await waitFor(() => {
+        expect(dateOverlay).toHaveStyle({ width: "240px", height: "96px" });
+        expect(dateText).toHaveStyle({ fontSize: "32px" });
+      });
+
+      dispatchPointerEvent(window, "pointerup", { clientX: 280, clientY: 122, pointerId: 32 });
+
+      expect(editor.commitTextResizeElement).toHaveBeenCalledTimes(1);
+      expect(editor.commitTextResizeElement).toHaveBeenCalledWith(
+        "date-1",
+        { bounds: { x: 40, y: 50, width: 120, height: 48 }, fontSize: 16 },
+        { bounds: { x: 40, y: 50, width: 240, height: 96 }, fontSize: 32 },
+      );
+      expect(screen.getByRole("group", { name: "date element" })).toHaveStyle({
+        width: "240px",
+        height: "96px",
+      });
+      expect(screen.getByLabelText("Text element content")).toHaveStyle({ fontSize: "32px" });
+    } finally {
+      raf.restore();
+    }
+  });
   it("commits the latest image resize geometry even when the pending frame has not painted", () => {
     const raf = installControlledRaf();
     const editor = createEditor();
@@ -1982,6 +2153,159 @@ describe("EditorPage PDF rendering", () => {
       raf.restore();
     }
   });
+
+  it("places checkmark, cross, and date annotations as one-shot tools", async () => {
+    const editor = createEditor();
+    let latestSnapshot = baseSnapshot();
+    const rememberSnapshot = (nextSnapshot: EditorSnapshot): EditorSnapshot => {
+      latestSnapshot = nextSnapshot;
+      return nextSnapshot;
+    };
+    editor.addCheckmark.mockImplementation(() => {
+      const element: ExportElement = {
+        id: "checkmark-1",
+        pageId: "page-1",
+        type: "checkmark",
+        bounds: { x: 86, y: 106, width: 28, height: 28 },
+      };
+      return rememberSnapshot(
+        baseSnapshot({
+          selectedElementId: element.id,
+          selectedElement: element,
+          visibleElements: [element],
+          isDirty: true,
+        }),
+      );
+    });
+    editor.addCross.mockImplementation(() => {
+      const element: ExportElement = {
+        id: "cross-1",
+        pageId: "page-1",
+        type: "cross",
+        bounds: { x: 96, y: 116, width: 28, height: 28 },
+      };
+      return rememberSnapshot(
+        baseSnapshot({
+          selectedElementId: element.id,
+          selectedElement: element,
+          visibleElements: [element],
+          isDirty: true,
+        }),
+      );
+    });
+    editor.addDate.mockImplementation(() => {
+      const element: ExportElement = {
+        id: "date-1",
+        pageId: "page-1",
+        type: "date",
+        bounds: { x: 120, y: 140, width: 96, height: 28 },
+        text: "07/31/2026",
+        textAppearance: { fontSize: 16, color: "#111111" },
+      };
+      return rememberSnapshot(
+        baseSnapshot({
+          selectedElementId: element.id,
+          selectedElement: element,
+          visibleElements: [element],
+          isDirty: true,
+        }),
+      );
+    });
+    editor.setTool.mockImplementation((tool: EditorTool) => {
+      latestSnapshot = { ...latestSnapshot, state: { ...latestSnapshot.state, tool } };
+      return latestSnapshot;
+    });
+    const { onSnapshotChange } = renderStatefulEditor(editor, latestSnapshot);
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Checkmark" }));
+    expect(editor.setTool).toHaveBeenCalledWith("checkmark");
+    expect(screen.getByRole("button", { name: /Checkmark/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    act(() => {
+      onSnapshotChange(baseSnapshot({ tool: "checkmark" }));
+    });
+    fireEvent.click(screen.getByLabelText("PDF overlay"), { clientX: 100, clientY: 120 });
+    expect(editor.addCheckmark).toHaveBeenCalledWith({ x: 100, y: 120 });
+    expect(editor.setTool).toHaveBeenLastCalledWith("select");
+    expect(screen.getByRole("group", { name: "checkmark element" })).toBeVisible();
+    expect(
+      screen.getByRole("group", { name: "checkmark element" }).querySelector("svg"),
+    ).not.toBeNull();
+
+    act(() => {
+      onSnapshotChange(baseSnapshot());
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Cross" }));
+    act(() => {
+      onSnapshotChange(baseSnapshot({ tool: "cross" }));
+    });
+    fireEvent.click(screen.getByLabelText("PDF overlay"), { clientX: 110, clientY: 130 });
+    expect(editor.addCross).toHaveBeenCalledWith({ x: 110, y: 130 });
+    expect(screen.getByRole("group", { name: "cross element" })).toBeVisible();
+
+    act(() => {
+      onSnapshotChange(baseSnapshot());
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Date" }));
+    act(() => {
+      onSnapshotChange(baseSnapshot({ tool: "date" }));
+    });
+    fireEvent.click(screen.getByLabelText("PDF overlay"), { clientX: 120, clientY: 140 });
+    expect(editor.addDate).toHaveBeenCalledWith({ x: 120, y: 140 });
+    expect(screen.getByRole("group", { name: "date element" })).toHaveTextContent("07/31/2026");
+
+    fireEvent.click(screen.getByLabelText("PDF overlay"), { clientX: 150, clientY: 160 });
+    expect(editor.addDate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["checkmark", "cross", "date"] as const)(
+    "shows shared controls and supports copy/paste/delete for selected %s annotations",
+    (type) => {
+      const editor = createEditor();
+      let copyCount = 0;
+      let pasteCount = 0;
+      editor.copySelectedElement.mockImplementation(() => {
+        copyCount += 1;
+        return selectedSnapshot(type);
+      });
+      editor.pasteCopiedElement.mockImplementation(() => {
+        pasteCount += 1;
+        return selectedSnapshot(type);
+      });
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={{ ...selectedSnapshot(type), canPaste: true }}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+
+      expect(screen.getByRole("group", { name: `${type} element` })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Duplicate" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
+      expect(screen.getByLabelText(`Resize ${type} element`)).toBeVisible();
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }));
+      });
+      expect(copyCount).toBe(1);
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }));
+      });
+      expect(pasteCount).toBe(1);
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+      });
+      expect(editor.deleteElement).toHaveBeenCalledWith(`${type}-1`);
+    },
+  );
   it("exposes one visible Image button backed by a hidden reusable file input", async () => {
     const user = userEvent.setup({ applyAccept: false });
     const editor = createEditor();
@@ -2039,8 +2363,8 @@ describe("EditorPage PDF rendering", () => {
 
     expect(copy.defaultPrevented).toBe(true);
     expect(paste.defaultPrevented).toBe(true);
-    expect((editor.copySelectedElement as Mock).mock.calls).toHaveLength(1);
-    expect((editor.pasteCopiedElement as Mock).mock.calls).toHaveLength(1);
+    expect(editor.copySelectedElement.mock.calls).toHaveLength(1);
+    expect(editor.pasteCopiedElement.mock.calls).toHaveLength(1);
   });
   it.each(["select", "text", "whiteout", "signature", "initials"] as const)(
     "marks the %s tool as active with aria-pressed",

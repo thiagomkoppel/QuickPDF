@@ -19,6 +19,9 @@ The initial implementation covers:
 | Add signature         | Yes  | Yes  |
 | Add initials          | Yes  | Yes  |
 | Add image             | Yes  | Yes  |
+| Add checkmark         | Yes  | Yes  |
+| Add cross             | Yes  | Yes  |
+| Add date              | Yes  | Yes  |
 | Paste overlay         | Yes  | Yes  |
 | Move an element       | Yes  | Yes  |
 | Resize an element     | Yes  | Yes  |
@@ -34,7 +37,7 @@ These actions do not enter document history:
 - selecting or deselecting an element;
 - copying an element into the session-local overlay clipboard;
 - entering or leaving text-editing mode;
-- changing the active tool, including one-shot return to Select after Text, Image, Signature, or Initials placement;
+- changing the active tool, including one-shot return to Select after Text, Image, Signature, Initials, Checkmark, Cross, or Date placement;
 - opening or closing an inspector or dialog;
 - zooming or fitting width;
 - page navigation;
@@ -144,7 +147,7 @@ Required automated coverage includes:
 
 - toolbar and keyboard invocation;
 - disabled states;
-- add, paste, edit, font-size, move, resize, duplicate, and delete for every current overlay type, including images;
+- add, paste, edit where supported, font-size where supported, move, resize, duplicate, and delete for every current overlay type, including images and annotations;
 - coalesced typing and pointer gestures;
 - native editing-control shortcut guards;
 - redo clearing after a new edit;

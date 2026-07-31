@@ -107,7 +107,7 @@ const boundsStyle = (
   height: bounds.height * scale,
 });
 
-const imageResizePreviewBounds = (
+const aspectRatioResizePreviewBounds = (
   startBounds: ExportElement["bounds"],
   bounds: ExportElement["bounds"],
 ): ExportElement["bounds"] => {
@@ -128,6 +128,11 @@ const imageResizePreviewBounds = (
   };
 };
 
+const isTextResizeType = (type: ExportElement["type"]): boolean =>
+  type === "text" || type === "date";
+
+const usesLocalVisualResizePreview = (type: ExportElement["type"]): boolean =>
+  type === "image" || type === "checkmark" || type === "cross" || type === "date";
 const signatureTextClass = (fontFamily: string | undefined): string =>
   `signature-text signature-font-${fontFamily ?? "cursive"}`;
 
@@ -191,6 +196,12 @@ const elementLabel = (element: ExportElement): string => {
       return "Initials";
     case "image":
       return "Image";
+    case "checkmark":
+      return "Checkmark";
+    case "cross":
+      return "Cross";
+    case "date":
+      return "Date";
   }
 };
 
@@ -479,15 +490,18 @@ export const EditorPage = ({
       }
       if (pointerAction?.kind === "resize" && event.key === "Escape") {
         event.preventDefault();
-        if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+        if (isTextResizeType(pointerAction.type)) {
+          if (usesLocalVisualResizePreview(pointerAction.type)) {
+            clearVisualResizePreview();
+          }
           applySnapshot(
             editor.previewTextResizeElement(
               pointerAction.elementId,
               pointerAction.startBounds,
-              pointerAction.startFontSize,
+              pointerAction.startFontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
             ),
           );
-        } else if (pointerAction.type === "image") {
+        } else if (usesLocalVisualResizePreview(pointerAction.type)) {
           clearVisualResizePreview();
         } else {
           applySnapshot(
@@ -634,21 +648,30 @@ export const EditorPage = ({
         );
         return;
       }
-      if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+      if (isTextResizeType(pointerAction.type)) {
+        const startFontSize = pointerAction.startFontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize;
         const rawScale =
           Math.max(point.x - pointerAction.startBounds.x, point.y - pointerAction.startBounds.y) /
           Math.max(pointerAction.startBounds.width, pointerAction.startBounds.height);
         const nextFontSize = Math.min(
           MAX_TEXT_FONT_SIZE,
-          Math.max(MIN_TEXT_FONT_SIZE, pointerAction.startFontSize * rawScale),
+          Math.max(MIN_TEXT_FONT_SIZE, startFontSize * rawScale),
         );
-        const scale = nextFontSize / pointerAction.startFontSize;
+        const scale = nextFontSize / startFontSize;
         const bounds = {
           ...pointerAction.startBounds,
           width: pointerAction.startBounds.width * scale,
           height: pointerAction.startBounds.height * scale,
         };
         resizePreviewRef.current = { bounds, fontSize: nextFontSize };
+        if (usesLocalVisualResizePreview(pointerAction.type)) {
+          scheduleVisualResizePreview({
+            elementId: pointerAction.elementId,
+            bounds,
+            fontSize: nextFontSize,
+          });
+          return;
+        }
         applySnapshot(
           editor.previewTextResizeElement(pointerAction.elementId, bounds, nextFontSize),
         );
@@ -659,12 +682,11 @@ export const EditorPage = ({
         width: point.x - pointerAction.startBounds.x,
         height: point.y - pointerAction.startBounds.y,
       };
-      const bounds =
-        pointerAction.type === "image"
-          ? imageResizePreviewBounds(pointerAction.startBounds, rawBounds)
-          : rawBounds;
+      const bounds = usesLocalVisualResizePreview(pointerAction.type)
+        ? aspectRatioResizePreviewBounds(pointerAction.startBounds, rawBounds)
+        : rawBounds;
       resizePreviewRef.current = { bounds };
-      if (pointerAction.type === "image") {
+      if (usesLocalVisualResizePreview(pointerAction.type)) {
         scheduleVisualResizePreview({ elementId: pointerAction.elementId, bounds });
         return;
       }
@@ -686,20 +708,22 @@ export const EditorPage = ({
       }
       if (pointerAction.kind === "resize") {
         const preview = resizePreviewRef.current;
-        if (
-          pointerAction.type === "text" &&
-          pointerAction.startFontSize !== undefined &&
-          preview?.fontSize !== undefined
-        ) {
+        if (isTextResizeType(pointerAction.type) && preview?.fontSize !== undefined) {
+          if (usesLocalVisualResizePreview(pointerAction.type)) {
+            clearVisualResizePreview();
+          }
           applySnapshot(
             editor.commitTextResizeElement(
               pointerAction.elementId,
-              { bounds: pointerAction.startBounds, fontSize: pointerAction.startFontSize },
+              {
+                bounds: pointerAction.startBounds,
+                fontSize: pointerAction.startFontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
+              },
               { bounds: preview.bounds, fontSize: preview.fontSize },
             ),
           );
         } else if (preview !== undefined) {
-          if (pointerAction.type === "image") {
+          if (usesLocalVisualResizePreview(pointerAction.type)) {
             clearVisualResizePreview();
           }
           applySnapshot(
@@ -726,15 +750,18 @@ export const EditorPage = ({
         );
       }
       if (pointerAction.kind === "resize") {
-        if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+        if (isTextResizeType(pointerAction.type)) {
+          if (usesLocalVisualResizePreview(pointerAction.type)) {
+            clearVisualResizePreview();
+          }
           applySnapshot(
             editor.previewTextResizeElement(
               pointerAction.elementId,
               pointerAction.startBounds,
-              pointerAction.startFontSize,
+              pointerAction.startFontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
             ),
           );
-        } else if (pointerAction.type === "image") {
+        } else if (usesLocalVisualResizePreview(pointerAction.type)) {
           clearVisualResizePreview();
         } else {
           applySnapshot(
@@ -921,6 +948,21 @@ export const EditorPage = ({
       applySnapshot(editor.setTool("select"));
       return;
     }
+    if (state.tool === "checkmark") {
+      applySnapshot(editor.addCheckmark(point));
+      applySnapshot(editor.setTool("select"));
+      return;
+    }
+    if (state.tool === "cross") {
+      applySnapshot(editor.addCross(point));
+      applySnapshot(editor.setTool("select"));
+      return;
+    }
+    if (state.tool === "date") {
+      applySnapshot(editor.addDate(point));
+      applySnapshot(editor.setTool("select"));
+      return;
+    }
     if (state.tool === "select" && state.selectedElementId !== undefined) {
       clearSelection();
     }
@@ -1047,7 +1089,7 @@ export const EditorPage = ({
       elementId: element.id,
       type: element.type,
       startBounds: element.bounds,
-      ...(element.type === "text"
+      ...(isTextResizeType(element.type)
         ? { startFontSize: element.textAppearance?.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize }
         : {}),
     });
@@ -1211,6 +1253,36 @@ export const EditorPage = ({
           />
           <button
             type="button"
+            aria-pressed={state.tool === "checkmark"}
+            onClick={() => {
+              applySnapshot(editor.setTool("checkmark"));
+            }}
+          >
+            <span>Checkmark</span>
+            {activeToolLabel(state.tool === "checkmark")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "cross"}
+            onClick={() => {
+              applySnapshot(editor.setTool("cross"));
+            }}
+          >
+            <span>Cross</span>
+            {activeToolLabel(state.tool === "cross")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "date"}
+            onClick={() => {
+              applySnapshot(editor.setTool("date"));
+            }}
+          >
+            <span>Date</span>
+            {activeToolLabel(state.tool === "date")}
+          </button>{" "}
+          <button
+            type="button"
             aria-pressed={state.tool === "whiteout"}
             onClick={() => {
               applySnapshot(editor.setTool("whiteout"));
@@ -1293,11 +1365,11 @@ export const EditorPage = ({
                 }}
               />
             </label>
-            {selectedElement.type === "text" ? (
+            {selectedElement.type === "text" || selectedElement.type === "date" ? (
               <label>
                 Font size
                 <input
-                  aria-label="Text font size"
+                  aria-label={selectedElement.type === "date" ? "Date font size" : "Text font size"}
                   type="number"
                   min={MIN_TEXT_FONT_SIZE}
                   max={MAX_TEXT_FONT_SIZE}
@@ -1401,6 +1473,10 @@ export const EditorPage = ({
                   visualResizePreview?.elementId === element.id
                     ? visualResizePreview.bounds
                     : element.bounds;
+                const previewFontSize =
+                  visualResizePreview?.elementId === element.id
+                    ? visualResizePreview.fontSize
+                    : undefined;
                 const isResizing =
                   pointerAction?.kind === "resize" && pointerAction.elementId === element.id;
                 return (
@@ -1423,14 +1499,17 @@ export const EditorPage = ({
                       }
                     }}
                   >
-                    {element.type === "text" ? (
-                      editingTextElementId === element.id ? (
+                    {element.type === "text" || element.type === "date" ? (
+                      element.type === "text" && editingTextElementId === element.id ? (
                         <textarea
                           ref={setEditingTextArea}
                           aria-label="Edit text element"
                           autoFocus
                           value={element.text ?? ""}
-                          style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                          style={{
+                            fontSize:
+                              (previewFontSize ?? element.textAppearance?.fontSize ?? 16) * zoom,
+                          }}
                           onChange={(event) => {
                             applySnapshot(editor.updateText(element.id, event.currentTarget.value));
                           }}
@@ -1442,7 +1521,10 @@ export const EditorPage = ({
                         <div
                           className="text-element-display"
                           aria-label="Text element content"
-                          style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                          style={{
+                            fontSize:
+                              (previewFontSize ?? element.textAppearance?.fontSize ?? 16) * zoom,
+                          }}
                           onDoubleClick={(event) => {
                             event.stopPropagation();
                             setEditingTextElementId(element.id);
@@ -1451,6 +1533,23 @@ export const EditorPage = ({
                           {element.text}
                         </div>
                       )
+                    ) : null}
+                    {element.type === "checkmark" || element.type === "cross" ? (
+                      <svg
+                        className={`annotation-symbol annotation-${element.type}`}
+                        viewBox="0 0 100 100"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        {element.type === "checkmark" ? (
+                          <path d="M16 52 L40 76 L84 24" />
+                        ) : (
+                          <>
+                            <path d="M22 22 L78 78" />
+                            <path d="M78 22 L22 78" />
+                          </>
+                        )}
+                      </svg>
                     ) : null}
                     {element.type === "image" && element.image !== undefined ? (
                       <img

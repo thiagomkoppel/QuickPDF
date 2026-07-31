@@ -557,3 +557,31 @@ p {
     overflow-x: auto;
   }
 }
+
+.overlay-checkmark,
+.overlay-cross {
+  display: grid;
+  place-items: stretch;
+  background: transparent;
+  cursor: move;
+}
+
+.annotation-symbol {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 12;
+  pointer-events: none;
+}
+
+.annotation-checkmark {
+  stroke: #0b6b2f;
+}
+
+.annotation-cross {
+  stroke: #b91c1c;
+}

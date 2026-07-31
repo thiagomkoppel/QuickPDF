@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  DateProvider,
   DownloadAdapter,
   DownloadRequest,
   IdGenerator,
@@ -64,6 +65,7 @@ describe("PdfEditorApplication export", () => {
     reader = { read: vi.fn(() => Promise.resolve(readResult)) };
     exportRequests = [];
     downloadRequests = [];
+
     gateway = {
       open: vi.fn(() => Promise.resolve(openResult)),
       exportPdf: (request) => {
@@ -572,6 +574,72 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     expect(exportRequests.at(-1)?.elements[0]?.textAppearance?.fontSize).toBe(24);
   });
 
+  it("undoes and redoes committed date resize geometry and font size", async () => {
+    const added = app.addDate({ x: 30, y: 40 });
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    const resized = app.commitTextResizeElement(
+      elementId,
+      { bounds: { x: 30, y: 40, width: 96, height: 28 }, fontSize: 16 },
+      { bounds: { x: 30, y: 40, width: 192, height: 56 }, fontSize: 32 },
+    );
+    expect(resized.state.selectedElement).toMatchObject({
+      id: elementId,
+      type: "date",
+      bounds: { x: 30, y: 40, width: 192, height: 56 },
+      textAppearance: { fontSize: 32 },
+    });
+    expect(resized.state.isDirty).toBe(true);
+
+    const undone = app.undo();
+    expect(undone.state.selectedElement).toMatchObject({
+      id: elementId,
+      type: "date",
+      bounds: { x: 30, y: 40, width: 96, height: 28 },
+      textAppearance: { fontSize: 16 },
+    });
+    expect(undone.state.isDirty).toBe(false);
+
+    const redone = app.redo();
+    expect(redone.state.selectedElement).toMatchObject({
+      id: elementId,
+      type: "date",
+      bounds: { x: 30, y: 40, width: 192, height: 56 },
+      textAppearance: { fontSize: 32 },
+    });
+    expect(redone.state.isDirty).toBe(true);
+
+    await app.exportCurrentPdf();
+    const exportedDate = exportRequests.at(-1)?.elements.find((element) => element.type === "date");
+    expect(exportedDate).toMatchObject({
+      id: elementId,
+      bounds: { x: 30, y: 40, width: 192, height: 56 },
+      textAppearance: { fontSize: 32 },
+    });
+  });
+
+  it("does not create a date resize history entry for an unchanged geometry and font size", () => {
+    const added = app.addDate({ x: 30, y: 40 });
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+
+    app.commitTextResizeElement(
+      elementId,
+      { bounds: { x: 30, y: 40, width: 96, height: 28 }, fontSize: 16 },
+      { bounds: { x: 30, y: 40, width: 96, height: 28 }, fontSize: 16 },
+    );
+    const undone = app.undo();
+
+    expect(undone.state.visibleElements.some((element) => element.id === elementId)).toBe(false);
+  });
   it("previews text resize without creating history until commit", () => {
     const added = app.addText({ x: 10, y: 20 }, "Preview me");
     const elementId = added.state.selectedElementId;
@@ -725,6 +793,148 @@ describe("PdfEditorApplication signature and initials overlays", () => {
 
     await app.exportCurrentPdf();
     expect(exportRequests[0]?.elements).toEqual([]);
+  });
+
+  it("adds annotations with shared lifecycle, deterministic dates, clipboard, history, and export", async () => {
+    const localReadResult: LocalPdfReadResult = {
+      ok: true,
+      fileName: "contract.pdf",
+      bytes: new Uint8Array([37, 80, 68, 70, 45]),
+    };
+    const localOpenResult: PdfOpenResult = {
+      ok: true,
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+    };
+    const localReader: LocalPdfFileReader = {
+      read: vi.fn(() => Promise.resolve(localReadResult)),
+    };
+    exportRequests = [];
+
+    const localGateway: PdfExportGateway = {
+      open: vi.fn(() => Promise.resolve(localOpenResult)),
+      exportPdf: (request) => {
+        exportRequests.push(request);
+        return Promise.resolve({ ok: true, bytes: new Uint8Array([1, 2, 3]) });
+      },
+    };
+    const localDownloader: DownloadAdapter = { download: vi.fn() };
+    const dateProvider: DateProvider = { today: () => new Date(2026, 6, 31) };
+    app = new PdfEditorApplication(
+      localReader,
+      localGateway,
+      localDownloader,
+      new TestIds(),
+      undefined,
+      dateProvider,
+    );
+    await app.openFile(file);
+
+    const checkmark = app.addCheckmark({ x: 80, y: 90 });
+    const checkmarkId = checkmark.state.selectedElementId;
+    expect(checkmark.state.selectedElement).toMatchObject({
+      type: "checkmark",
+      pageId: "page-1",
+      bounds: { x: 66, y: 76, width: 28, height: 28 },
+    });
+    const cross = app.addCross({ x: 120, y: 140 });
+    const crossId = cross.state.selectedElementId;
+    expect(cross.state.selectedElement).toMatchObject({
+      type: "cross",
+      pageId: "page-1",
+      bounds: { x: 106, y: 126, width: 28, height: 28 },
+    });
+    const date = app.addDate({ x: 150, y: 180 });
+    const dateId = date.state.selectedElementId;
+    expect(date.state.selectedElement).toMatchObject({
+      type: "date",
+      pageId: "page-1",
+      text: "07/31/2026",
+      textAppearance: { fontSize: 16 },
+    });
+    expect(date.state.isDirty).toBe(true);
+    expect(checkmarkId).toBeDefined();
+    expect(crossId).toBeDefined();
+    expect(dateId).toBeDefined();
+    if (checkmarkId === undefined || crossId === undefined || dateId === undefined) {
+      return;
+    }
+
+    app.previewMoveElement(crossId, { x: 140, y: 150 });
+    const movedCross = app.commitMoveElement(
+      crossId,
+      { x: 106, y: 126, width: 28, height: 28 },
+      { x: 140, y: 150, width: 28, height: 28 },
+    );
+    expect(movedCross.state.selectedElement).toMatchObject({
+      id: crossId,
+      type: "cross",
+      bounds: { x: 140, y: 150, width: 28, height: 28 },
+    });
+
+    const resizedCheckmark = app.resizeElement(checkmarkId, { width: 56, height: 120 });
+    expect(resizedCheckmark.state.selectedElement).toMatchObject({
+      id: checkmarkId,
+      type: "checkmark",
+      bounds: { x: 66, y: 76, width: 120, height: 120 },
+    });
+
+    const resizedDate = app.commitTextResizeElement(
+      dateId,
+      { bounds: { x: 150, y: 180, width: 96, height: 28 }, fontSize: 16 },
+      { bounds: { x: 150, y: 180, width: 144, height: 42 }, fontSize: 24 },
+    );
+    expect(resizedDate.state.selectedElement).toMatchObject({
+      id: dateId,
+      type: "date",
+      text: "07/31/2026",
+      bounds: { x: 150, y: 180, width: 144, height: 42 },
+      textAppearance: { fontSize: 24 },
+    });
+
+    app.selectElement(dateId);
+    app.copySelectedElement();
+    expect(app.snapshot().canPaste).toBe(true);
+    const pastedDate = app.pasteCopiedElement();
+    const pastedDateId = pastedDate.state.selectedElementId;
+    expect(pastedDateId).toBeDefined();
+    expect(pastedDate.state.selectedElement).toMatchObject({
+      type: "date",
+      text: "07/31/2026",
+      bounds: { x: 156, y: 196, width: 144, height: 42 },
+    });
+
+    const undoPaste = app.undo();
+    expect(undoPaste.state.visibleElements.some((element) => element.id === pastedDateId)).toBe(
+      false,
+    );
+    const redoPaste = app.redo();
+    expect(redoPaste.state.selectedElementId).toBe(pastedDateId);
+
+    app.selectElement(checkmarkId);
+    const duplicated = app.duplicateElement(checkmarkId);
+    expect(duplicated.state.selectedElement).toMatchObject({ type: "checkmark" });
+    const duplicateId = duplicated.state.selectedElementId;
+    expect(duplicateId).toBeDefined();
+    if (duplicateId === undefined) {
+      return;
+    }
+    const deleted = app.deleteElement(duplicateId);
+    expect(deleted.state.visibleElements.some((element) => element.id === duplicateId)).toBe(false);
+    expect(app.undo().state.selectedElementId).toBe(duplicateId);
+
+    exportRequests = [];
+    await app.exportCurrentPdf();
+    expect(exportRequests[0]?.elements.map((element) => element.type)).toEqual([
+      "checkmark",
+      "cross",
+      "checkmark",
+      "date",
+      "date",
+    ]);
+    expect(exportRequests[0]?.elements.find((element) => element.type === "date")?.text).toBe(
+      "07/31/2026",
+    );
+    expect(app.snapshot().state.isDirty).toBe(false);
   });
   it("adds image overlays centered on the click, clamps them, and includes them in export", async () => {
     const pngDataUrl =

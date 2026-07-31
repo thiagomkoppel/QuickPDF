@@ -234,6 +234,8 @@ Selected overlays display editor-only selection UI that is never exported.
 - text corner resize scales font size proportionally;
 - images preserve aspect ratio during inspector and corner-handle resize;
 - signatures and initials keep their current resize behavior;
+- checkmarks and crosses preserve aspect ratio with corner handles;
+- dates use text-like proportional resizing and font-size limits;
 - whiteout supports rectangular resizing.
 
 ## Images
@@ -258,6 +260,20 @@ Workflow:
 Images export as shown, including PNG transparency and JPG/JPEG images. Image data is session-only, participates in copy/paste and undo/redo through the shared overlay lifecycle, and is cleared when the document is closed or replaced.
 
 Unsupported formats such as GIF, SVG, WebP, PDF-as-image, cropping, rotation, filters, opacity, and layer effects are intentionally out of scope.
+
+## Annotations
+
+Checkmark, Cross, and Date are fast one-shot annotation tools:
+
+1. Activate the tool.
+2. Click the PDF page.
+3. QuickPDF places one overlay, selects it, and returns to Select.
+
+Checkmark and Cross render as transparent vector symbols, preserve aspect ratio during resize, and export as vector line artwork without relying on remote fonts or emoji glyphs.
+
+Date captures today's local date at placement time in deterministic `MM/DD/YYYY` format. The captured value remains unchanged after placement; live updates, date pickers, time, timestamps, locale switching, rich formatting, rotation, and color controls are intentionally out of scope for this milestone.
+
+Annotations support the shared overlay lifecycle: select, move, resize, duplicate, delete, session-local copy/paste, Undo/Redo, dirty-state tracking, current-page ownership, and export. Copying a Date preserves the captured date text, and pasting receives a new element ID on the current page using the existing bounded offset policy.
 
 ## Whiteout
 
@@ -301,7 +317,9 @@ Pasted overlays:
 - appear with a predictable bounded offset;
 - are selected;
 - create one undoable history entry;
-- preserve image data and dimensions when the copied overlay is an image.
+- preserve image data and dimensions when the copied overlay is an image;
+- preserve captured date text when the copied overlay is a Date;
+- preserve checkmark and cross geometry without storing separate symbol assets.
 
 ## Undo and redo
 

@@ -41,3 +41,11 @@ Selection, focus, active-tool changes, zoom, page navigation, and live pointer p
 ## No-op behavior
 
 An operation that produces no document-output change succeeds as a no-op or returns an explicit no-change result and must not create a history entry or mark the session dirty.
+
+## Annotation operations
+
+Checkmark, Cross, and Date annotations are ordinary overlay operations. They use the same application boundary as Text, Whiteout, Signature, Initials, and Image rather than a separate lifecycle.
+
+Checkmark and Cross creation is deterministic vector-symbol placement with transparent background and aspect-ratio-preserving resize. Date creation captures the injected local date value once in `MM/DD/YYYY` format and stores that captured text on the element.
+
+Committed annotation add, move, resize, duplicate, delete, and paste operations enter command history. Selection, active-tool changes, and one-shot return to Select remain presentation state and do not mark the document dirty.

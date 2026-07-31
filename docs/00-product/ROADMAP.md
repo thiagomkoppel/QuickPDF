@@ -49,14 +49,14 @@ Status: Completed
 - Undoable font-family changes
 - Standard-font PDF export
 
-## ⏳ Phase 3 — Remaining Overlay Tools
+## Completed Phase 3 - Remaining Overlay Tools
 
-Status: Planned
+Status: Completed
 
 - Insert PNG and JPEG images
 - Add checkmarks
 - Add crosses
-- Add dates
+- Add dates captured at placement time in deterministic `MM/DD/YYYY` format
 - Reuse the existing overlay lifecycle
 - Add Undo and Redo support
 - Export exactly as displayed
