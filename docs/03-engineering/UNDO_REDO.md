@@ -18,6 +18,8 @@ The initial implementation covers:
 | Add whiteout          | Yes  | Yes  |
 | Add signature         | Yes  | Yes  |
 | Add initials          | Yes  | Yes  |
+| Add image             | Yes  | Yes  |
+| Paste overlay         | Yes  | Yes  |
 | Move an element       | Yes  | Yes  |
 | Resize an element     | Yes  | Yes  |
 | Duplicate an element  | Yes  | Yes  |
@@ -30,13 +32,15 @@ Future output-changing operations must define undo and redo before they are cons
 These actions do not enter document history:
 
 - selecting or deselecting an element;
+- copying an element into the session-local overlay clipboard;
 - entering or leaving text-editing mode;
-- changing the active tool, including one-shot return to Select after Text, Signature, or Initials placement;
+- changing the active tool, including one-shot return to Select after Text, Image, Signature, or Initials placement;
 - opening or closing an inspector or dialog;
 - zooming or fitting width;
 - page navigation;
 - rendering completion;
 - exporting or downloading;
+- native browser copy/paste inside active editing controls;
 - opening a PDF;
 - closing a PDF;
 - browser refresh or navigation.
@@ -107,7 +111,7 @@ Undoing creation or duplication of the selected element clears selection because
 
 Undoing deletion may select the restored element to provide clear feedback. Redoing deletion then clears selection again.
 
-For move, resize, text, and font-size changes, the affected element should remain selected when possible.
+For move, resize, text, font-size, and image size changes, the affected element should remain selected when possible.
 
 ## Dirty state and export
 
@@ -124,7 +128,7 @@ The visible status must reflect the actual revision, not merely whether history 
 
 Undo and redo history is available only while the current document remains open in the current browser session.
 
-History is destroyed when the document is closed, replaced, or the page is unloaded. QuickPDF does not persist history.
+History and the session-local overlay clipboard are destroyed when the document is closed, replaced, or the page is unloaded. QuickPDF does not persist history or copied overlay snapshots.
 
 ## Accessibility
 
@@ -140,7 +144,7 @@ Required automated coverage includes:
 
 - toolbar and keyboard invocation;
 - disabled states;
-- add, edit, font-size, move, resize, duplicate, and delete for every current overlay type;
+- add, paste, edit, font-size, move, resize, duplicate, and delete for every current overlay type, including images;
 - coalesced typing and pointer gestures;
 - native editing-control shortcut guards;
 - redo clearing after a new edit;

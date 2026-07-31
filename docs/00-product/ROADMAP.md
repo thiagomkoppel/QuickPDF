@@ -63,7 +63,7 @@ Status: Planned
 
 ### Definition of Done
 
-- Every new overlay supports select, move, resize, duplicate, delete, Undo, Redo, and export.
+- Every new overlay supports select, move, resize, duplicate, delete, copy, paste, Undo, Redo, and export.
 - All data remains browser-local and session-only.
 - Automated and end-to-end tests pass.
 

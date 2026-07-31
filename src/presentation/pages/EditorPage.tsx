@@ -12,6 +12,7 @@ import type {
   EditorSnapshot,
   PdfEditorApplication,
   ExportElement,
+  ImageElementInput,
   SignatureFont,
   SignatureImageInput,
   SignatureElementType,
@@ -22,6 +23,7 @@ import {
   MIN_ELEMENT_HEIGHT,
   MIN_ELEMENT_WIDTH,
   MIN_TEXT_FONT_SIZE,
+  validateImageFile,
   validateSignatureImageFile,
 } from "../../application/editor-application";
 import type { PdfJsPageRenderer } from "../../infrastructure/pdf/pdfjs-page-renderer";
@@ -41,6 +43,7 @@ type PointerAction =
       readonly elementId: string;
       readonly offsetX: number;
       readonly offsetY: number;
+      readonly startBounds: ExportElement["bounds"];
     }
   | {
       readonly kind: "resize";
@@ -53,6 +56,14 @@ type PointerAction =
 interface ResizePreview {
   readonly bounds: ExportElement["bounds"];
   readonly fontSize?: number;
+}
+
+interface VisualResizePreview extends ResizePreview {
+  readonly elementId: string;
+}
+
+interface MovePreview {
+  readonly bounds: ExportElement["bounds"];
 }
 
 interface WhiteoutDraft {
@@ -96,8 +107,26 @@ const boundsStyle = (
   height: bounds.height * scale,
 });
 
-const elementStyle = (element: ExportElement, scale: number): React.CSSProperties =>
-  boundsStyle(element.bounds, scale);
+const imageResizePreviewBounds = (
+  startBounds: ExportElement["bounds"],
+  bounds: ExportElement["bounds"],
+): ExportElement["bounds"] => {
+  const ratio = startBounds.width / startBounds.height;
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return bounds;
+  }
+  const widthDelta = Math.abs(bounds.width - startBounds.width);
+  const heightDelta = Math.abs(bounds.height - startBounds.height);
+  const withAspect =
+    heightDelta > widthDelta
+      ? { ...bounds, width: bounds.height * ratio }
+      : { ...bounds, height: bounds.width / ratio };
+  return {
+    ...withAspect,
+    width: Math.max(MIN_ELEMENT_WIDTH, withAspect.width),
+    height: Math.max(MIN_ELEMENT_HEIGHT, withAspect.height),
+  };
+};
 
 const signatureTextClass = (fontFamily: string | undefined): string =>
   `signature-text signature-font-${fontFamily ?? "cursive"}`;
@@ -160,9 +189,33 @@ const elementLabel = (element: ExportElement): string => {
       return "Signature";
     case "initials":
       return "Initials";
+    case "image":
+      return "Image";
   }
 };
 
+interface OptionalPointerCaptureTarget {
+  readonly hasPointerCapture?: (pointerId: number) => boolean;
+  readonly setPointerCapture?: (pointerId: number) => void;
+  readonly releasePointerCapture?: (pointerId: number) => void;
+}
+
+const capturePointer = (target: HTMLElement, pointerId: number | undefined): void => {
+  if (pointerId === undefined) {
+    return;
+  }
+  (target as unknown as OptionalPointerCaptureTarget).setPointerCapture?.(pointerId);
+};
+
+const releasePointer = (target: HTMLElement, pointerId: number | undefined): void => {
+  if (pointerId === undefined) {
+    return;
+  }
+  const pointerTarget = target as unknown as OptionalPointerCaptureTarget;
+  if (pointerTarget.hasPointerCapture?.(pointerId) ?? false) {
+    pointerTarget.releasePointerCapture?.(pointerId);
+  }
+};
 const isEditingKeyboardTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -198,12 +251,22 @@ export const EditorPage = ({
   const zoomRef = useRef(1);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
   const [dialogType, setDialogType] = useState<SignatureElementType | undefined>();
+  const [pendingImage, setPendingImage] = useState<ImageElementInput | undefined>();
+  const [imageUploadError, setImageUploadError] = useState<string | undefined>();
   const [pointerAction, setPointerAction] = useState<PointerAction | undefined>();
   const [whiteoutDraft, setWhiteoutDraft] = useState<WhiteoutDraft | undefined>();
   const [editingTextElementId, setEditingTextElementId] = useState<string | undefined>();
+  const [visualResizePreview, setVisualResizePreviewState] = useState<
+    VisualResizePreview | undefined
+  >();
   const editingTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const textFocusRetryRef = useRef<number | undefined>(undefined);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
+  const resizeFrameRef = useRef<number | undefined>(undefined);
+  const pendingVisualResizePreviewRef = useRef<VisualResizePreview | undefined>(undefined);
+  const movePreviewRef = useRef<MovePreview | undefined>(undefined);
+  const moveCancelRef = useRef<(() => void) | undefined>(undefined);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const applySnapshot = useCallback(
     (nextSnapshot: EditorSnapshot): void => {
@@ -211,6 +274,56 @@ export const EditorPage = ({
     },
     [onSnapshotChange],
   );
+
+  const cancelResizeFrame = useCallback((): void => {
+    if (resizeFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(resizeFrameRef.current);
+      resizeFrameRef.current = undefined;
+    }
+    pendingVisualResizePreviewRef.current = undefined;
+  }, []);
+
+  const clearVisualResizePreview = useCallback((): void => {
+    cancelResizeFrame();
+    setVisualResizePreviewState(undefined);
+  }, [cancelResizeFrame]);
+
+  const scheduleVisualResizePreview = useCallback((preview: VisualResizePreview): void => {
+    pendingVisualResizePreviewRef.current = preview;
+    if (resizeFrameRef.current !== undefined) {
+      return;
+    }
+    resizeFrameRef.current = window.requestAnimationFrame(() => {
+      resizeFrameRef.current = undefined;
+      const nextPreview = pendingVisualResizePreviewRef.current;
+      pendingVisualResizePreviewRef.current = undefined;
+      if (nextPreview !== undefined) {
+        setVisualResizePreviewState(nextPreview);
+      }
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      cancelResizeFrame();
+    },
+    [cancelResizeFrame],
+  );
+
+  useEffect(() => {
+    if (currentPageId !== undefined) {
+      return;
+    }
+    cancelResizeFrame();
+    resizePreviewRef.current = undefined;
+    const cleanupState = window.setTimeout(() => {
+      setVisualResizePreviewState(undefined);
+      setPointerAction(undefined);
+    }, 0);
+    return () => {
+      window.clearTimeout(cleanupState);
+    };
+  }, [cancelResizeFrame, currentPageId]);
 
   const applyZoom = useCallback(
     (
@@ -359,6 +472,11 @@ export const EditorPage = ({
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (moveCancelRef.current !== undefined && event.key === "Escape") {
+        event.preventDefault();
+        moveCancelRef.current();
+        return;
+      }
       if (pointerAction?.kind === "resize" && event.key === "Escape") {
         event.preventDefault();
         if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
@@ -369,6 +487,8 @@ export const EditorPage = ({
               pointerAction.startFontSize,
             ),
           );
+        } else if (pointerAction.type === "image") {
+          clearVisualResizePreview();
         } else {
           applySnapshot(
             editor.previewResizeElement(pointerAction.elementId, pointerAction.startBounds),
@@ -397,6 +517,17 @@ export const EditorPage = ({
         const key = event.key.toLowerCase();
         const wantsUndo = key === "z" && !event.shiftKey;
         const wantsRedo = (key === "z" && event.shiftKey) || (!event.metaKey && key === "y");
+        if (key === "c" && state.selectedElementId !== undefined) {
+          event.preventDefault();
+          applySnapshot(editor.copySelectedElement());
+          return;
+        }
+        if (key === "v" && snapshot.canPaste) {
+          event.preventDefault();
+          setWhiteoutDraft(undefined);
+          applySnapshot(editor.pasteCopiedElement());
+          return;
+        }
         if (wantsUndo && snapshot.canUndo) {
           event.preventDefault();
           setEditingTextElementId(undefined);
@@ -461,6 +592,8 @@ export const EditorPage = ({
     editingTextElementId,
     editor,
     pointerAction,
+    clearVisualResizePreview,
+    snapshot.canPaste,
     snapshot.canRedo,
     snapshot.canUndo,
     state.selectedElement,
@@ -487,10 +620,16 @@ export const EditorPage = ({
         return;
       }
       if (pointerAction.kind === "move") {
+        const bounds = {
+          ...pointerAction.startBounds,
+          x: point.x - pointerAction.offsetX,
+          y: point.y - pointerAction.offsetY,
+        };
+        movePreviewRef.current = { bounds };
         applySnapshot(
-          editor.moveElement(pointerAction.elementId, {
-            x: point.x - pointerAction.offsetX,
-            y: point.y - pointerAction.offsetY,
+          editor.previewMoveElement(pointerAction.elementId, {
+            x: bounds.x,
+            y: bounds.y,
           }),
         );
         return;
@@ -515,16 +654,36 @@ export const EditorPage = ({
         );
         return;
       }
-      const bounds = {
+      const rawBounds = {
         ...pointerAction.startBounds,
         width: point.x - pointerAction.startBounds.x,
         height: point.y - pointerAction.startBounds.y,
       };
+      const bounds =
+        pointerAction.type === "image"
+          ? imageResizePreviewBounds(pointerAction.startBounds, rawBounds)
+          : rawBounds;
       resizePreviewRef.current = { bounds };
+      if (pointerAction.type === "image") {
+        scheduleVisualResizePreview({ elementId: pointerAction.elementId, bounds });
+        return;
+      }
       applySnapshot(editor.previewResizeElement(pointerAction.elementId, bounds));
     };
 
     const stopPointerAction = (): void => {
+      if (pointerAction.kind === "move") {
+        const preview = movePreviewRef.current;
+        if (preview !== undefined) {
+          applySnapshot(
+            editor.commitMoveElement(
+              pointerAction.elementId,
+              pointerAction.startBounds,
+              preview.bounds,
+            ),
+          );
+        }
+      }
       if (pointerAction.kind === "resize") {
         const preview = resizePreviewRef.current;
         if (
@@ -540,25 +699,70 @@ export const EditorPage = ({
             ),
           );
         } else if (preview !== undefined) {
+          if (pointerAction.type === "image") {
+            clearVisualResizePreview();
+          }
           applySnapshot(
-            editor.resizeElement(pointerAction.elementId, {
-              width: preview.bounds.width,
-              height: preview.bounds.height,
-            }),
+            editor.commitResizeElement(
+              pointerAction.elementId,
+              pointerAction.startBounds,
+              preview.bounds,
+            ),
           );
         }
       }
+      movePreviewRef.current = undefined;
+      resizePreviewRef.current = undefined;
+      setPointerAction(undefined);
+    };
+
+    const cancelPointerAction = (): void => {
+      if (pointerAction.kind === "move") {
+        applySnapshot(
+          editor.previewMoveElement(pointerAction.elementId, {
+            x: pointerAction.startBounds.x,
+            y: pointerAction.startBounds.y,
+          }),
+        );
+      }
+      if (pointerAction.kind === "resize") {
+        if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+          applySnapshot(
+            editor.previewTextResizeElement(
+              pointerAction.elementId,
+              pointerAction.startBounds,
+              pointerAction.startFontSize,
+            ),
+          );
+        } else if (pointerAction.type === "image") {
+          clearVisualResizePreview();
+        } else {
+          applySnapshot(
+            editor.previewResizeElement(pointerAction.elementId, pointerAction.startBounds),
+          );
+        }
+      }
+      movePreviewRef.current = undefined;
       resizePreviewRef.current = undefined;
       setPointerAction(undefined);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stopPointerAction, { once: true });
+    window.addEventListener("pointercancel", cancelPointerAction, { once: true });
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", stopPointerAction);
+      window.removeEventListener("pointercancel", cancelPointerAction);
     };
-  }, [applySnapshot, editor, pointerAction, zoom]);
+  }, [
+    applySnapshot,
+    clearVisualResizePreview,
+    editor,
+    pointerAction,
+    scheduleVisualResizePreview,
+    zoom,
+  ]);
 
   const pointFromOverlayEvent = (
     event: Pick<PointerEvent<HTMLDivElement>, "clientX" | "clientY" | "currentTarget">,
@@ -583,7 +787,7 @@ export const EditorPage = ({
       return;
     }
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    capturePointer(event.currentTarget, event.pointerId);
     if (editingTextElementId !== undefined) {
       setEditingTextElementId(undefined);
     }
@@ -597,24 +801,24 @@ export const EditorPage = ({
   };
 
   const updateWhiteoutDraft = (event: PointerEvent<HTMLDivElement>): void => {
-    if (whiteoutDraft?.pointerId !== event.pointerId) {
+    const draft = whiteoutDraft;
+    if (draft?.pointerId !== event.pointerId) {
       return;
     }
     const point = pointFromOverlayEvent(event);
     if (point === undefined) {
       return;
     }
-    setWhiteoutDraft({ ...whiteoutDraft, currentX: point.x, currentY: point.y });
+    setWhiteoutDraft({ ...draft, currentX: point.x, currentY: point.y });
   };
 
   const finishWhiteoutDraft = (event: PointerEvent<HTMLDivElement>): void => {
-    if (whiteoutDraft?.pointerId !== event.pointerId) {
+    const draft = whiteoutDraft;
+    if (draft?.pointerId !== event.pointerId) {
       return;
     }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const finalDraft = whiteoutDraft;
+    releasePointer(event.currentTarget, event.pointerId);
+    const finalDraft = draft;
     setWhiteoutDraft(undefined);
     if (currentPage === undefined || !isMeaningfulWhiteoutDrag(finalDraft)) {
       return;
@@ -641,6 +845,48 @@ export const EditorPage = ({
     applySnapshot(editor.clearSelection());
   };
 
+  const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file === undefined) {
+      return;
+    }
+    const validationError = validateImageFile(file);
+    if (validationError !== undefined) {
+      setImageUploadError(validationError.message);
+      setPendingImage(undefined);
+      return;
+    }
+    const reader = new FileReader();
+    const image = new Image();
+    reader.addEventListener("error", () => {
+      setImageUploadError("The image could not be read.");
+      setPendingImage(undefined);
+    });
+    reader.addEventListener("load", () => {
+      if (typeof reader.result !== "string") {
+        setImageUploadError("The image could not be read.");
+        setPendingImage(undefined);
+        return;
+      }
+      image.addEventListener("error", () => {
+        setImageUploadError("The image appears to be corrupted or unsupported.");
+        setPendingImage(undefined);
+      });
+      image.addEventListener("load", () => {
+        setImageUploadError(undefined);
+        setPendingImage({
+          dataUrl: reader.result as string,
+          mimeType: file.type === "image/png" ? "image/png" : "image/jpeg",
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+        });
+        applySnapshot(editor.setTool("image"));
+      });
+      image.src = reader.result;
+    });
+    reader.readAsDataURL(file);
+  };
   const handleOverlayClick = (event: MouseEvent<HTMLDivElement>): void => {
     if (currentPage === undefined) {
       return;
@@ -669,6 +915,12 @@ export const EditorPage = ({
       setEditingTextElementId(selectedElementId);
       return;
     }
+    if (state.tool === "image" && pendingImage !== undefined) {
+      applySnapshot(editor.addImage(point, pendingImage));
+      setPendingImage(undefined);
+      applySnapshot(editor.setTool("select"));
+      return;
+    }
     if (state.tool === "select" && state.selectedElementId !== undefined) {
       clearSelection();
     }
@@ -685,11 +937,20 @@ export const EditorPage = ({
     clearSelection();
   };
 
-  const startElementMove = (element: ExportElement, event: PointerEvent<HTMLDivElement>): void => {
+  const startElementMove = (
+    element: ExportElement,
+    event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
+  ): void => {
     if (
       event.target instanceof HTMLTextAreaElement ||
       (event.target as HTMLElement).dataset.resizeHandle === "true"
     ) {
+      return;
+    }
+    if ("detail" in event && event.detail > 1) {
+      return;
+    }
+    if (moveCancelRef.current !== undefined) {
       return;
     }
     event.preventDefault();
@@ -702,20 +963,70 @@ export const EditorPage = ({
     if (overlayLayer === null) {
       return;
     }
+    const target = event.currentTarget;
+    const startBounds = element.bounds;
     const rect = overlayLayer.getBoundingClientRect();
-    const point = {
+    const startPoint = {
       x: (event.clientX - rect.left) / zoom,
       y: (event.clientY - rect.top) / zoom,
     };
-    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+    if (!Number.isFinite(startPoint.x) || !Number.isFinite(startPoint.y)) {
       return;
     }
-    setPointerAction({
-      kind: "move",
-      elementId: element.id,
-      offsetX: point.x - element.bounds.x,
-      offsetY: point.y - element.bounds.y,
-    });
+    const offsetX = startPoint.x - startBounds.x;
+    const offsetY = startPoint.y - startBounds.y;
+    let latestBounds: ExportElement["bounds"] | undefined;
+
+    const cleanup = (): void => {
+      target.removeEventListener("pointermove", handleMove);
+      target.removeEventListener("pointerup", handleUp);
+      target.removeEventListener("pointercancel", handleCancel);
+      moveCancelRef.current = undefined;
+      movePreviewRef.current = undefined;
+    };
+    const restoreStart = (): void => {
+      applySnapshot(editor.previewMoveElement(element.id, { x: startBounds.x, y: startBounds.y }));
+      cleanup();
+    };
+    const handleMove = (nativeEvent: globalThis.PointerEvent): void => {
+      const layer = overlayLayerRef.current;
+      if (layer === null) {
+        return;
+      }
+      const layerRect = layer.getBoundingClientRect();
+      const point = {
+        x: (nativeEvent.clientX - layerRect.left) / zoomRef.current,
+        y: (nativeEvent.clientY - layerRect.top) / zoomRef.current,
+      };
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        return;
+      }
+      const bounds = {
+        ...startBounds,
+        x: point.x - offsetX,
+        y: point.y - offsetY,
+      };
+      latestBounds = bounds;
+      movePreviewRef.current = { bounds };
+      applySnapshot(editor.previewMoveElement(element.id, { x: bounds.x, y: bounds.y }));
+    };
+    const handleUp = (): void => {
+      releasePointer(target, "pointerId" in event ? event.pointerId : undefined);
+      if (latestBounds !== undefined) {
+        applySnapshot(editor.commitMoveElement(element.id, startBounds, latestBounds));
+      }
+      cleanup();
+    };
+    const handleCancel = (): void => {
+      releasePointer(target, "pointerId" in event ? event.pointerId : undefined);
+      restoreStart();
+    };
+
+    capturePointer(target, "pointerId" in event ? event.pointerId : undefined);
+    target.addEventListener("pointermove", handleMove);
+    target.addEventListener("pointerup", handleUp, { once: true });
+    target.addEventListener("pointercancel", handleCancel, { once: true });
+    moveCancelRef.current = restoreStart;
   };
 
   const startElementResize = (
@@ -881,6 +1192,25 @@ export const EditorPage = ({
           </button>
           <button
             type="button"
+            aria-pressed={state.tool === "image"}
+            onClick={() => {
+              imageInputRef.current?.click();
+            }}
+          >
+            <span>Image</span>
+            {activeToolLabel(state.tool === "image")}
+          </button>
+          <input
+            ref={imageInputRef}
+            className="visually-hidden"
+            aria-label="Choose image"
+            type="file"
+            accept="image/png,image/jpeg"
+            style={{ display: "none" }}
+            onChange={handleImageFileChange}
+          />
+          <button
+            type="button"
             aria-pressed={state.tool === "whiteout"}
             onClick={() => {
               applySnapshot(editor.setTool("whiteout"));
@@ -1005,6 +1335,16 @@ export const EditorPage = ({
       <p className="whiteout-note">
         Whiteout only covers content visually. It does not securely remove underlying PDF data.
       </p>
+      {imageUploadError === undefined ? null : (
+        <p className="error-message" role="alert">
+          {imageUploadError}
+        </p>
+      )}
+      {pendingImage === undefined || state.tool !== "image" ? null : (
+        <p className="status-note" role="status">
+          Click the PDF page to place the image.
+        </p>
+      )}
       {state.exportFilename === undefined ? null : (
         <p className="status-note" role="status">
           Downloaded {state.exportFilename}. The editor remains open.
@@ -1056,75 +1396,101 @@ export const EditorPage = ({
                   style={boundsStyle(whiteoutPreviewBounds, zoom)}
                 />
               )}
-              {state.visibleElements.map((element) => (
-                <div
-                  key={element.id}
-                  className={`overlay-element overlay-${element.type}${state.selectedElementId === element.id ? " is-selected" : ""}`}
-                  style={elementStyle(element, zoom)}
-                  role="group"
-                  aria-label={`${element.type} element`}
-                  aria-description={
-                    element.type === "text" ? "Press Enter to edit selected text." : undefined
-                  }
-                  tabIndex={element.type === "text" ? 0 : undefined}
-                  onPointerDown={(event) => {
-                    startElementMove(element, event);
-                  }}
-                >
-                  {element.type === "text" ? (
-                    editingTextElementId === element.id ? (
-                      <textarea
-                        ref={setEditingTextArea}
-                        aria-label="Edit text element"
-                        autoFocus
-                        value={element.text ?? ""}
-                        style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
-                        onChange={(event) => {
-                          applySnapshot(editor.updateText(element.id, event.currentTarget.value));
-                        }}
-                        onBlur={() => {
-                          setEditingTextElementId(undefined);
+              {state.visibleElements.map((element) => {
+                const elementBounds =
+                  visualResizePreview?.elementId === element.id
+                    ? visualResizePreview.bounds
+                    : element.bounds;
+                const isResizing =
+                  pointerAction?.kind === "resize" && pointerAction.elementId === element.id;
+                return (
+                  <div
+                    key={element.id}
+                    className={`overlay-element overlay-${element.type}${state.selectedElementId === element.id ? " is-selected" : ""}${isResizing ? " is-resizing" : ""}`}
+                    style={boundsStyle(elementBounds, zoom)}
+                    role="group"
+                    aria-label={`${element.type} element`}
+                    aria-description={
+                      element.type === "text" ? "Press Enter to edit selected text." : undefined
+                    }
+                    tabIndex={element.type === "text" ? 0 : undefined}
+                    onPointerDown={(event) => {
+                      startElementMove(element, event);
+                    }}
+                    onMouseDown={(event) => {
+                      if (element.type === "image") {
+                        startElementMove(element, event);
+                      }
+                    }}
+                  >
+                    {element.type === "text" ? (
+                      editingTextElementId === element.id ? (
+                        <textarea
+                          ref={setEditingTextArea}
+                          aria-label="Edit text element"
+                          autoFocus
+                          value={element.text ?? ""}
+                          style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                          onChange={(event) => {
+                            applySnapshot(editor.updateText(element.id, event.currentTarget.value));
+                          }}
+                          onBlur={() => {
+                            setEditingTextElementId(undefined);
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className="text-element-display"
+                          aria-label="Text element content"
+                          style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                          onDoubleClick={(event) => {
+                            event.stopPropagation();
+                            setEditingTextElementId(element.id);
+                          }}
+                        >
+                          {element.text}
+                        </div>
+                      )
+                    ) : null}
+                    {element.type === "image" && element.image !== undefined ? (
+                      <img
+                        src={element.image.dataUrl}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "fill",
+                          display: "block",
                         }}
                       />
-                    ) : (
-                      <div
-                        className="text-element-display"
-                        aria-label="Text element content"
-                        style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
-                        onDoubleClick={(event) => {
-                          event.stopPropagation();
-                          setEditingTextElementId(element.id);
+                    ) : null}
+                    {element.type === "signature" || element.type === "initials" ? (
+                      element.image === undefined ? (
+                        <div
+                          className={signatureTextClass(element.textAppearance?.fontFamily)}
+                          style={{ fontSize: (element.textAppearance?.fontSize ?? 30) * zoom }}
+                        >
+                          {element.text}
+                        </div>
+                      ) : (
+                        <img src={element.image.dataUrl} alt="" draggable={false} />
+                      )
+                    ) : null}
+                    {state.selectedElementId === element.id ? (
+                      <button
+                        type="button"
+                        className="resize-handle"
+                        aria-label={`Resize ${element.type} element`}
+                        data-resize-handle="true"
+                        onPointerDown={(event) => {
+                          startElementResize(element, event);
                         }}
-                      >
-                        {element.text}
-                      </div>
-                    )
-                  ) : null}
-                  {element.type === "signature" || element.type === "initials" ? (
-                    element.image === undefined ? (
-                      <div
-                        className={signatureTextClass(element.textAppearance?.fontFamily)}
-                        style={{ fontSize: (element.textAppearance?.fontSize ?? 30) * zoom }}
-                      >
-                        {element.text}
-                      </div>
-                    ) : (
-                      <img src={element.image.dataUrl} alt="" draggable={false} />
-                    )
-                  ) : null}
-                  {state.selectedElementId === element.id ? (
-                    <button
-                      type="button"
-                      className="resize-handle"
-                      aria-label={`Resize ${element.type} element`}
-                      data-resize-handle="true"
-                      onPointerDown={(event) => {
-                        startElementResize(element, event);
-                      }}
-                    />
-                  ) : null}
-                </div>
-              ))}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </main>

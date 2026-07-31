@@ -109,10 +109,13 @@ History entries should store the smallest reversible state needed for the operat
 - element identifiers;
 - validated geometry;
 - safe element property values;
+- session-local image overlay data URLs and natural dimensions when required to undo/redo image operations;
 - before/after values;
 - insertion position when required.
 
-History must not:
+The session-local overlay clipboard follows the same memory-only lifetime as history. It stores copied text, whiteout, signature, initials, and image overlay snapshots without retaining the original element ID.
+
+History and clipboard state must not:
 
 - persist to local storage, IndexedDB, cookies, a backend, or analytics;
 - contain duplicate copies of original PDF bytes;
@@ -127,7 +130,8 @@ The initial policy is:
 - one continuous text-editing focus session equals one update-text entry;
 - repeated font-size adjustments during one control interaction may merge;
 - separate element creations remain separate entries;
-- delete and duplicate remain separate entries;
+- delete, duplicate, and paste remain separate entries;
+- copy is not a command because it does not change document output;
 - commands never merge across different elements or sessions.
 
 ## Selection after history navigation

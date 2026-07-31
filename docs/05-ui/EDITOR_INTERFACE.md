@@ -1,197 +1,395 @@
-# EDITOR_INTERFACE.md
+# QuickPDF Editor Interface
 
-## Philosophy
+## Purpose
 
-The document is the application.
+This document defines the final editor layout and interaction model.
 
-Everything else supports it.
+The document is the application. Every control exists to help the user complete the PDF quickly.
 
----
+## Primary layout
 
-# Layout
+Recommended hierarchy:
 
-Top Toolbar
+```text
+Application header, when present
+Sticky main editor toolbar
+Compact floating selected-element inspector, when selected
+Scrollable PDF editor viewport
+Compact document status region
+```
 
-Left Tool Panel
+The PDF canvas and overlay share one aligned page frame within the viewport.
 
-Center PDF
+## Application header
 
-Right Inspector
+The header should be minimal.
 
-Bottom Page Navigation
+Possible contents:
 
----
+- QuickPDF wordmark;
+- local file name;
+- current document status;
+- optional help/shortcuts entry.
 
-# Toolbar
+Do not duplicate the full editor toolbar in the header.
 
-Contains:
+## Sticky main toolbar
 
-Open
+The toolbar remains visible while the editor viewport scrolls.
 
-Download
+It must:
 
-Undo
+- sit above PDF content;
+- preserve a stable height;
+- avoid covering the page unexpectedly;
+- remain keyboard navigable;
+- adapt through horizontal scrolling, grouping, or compact labels on narrow layouts.
 
-Redo
+### Logical groups
 
-Page
+#### File
 
-Zoom
+- Open local PDF
+- Download edited PDF
 
-Fit Width
+#### Edit
 
-No additional actions unless necessary.
+- Undo
+- Redo
+- Copy
+- Paste
 
-The main editor toolbar remains visible while scrolling the PDF workspace. It stays in the editor shell above the PDF canvas and overlays, keeps a stable height, and preserves horizontal overflow access on smaller screens.
+#### Insert and tools
 
-Undo and Redo are disabled when unavailable and expose accessible names and semantic disabled states. They call the same application use cases as keyboard shortcuts and do not change the active tool or shift the PDF viewport.
+- Select
+- Text
+- Whiteout
+- Image
+- Signature
+- Initials
+- Checkmark
+- Cross
+- Date
 
-Keyboard shortcuts:
+#### View
 
-- `Ctrl+Z` / `Cmd+Z`: Undo;
-- `Ctrl+Shift+Z` / `Cmd+Shift+Z`: Redo;
-- `Ctrl+Y`: Redo on Windows and Linux.
+- Zoom out
+- Zoom value
+- Zoom in
+- Reset zoom
+- Fit width
 
-QuickPDF must not hijack native text-field undo while the user is actively editing text.
+#### Pages
 
----
+- Previous page
+- Current page / total pages
+- Next page
 
-# Left Toolbar
+The toolbar may visually reorganize, but these logical groups must remain understandable.
 
-Contains tools only.
+## Active tool
 
-Examples:
+Every tool button must clearly indicate active state through:
 
-Select
+- `aria-pressed` or equivalent semantics;
+- primary background or outline;
+- contrasting icon/text;
+- optional small `Active` label in prototype/accessible layouts;
+- visible keyboard focus independent from active state.
 
-Text
+Users must never have to guess which tool is active.
 
-Whiteout
+## Tool policies
 
-Signature
+### One-shot tools
 
-Initials
+After one element is placed, return to Select:
 
-Image
+- Text
+- Image
+- Signature
+- Initials
+- Checkmark
+- Cross
+- Date
 
-Checkmark
+### Persistent tool
 
-Icons only where practical.
+Whiteout remains active after drawing so multiple regions can be covered efficiently.
 
----
+### Select
 
-# Inspector
+Select is the neutral/default tool.
 
-Contextual.
+Clicking empty page or empty editor workspace while Select is active clears the current selection.
 
-Nothing selected:
+Tool changes:
 
-Show nothing.
+- are presentation state;
+- create no document history;
+- do not mark dirty;
+- do not invalidate Redo.
 
-Text selected:
+## PDF viewport
 
-Show text properties, including a simple 8-96 pt font-size control.
+The editor viewport:
 
-Whiteout selected:
+- owns scrolling;
+- remains stable while the page zoom changes;
+- contains the PDF page frame, canvas, and overlay;
+- owns the non-passive modified-wheel zoom listener;
+- fills available central space;
+- uses a neutral background that distinguishes the page edge.
 
-Show whiteout properties.
+The page frame should cast a very subtle shadow and must not resemble a card-heavy dashboard.
 
-The selected-element inspector is a compact floating control surface inside the editor shell, visually below the main toolbar and above the PDF canvas layer. It is not rendered after the page canvas in normal document flow, so showing or hiding it must not resize, shift, or misalign the rendered PDF page or overlay layer.
+## Zoom
 
-Do not overwhelm users.
+Supported controls:
 
----
+- toolbar buttons;
+- zoom value/readout;
+- fit width;
+- reset;
+- `Ctrl/Cmd + wheel` inside the editor viewport;
+- `Ctrl/Cmd + +`;
+- `Ctrl/Cmd + -`;
+- `Ctrl/Cmd + 0`.
 
-# Layers
+Browser page zoom must remain unchanged while the editor handles these shortcuts.
 
-Very simple.
+Modified-wheel gestures remain contained even at the viewer minimum and maximum zoom.
 
-One list per page.
+Zoom, fit width, and navigation never mark the document dirty or create history entries.
 
-Capabilities:
+## Selected-element inspector
 
-Select
+The inspector is compact, persistent while selected, and outside the PDF document flow.
 
-Delete
+Preferred placement:
 
-Bring Forward
+- a horizontal floating bar below the toolbar; or
+- a narrow right-side panel on large screens.
 
-Send Backward
+It must not:
 
----
+- appear at the bottom of a long PDF page;
+- reflow or shift the canvas;
+- obscure a large portion of the PDF;
+- disappear during scrolling.
 
-# Status
+### Shared controls
 
-Display:
+For every supported overlay:
 
-Unsaved Changes
+- element type/status;
+- Copy;
+- Duplicate;
+- Delete.
 
-Downloaded
+### Text controls
 
-Exporting
+- font family;
+- font size;
+- future color/alignment only when explicitly implemented.
 
-Ready
+### Image/signature/initials controls
 
----
+- dimensions when useful;
+- no advanced image editing in the initial interface.
 
-# Zoom
+The inspector must not trap focus.
 
-Toolbar
+## Selection model
 
-Ctrl + Wheel
+### Text
 
-Ctrl + +
+- new text enters edit mode automatically;
+- single click existing text selects;
+- double-click or Enter enters editing;
+- Escape exits editing and keeps selection;
+- click outside commits/exits and applies normal deselection policy;
+- Delete/Backspace deletes the selected element only when not editing text.
 
-Ctrl + -
+### Other overlays
 
-Ctrl + 0
+- single click/tap selects;
+- drag moves;
+- corner handles resize;
+- click empty space with Select active deselects.
 
-Browser zoom must never change.
+### Borders
 
----
+Unselected overlays have no decorative border.
 
-# PDF Area
+Selected overlays display editor-only selection UI that is never exported.
 
-This is always the visual priority.
+## Move and resize
 
-Everything else should feel secondary.
+- pointer gestures preview live;
+- one completed gesture creates one history entry;
+- Escape or pointer cancellation restores the starting state;
+- no-op gestures create no history;
+- selection remains after move/resize;
+- text corner resize scales font size proportionally;
+- images preserve aspect ratio during inspector and corner-handle resize;
+- signatures and initials keep their current resize behavior;
+- whiteout supports rectangular resizing.
 
-## Export controls
+## Images
 
-The Download button generates a new edited PDF locally and keeps the editor open. Export progress is announced as status text. Export failure is shown as an alert and does not discard edits.
+Image insertion uses only browser-local File APIs.
 
-## Live PDF rendering
+Supported file types:
 
-The editor workspace must show the actual active PDF page on a canvas. Placeholder-only pages are not acceptable once a document is open. Text and whiteout overlays sit above the canvas and share its CSS coordinate space.
+- PNG;
+- JPG;
+- JPEG.
 
-While the current page is rendering, the UI shows rendering status. If rendering fails, the UI shows a recoverable error and keeps the session state intact.
+Workflow:
 
-## Undo And Redo
+1. Activate Image.
+2. Choose a supported local image file.
+3. QuickPDF validates and decodes the image in the browser.
+4. The editor enters image placement mode.
+5. Click the PDF page to place the image centered on that point.
+6. The image is clamped inside the page and selected.
 
-The editor toolbar includes Undo and Redo controls. They are disabled when the application history cannot move in that direction. Keyboard shortcuts are Ctrl+Z for undo and Ctrl+Y or Ctrl+Shift+Z for redo on Windows/Linux; Cmd+Z and Cmd+Shift+Z on macOS. Shortcuts do not override active text fields, text editing, selects, contenteditable controls, or the signature drawing canvas.
+Images export as shown, including PNG transparency and JPG/JPEG images. Image data is session-only, participates in copy/paste and undo/redo through the shared overlay lifecycle, and is cleared when the document is closed or replaced.
 
-Phase 1 history covers adding, deleting, and duplicating text, whiteout, signature, and initials overlays. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate.
+Unsupported formats such as GIF, SVG, WebP, PDF-as-image, cropping, rotation, filters, opacity, and layer effects are intentionally out of scope.
 
-Export marks the current revision clean but does not clear undo or redo history.
+## Whiteout
 
-## Tools And Overlays
+Whiteout creation uses click-drag:
 
-Text, Signature, and Initials are one-shot placement tools: after one accepted placement, the active tool returns to Select without creating a history entry or dirty-state change. Whiteout remains active after placement because repeated visual cover creation is a common workflow. Tool buttons expose `aria-pressed` and a visible active label.
+1. Activate Whiteout.
+2. Pointer down starts preview.
+3. Drag defines the rectangle in any direction.
+4. Release commits a valid whiteout.
+5. Tiny accidental drags are ignored.
+6. Tool remains active.
 
-Creating text is fast: activate Text, click the page, and the new selected text element enters editing immediately. The placement click creates exactly one text element, then the editor returns to Select. Clicking outside commits and exits editing without creating another text element; choosing Text again is required for another placement.
+Whiteout is always described as visual cover only, never secure redaction.
 
-After creation, text selection and text editing are separate. A single click anywhere inside the visible text box selects the element for moving, resizing, duplicating, deleting, or changing font size. Double-clicking selected or unselected text, or pressing Enter while selected, enters text editing. Escape exits text editing, preserves the current text, and keeps the element selected.
+## Text controls
 
-With the Select tool active, clicking empty page space clears the selected overlay. Clicking an overlay selects it, dragging a selected overlay moves it, and clicking resize handles or editor controls does not trigger empty-space deselection. Clicking empty workspace outside the PDF page follows the same clearing policy unless the click is on editor controls.
+Initial supported standard fonts:
 
-Creating whiteout uses pointer drag: activate Whiteout, press on the page, drag to define the rectangle, and release to create it. Tiny accidental drags are ignored. Whiteout remains a visual cover only.
+- Helvetica;
+- Times Roman;
+- Courier.
 
-Unselected text, whiteout, signature, and initials overlays have no decorative borders. Selected overlays may show temporary editor-only outlines and resize handles. Text uses a corner resize handle that preserves aspect ratio and scales the text font size between 8 and 96 pt; the inspector font-size value stays synchronized and export uses the displayed size. These selection affordances are never exported.
+Font changes update preview and export, preserve top-left anchoring, and are undoable.
 
-## Signatures And Initials
+Font size range: `8–96`.
 
-The Signature command opens a modal with Draw, Type, and Upload tabs. Drawn and uploaded signatures are transparent image overlays. Typed signatures use application-bundled/system font choices only; no remote fonts are loaded.
+## Copy and paste
 
-The Initials command opens the same modal pattern with Draw and Type tabs only. Initials do not support upload in this milestone.
+Overlay clipboard shortcuts:
 
-Accepted signatures and initials become normal overlay elements and immediately return the active tool to Select. They can be selected, moved, resized, duplicated, deleted, and exported. No signature or initials data is persisted after the browser session ends.
+- `Ctrl/Cmd+C` — copy selected overlay;
+- `Ctrl/Cmd+V` — paste copied overlay.
+
+The overlay clipboard is session-local and application-owned.
+
+Inside active text editing, native text copy/paste remains available and overlay shortcuts must not interfere.
+
+Pasted overlays:
+
+- receive a new ID;
+- appear with a predictable bounded offset;
+- are selected;
+- create one undoable history entry;
+- preserve image data and dimensions when the copied overlay is an image.
+
+## Undo and redo
+
+Controls:
+
+- sticky toolbar buttons;
+- `Ctrl/Cmd+Z` — Undo;
+- `Ctrl+Y` or `Ctrl/Cmd+Shift+Z` — Redo.
+
+History includes all current output-changing overlay operations.
+
+History does not include:
+
+- selection;
+- tool switching;
+- zoom;
+- page navigation;
+- opening inspector controls;
+- copy without paste;
+- export itself.
+
+## Status
+
+Show a compact document state:
+
+- `Unsaved changes`;
+- `Downloaded`;
+- `Exporting…`;
+- recoverable error.
+
+After export, the current revision becomes clean. Further edits become dirty again.
+
+## Dialogs
+
+Signature and Initials dialogs:
+
+- Draw;
+- Type;
+- Upload for Signature where supported;
+- Clear;
+- Accept;
+- Cancel.
+
+They must trap focus, support Escape, and restore focus.
+
+Image selection uses a local file picker and validation state. Unsupported, unreadable, oversized, and corrupted image files must show friendly errors without leaving placement mode active.
+
+## Responsive behavior
+
+Desktop:
+
+- full sticky toolbar;
+- floating horizontal inspector or right-side inspector;
+- generous viewport.
+
+Tablet:
+
+- toolbar groups may horizontally scroll;
+- inspector wraps or becomes a compact sheet;
+- touch targets increase.
+
+Mobile:
+
+- primary tools move to a bottom or compact sticky toolbar;
+- secondary controls use drawers/sheets;
+- inspector becomes a small bottom sheet or horizontally scrollable bar;
+- PDF remains the largest visible region.
+
+## Keyboard shortcuts
+
+At minimum:
+
+- Undo/Redo;
+- Copy/Paste;
+- Delete/Backspace selected element;
+- Enter edit text;
+- Escape exit/cancel/deselect according to context;
+- viewer zoom shortcuts.
+
+A shortcut help dialog may be added later.
+
+## Explicitly avoid
+
+- multiple stacked toolbars;
+- inspector below the full canvas;
+- floating windows scattered over the PDF;
+- hidden essential actions;
+- advanced controls for unsupported features;
+- exported selection borders;
+- browser-level zoom while using editor zoom;
+- UI state stored in document history.
