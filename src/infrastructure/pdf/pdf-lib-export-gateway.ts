@@ -53,8 +53,29 @@ const dataUrlBytes = (dataUrl: string): Uint8Array => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFFont): PDFFont =>
-  element.type === "signature" || element.type === "initials" ? cursive : fallback;
+interface EmbeddedTextFonts {
+  readonly helvetica: PDFFont;
+  readonly times: PDFFont;
+  readonly courier: PDFFont;
+}
+
+const fontForElement = (
+  element: ExportElement,
+  textFonts: EmbeddedTextFonts,
+  signatureFont: PDFFont,
+): PDFFont => {
+  if (element.type === "signature" || element.type === "initials") {
+    return signatureFont;
+  }
+  switch (element.textAppearance?.fontFamily) {
+    case "times":
+      return textFonts.times;
+    case "courier":
+      return textFonts.courier;
+    default:
+      return textFonts.helvetica;
+  }
+};
 
 export class PdfLibExportGateway implements PdfExportGateway {
   public async open(bytes: Uint8Array): Promise<PdfOpenResult> {
@@ -75,10 +96,14 @@ export class PdfLibExportGateway implements PdfExportGateway {
   public async exportPdf(request: PdfExportRequest): Promise<PdfExportResult> {
     try {
       const document = await PDFDocument.load(request.originalBytes, { ignoreEncryption: false });
-      const font = await document.embedFont(StandardFonts.Helvetica);
+      const textFonts: EmbeddedTextFonts = {
+        helvetica: await document.embedFont(StandardFonts.Helvetica),
+        times: await document.embedFont(StandardFonts.TimesRoman),
+        courier: await document.embedFont(StandardFonts.Courier),
+      };
       const signatureFont = await document.embedFont(StandardFonts.TimesRomanItalic);
       for (const element of request.elements) {
-        await this.#drawElement(document, element, font, signatureFont);
+        await this.#drawElement(document, element, textFonts, signatureFont);
       }
       const bytes = await document.save();
       return { ok: true, bytes };
@@ -90,7 +115,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
   async #drawElement(
     document: PDFDocument,
     element: ExportElement,
-    font: PDFFont,
+    textFonts: EmbeddedTextFonts,
     signatureFont: PDFFont,
   ): Promise<void> {
     const pageNumber = pageNumberFromPageId(element.pageId);
@@ -142,7 +167,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     }
     const fontSize = element.textAppearance?.fontSize ?? 16;
     const colorParts = parseHexColor(element.textAppearance?.color);
-    const activeFont = fontForElement(element, font, signatureFont);
+    const activeFont = fontForElement(element, textFonts, signatureFont);
     const start = pageTopLeftTextToPdfPoint({
       bounds: element.bounds,
       page: { width: page.getWidth(), height: page.getHeight() },

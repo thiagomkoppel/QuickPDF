@@ -15,6 +15,7 @@ import type {
   PdfRenderDocumentResult,
 } from "./editor-application";
 import {
+  DEFAULT_TEXT_FONT_FAMILY,
   MAX_TEXT_FONT_SIZE,
   MIN_TEXT_FONT_SIZE,
   PdfEditorApplication,
@@ -174,6 +175,63 @@ describe("PdfEditorApplication export", () => {
     expect(duplicated.state.selectedElement?.textAppearance?.fontSize).toBe(32);
   });
 
+  it("coalesces a text editing session into one undoable content command", async () => {
+    const elementId = app.addText({ x: 45, y: 55 }, "Hello").state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    app.updateText(elementId, "Hello ");
+    app.updateText(elementId, "Hello w");
+    app.updateText(elementId, "Hello world");
+    const committed = app.commitTextEdit(elementId, "Hello", "Hello world");
+
+    expect(committed.state.selectedElement?.text).toBe("Hello world");
+    expect(committed.state.isDirty).toBe(true);
+    const undone = app.undo();
+    expect(undone.state.selectedElement?.text).toBe("Hello");
+    expect(undone.state.isDirty).toBe(false);
+    const redone = app.redo();
+    expect(redone.state.selectedElement?.text).toBe("Hello world");
+    expect(redone.state.isDirty).toBe(true);
+  });
+
+  it("ignores a no-op text editing commit without adding history", async () => {
+    const elementId = app.addText({ x: 45, y: 55 }, "Same").state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    const committed = app.commitTextEdit(elementId, "Same", "Same");
+
+    expect(committed.state.selectedElement?.text).toBe("Same");
+    expect(committed.state.isDirty).toBe(false);
+    expect(committed.canRedo).toBe(false);
+  });
+
+  it("updates text font family through command history and includes it in export", async () => {
+    const elementId = app.addText({ x: 45, y: 55 }, "Fonted text").state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    const changed = app.updateTextFontFamily(elementId, "times");
+
+    expect(changed.state.selectedElement?.textAppearance?.fontFamily).toBe("times");
+    expect(changed.state.isDirty).toBe(true);
+    expect(app.undo().state.selectedElement?.textAppearance?.fontFamily).toBe(
+      DEFAULT_TEXT_FONT_FAMILY,
+    );
+    expect(app.redo().state.selectedElement?.textAppearance?.fontFamily).toBe("times");
+    await app.exportCurrentPdf();
+    expect(exportRequests.at(-1)?.elements[0]?.textAppearance?.fontFamily).toBe("times");
+  });
   it("clears selection without marking dirty or adding command history", async () => {
     const added = app.addText({ x: 45, y: 55 }, "Selectable");
     const elementId = added.state.selectedElementId;

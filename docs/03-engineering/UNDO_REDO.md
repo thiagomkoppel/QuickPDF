@@ -10,18 +10,19 @@ The feature applies to document-output changes only.
 
 The initial implementation covers:
 
-| Operation             | Undo | Redo |
-| --------------------- | :--: | :--: |
-| Add text              | Yes  | Yes  |
-| Edit text             | Yes  | Yes  |
-| Change text font size | Yes  | Yes  |
-| Add whiteout          | Yes  | Yes  |
-| Add signature         | Yes  | Yes  |
-| Add initials          | Yes  | Yes  |
-| Move an element       | Yes  | Yes  |
-| Resize an element     | Yes  | Yes  |
-| Duplicate an element  | Yes  | Yes  |
-| Delete an element     | Yes  | Yes  |
+| Operation               | Undo | Redo |
+| ----------------------- | :--: | :--: |
+| Add text                | Yes  | Yes  |
+| Edit text               | Yes  | Yes  |
+| Change text font size   | Yes  | Yes  |
+| Change text font family | Yes  | Yes  |
+| Add whiteout            | Yes  | Yes  |
+| Add signature           | Yes  | Yes  |
+| Add initials            | Yes  | Yes  |
+| Move an element         | Yes  | Yes  |
+| Resize an element       | Yes  | Yes  |
+| Duplicate an element    | Yes  | Yes  |
+| Delete an element       | Yes  | Yes  |
 
 Future output-changing operations must define undo and redo before they are considered complete.
 
@@ -79,7 +80,9 @@ Typing should feel natural.
 - A newly created text element may enter editing immediately.
 - Changes made during one continuous editing session should undo as one meaningful text change.
 - Undo while the textarea has focus should first follow the textarea's native editing behavior unless the product explicitly commits and exits editing before invoking document history.
-- Once text editing is committed, application Undo restores the prior element text.
+- Text changes preview while the textarea is focused and commit when editing finishes through blur, Escape, or an explicit editor action.
+- Paste, cut, deletion, replacement, and IME composition updates are part of the same focus-session command.
+- Once text editing is committed, application Undo restores the prior element text without deleting the text element unless the next undoable command is its original Add.
 - Redo reapplies the committed text.
 
 The implementation must choose one consistent focus rule and cover it with component and end-to-end tests. It must never delete the element when Backspace or Delete is intended to edit text.
@@ -107,7 +110,7 @@ Undoing creation or duplication of the selected element clears selection because
 
 Undoing deletion may select the restored element to provide clear feedback. Redoing deletion then clears selection again.
 
-For move, resize, text, and font-size changes, the affected element should remain selected when possible.
+For move, resize, text, font-size, and font-family changes, the affected element should remain selected when possible.
 
 ## Dirty state and export
 
@@ -140,7 +143,7 @@ Required automated coverage includes:
 
 - toolbar and keyboard invocation;
 - disabled states;
-- add, edit, font-size, move, resize, duplicate, and delete for every current overlay type;
+- add, edit, font-size, font-family, move, resize, duplicate, and delete for every current overlay type;
 - coalesced typing and pointer gestures;
 - native editing-control shortcut guards;
 - redo clearing after a new edit;

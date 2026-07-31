@@ -21,7 +21,7 @@ Implemented proof-of-concept behavior:
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
 - add drawn and typed initials overlays as one-shot placements;
 - select, move, resize, duplicate, and delete text, whiteout, signature, and initials overlays;
-- undo and redo overlay add, duplicate, delete, text font-size, and text resize commands with revision-based dirty state;
+- undo and redo overlay add, duplicate, delete, move, resize, text-content, text font-size, and text font-family commands with revision-based dirty state;
 - export the current PDF with text, whiteout, signature, and initials overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;
 - download the edited PDF through a browser adapter using a temporary object URL;
@@ -29,7 +29,7 @@ Implemented proof-of-concept behavior:
 - mark the current session clean after successful download;
 - preserve the current session when export fails.
 
-Not implemented: checkmarks, images, form filling, undo/redo, page organization, OCR, secure redaction, native editing of existing PDF text, persistence, backend services.
+Not implemented: checkmarks, standalone image overlays, form filling, page organization, OCR, secure redaction, native editing of existing PDF text, persistence, backend services.
 
 ## Current objective
 
@@ -44,9 +44,9 @@ Prove that the application can safely and reliably:
 
 - Live PDF rendering adapter and visual fidelity checks.
 - Export coordinate behavior for rotated pages beyond the current metadata-preserving baseline.
-- Undo/redo command history model.
+- Page-level command history beyond current overlay operations.
 - Larger fixture set and PDF complexity limits.
 
 ## Recent assessment
 
-Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio.
+Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio. Undo/redo now covers overlay lifecycle, completed move and resize gestures, text-content editing sessions, and standard text font-family/font-size changes.

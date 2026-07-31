@@ -18,6 +18,7 @@ export interface Bounds {
 export interface TextElementContent {
   readonly text: string;
   readonly fontSize?: number;
+  readonly fontFamily?: string;
 }
 
 export interface TypedSignatureContent {

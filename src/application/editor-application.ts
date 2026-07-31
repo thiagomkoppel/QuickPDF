@@ -12,6 +12,7 @@ import {
 export type EditorStatus = "empty" | "loading" | "ready" | "exporting" | "error";
 export type EditorTool = "select" | "text" | "whiteout" | "signature" | "initials";
 export type SignatureFont = "cursive" | "serif" | "marker" | "hand";
+export type TextFontFamily = "helvetica" | "times" | "courier";
 export type SignatureSource = "draw" | "type" | "upload";
 export type SignatureElementType = "signature" | "initials";
 export type EditorErrorCode =
@@ -87,7 +88,7 @@ export interface PdfRenderDocumentGateway {
 export interface TextAppearance {
   readonly fontSize: number;
   readonly color: string;
-  readonly fontFamily?: string;
+  readonly fontFamily?: TextFontFamily | SignatureFont;
 }
 
 export interface ImageAppearance {
@@ -178,7 +179,13 @@ export interface TypedSignatureInput {
 export const COMMAND_HISTORY_LIMIT = 100;
 export const MIN_TEXT_FONT_SIZE = 8;
 export const MAX_TEXT_FONT_SIZE = 96;
-export const DEFAULT_TEXT_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
+export const STANDARD_TEXT_FONTS: readonly TextFontFamily[] = ["helvetica", "times", "courier"];
+export const DEFAULT_TEXT_FONT_FAMILY: TextFontFamily = "helvetica";
+export const DEFAULT_TEXT_APPEARANCE: TextAppearance = {
+  fontSize: 16,
+  color: "#111111",
+  fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+};
 export const DEFAULT_SIGNATURE_APPEARANCE: TextAppearance = {
   fontSize: 34,
   color: "#111111",
@@ -230,6 +237,20 @@ const textFontSizeFromElement = (element: EditorElement): number => {
     : DEFAULT_TEXT_APPEARANCE.fontSize;
 };
 
+const isSignatureFont = (value: unknown): value is SignatureFont =>
+  value === "cursive" || value === "serif" || value === "marker" || value === "hand";
+
+const isTextFontFamily = (value: unknown): value is TextFontFamily =>
+  typeof value === "string" && STANDARD_TEXT_FONTS.includes(value as TextFontFamily);
+
+const textFontFamilyFromElement = (element: EditorElement): TextFontFamily => {
+  const content = element.content;
+  if (element.type !== "text" || !isTextContent(content)) {
+    return DEFAULT_TEXT_FONT_FAMILY;
+  }
+  return isTextFontFamily(content.fontFamily) ? content.fontFamily : DEFAULT_TEXT_FONT_FAMILY;
+};
+
 const clampTextFontSize = (fontSize: number): number =>
   Math.min(MAX_TEXT_FONT_SIZE, Math.max(MIN_TEXT_FONT_SIZE, fontSize));
 
@@ -253,7 +274,10 @@ const toExportElement = (element: EditorElement): ExportElement => {
         type: element.type,
         bounds: cloneBounds(element.bounds),
         text: content.text,
-        textAppearance: { ...appearance, fontFamily: content.fontFamily },
+        textAppearance: {
+          ...appearance,
+          fontFamily: isSignatureFont(content.fontFamily) ? content.fontFamily : "cursive",
+        },
         source: "type",
       };
     }
@@ -274,7 +298,11 @@ const toExportElement = (element: EditorElement): ExportElement => {
     type: "text",
     bounds: cloneBounds(element.bounds),
     text: textFromElement(element),
-    textAppearance: { ...DEFAULT_TEXT_APPEARANCE, fontSize: textFontSizeFromElement(element) },
+    textAppearance: {
+      ...DEFAULT_TEXT_APPEARANCE,
+      fontSize: textFontSizeFromElement(element),
+      fontFamily: textFontFamilyFromElement(element),
+    },
   };
 };
 
@@ -529,12 +557,44 @@ export class PdfEditorApplication {
     if (element?.type !== "text") {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
-    const content = element.content;
-    const fontSize = isTextContent(content) ? content.fontSize : undefined;
-    return this.#untrackedElementUpdate({
+    return this.#previewElementUpdate({
       ...element,
-      content: { text, ...(fontSize === undefined ? {} : { fontSize }) },
+      content: {
+        text,
+        fontSize: textFontSizeFromElement(element),
+        fontFamily: textFontFamilyFromElement(element),
+      },
     });
+  }
+
+  public commitTextEdit(elementId: string, startText: string, endText: string): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element?.type !== "text") {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    const beforeElement: EditorElement = {
+      ...element,
+      content: {
+        text: startText,
+        fontSize: textFontSizeFromElement(element),
+        fontFamily: textFontFamilyFromElement(element),
+      },
+    };
+    const afterElement: EditorElement = {
+      ...element,
+      content: {
+        text: endText,
+        fontSize: textFontSizeFromElement(element),
+        fontFamily: textFontFamilyFromElement(element),
+      },
+    };
+    if (elementsMatch(beforeElement, afterElement)) {
+      return this.#previewElementUpdate(afterElement);
+    }
+    return this.#commitElementUpdate(
+      afterElement,
+      this.#historyStateWithElement(beforeElement, elementId),
+    );
   }
 
   public updateTextFontSize(elementId: string, fontSize: number): EditorSnapshot {
@@ -548,7 +608,29 @@ export class PdfEditorApplication {
     const text = textFromElement(element);
     return this.#commitElementUpdate({
       ...element,
-      content: { text, fontSize: clampTextFontSize(fontSize) },
+      content: {
+        text,
+        fontSize: clampTextFontSize(fontSize),
+        fontFamily: textFontFamilyFromElement(element),
+      },
+    });
+  }
+
+  public updateTextFontFamily(elementId: string, fontFamily: TextFontFamily): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element?.type !== "text") {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    if (!isTextFontFamily(fontFamily)) {
+      return this.#operationError("InvalidTextAppearance", "Text font family is not supported.");
+    }
+    return this.#commitElementUpdate({
+      ...element,
+      content: {
+        text: textFromElement(element),
+        fontSize: textFontSizeFromElement(element),
+        fontFamily,
+      },
     });
   }
 
@@ -567,7 +649,11 @@ export class PdfEditorApplication {
     return this.#previewElementUpdate({
       ...element,
       bounds: this.#constrainBounds(bounds),
-      content: { text: textFromElement(element), fontSize: clampTextFontSize(fontSize) },
+      content: {
+        text: textFromElement(element),
+        fontSize: clampTextFontSize(fontSize),
+        fontFamily: textFontFamilyFromElement(element),
+      },
     });
   }
 
@@ -592,12 +678,20 @@ export class PdfEditorApplication {
     const beforeElement: EditorElement = {
       ...element,
       bounds: this.#constrainBounds(start.bounds),
-      content: { text, fontSize: clampTextFontSize(start.fontSize) },
+      content: {
+        text,
+        fontSize: clampTextFontSize(start.fontSize),
+        fontFamily: textFontFamilyFromElement(element),
+      },
     };
     const afterElement: EditorElement = {
       ...element,
       bounds: this.#constrainBounds(end.bounds),
-      content: { text, fontSize: clampTextFontSize(end.fontSize) },
+      content: {
+        text,
+        fontSize: clampTextFontSize(end.fontSize),
+        fontFamily: textFontFamilyFromElement(element),
+      },
     };
     if (elementsMatch(beforeElement, afterElement)) {
       return this.#previewElementUpdate(afterElement);
@@ -657,7 +751,11 @@ export class PdfEditorApplication {
       type: element.type,
       bounds: { ...element.bounds, x: element.bounds.x + 12, y: element.bounds.y + 12 },
       ...(isTextContent(element.content)
-        ? { text: element.content.text, fontSize: textFontSizeFromElement(element) }
+        ? {
+            text: element.content.text,
+            fontSize: textFontSizeFromElement(element),
+            fontFamily: textFontFamilyFromElement(element),
+          }
         : {}),
       ...(isSignatureContent(element.content) ? { signatureContent: element.content } : {}),
     });
@@ -867,6 +965,7 @@ export class PdfEditorApplication {
     readonly bounds: Bounds;
     readonly text?: string;
     readonly fontSize?: number;
+    readonly fontFamily?: TextFontFamily;
     readonly signatureContent?: SignatureElementContent;
   }): EditorSnapshot {
     const session = this.#session;
@@ -903,6 +1002,7 @@ export class PdfEditorApplication {
                 request.fontSize === undefined
                   ? DEFAULT_TEXT_APPEARANCE.fontSize
                   : clampTextFontSize(request.fontSize),
+              fontFamily: request.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
             },
           }
         : {}),

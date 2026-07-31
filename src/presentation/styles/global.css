@@ -335,7 +335,8 @@ p {
   font-size: 0.9rem;
 }
 
-.element-inspector input {
+.element-inspector input,
+.element-inspector select {
   width: 6rem;
   min-height: 40px;
   border: 1px solid #9aa69d;

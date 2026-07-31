@@ -125,7 +125,8 @@ The initial policy is:
 
 - one pointer gesture equals one move or resize entry;
 - one continuous text-editing focus session equals one update-text entry;
-- repeated font-size adjustments during one control interaction may merge;
+- one committed font-size field value equals one update-text-appearance entry;
+- one committed font-family select change equals one update-text-appearance entry;
 - separate element creations remain separate entries;
 - delete and duplicate remain separate entries;
 - commands never merge across different elements or sessions.

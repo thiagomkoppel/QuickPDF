@@ -15,6 +15,7 @@ import type {
   SignatureFont,
   SignatureImageInput,
   SignatureElementType,
+  TextFontFamily,
 } from "../../application/editor-application";
 import {
   DEFAULT_TEXT_APPEARANCE,
@@ -22,6 +23,8 @@ import {
   MIN_ELEMENT_HEIGHT,
   MIN_ELEMENT_WIDTH,
   MIN_TEXT_FONT_SIZE,
+  STANDARD_TEXT_FONTS,
+  DEFAULT_TEXT_FONT_FAMILY,
   validateSignatureImageFile,
 } from "../../application/editor-application";
 import type { PdfJsPageRenderer } from "../../infrastructure/pdf/pdfjs-page-renderer";
@@ -78,6 +81,23 @@ const SIGNATURE_FONTS: readonly { readonly value: SignatureFont; readonly label:
   { value: "marker", label: "Marker" },
   { value: "hand", label: "Handwritten" },
 ];
+
+const TEXT_FONTS: readonly { readonly value: TextFontFamily; readonly label: string }[] = [
+  { value: "helvetica", label: "Helvetica" },
+  { value: "times", label: "Times Roman" },
+  { value: "courier", label: "Courier" },
+];
+
+const textFontFamilyStyle = (fontFamily: string | undefined): React.CSSProperties => {
+  switch (fontFamily) {
+    case "times":
+      return { fontFamily: '"Times New Roman", Times, serif' };
+    case "courier":
+      return { fontFamily: '"Courier New", Courier, monospace' };
+    default:
+      return { fontFamily: "Arial, Helvetica, sans-serif" };
+  }
+};
 
 const clampZoom = (value: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
@@ -203,6 +223,10 @@ export const EditorPage = ({
   const [editingTextElementId, setEditingTextElementId] = useState<string | undefined>();
   const editingTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const textFocusRetryRef = useRef<number | undefined>(undefined);
+  const textEditSessionRef = useRef<
+    { readonly elementId: string; readonly startText: string } | undefined
+  >(undefined);
+  const isComposingTextRef = useRef(false);
   const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
 
   const applySnapshot = useCallback(
@@ -210,6 +234,32 @@ export const EditorPage = ({
       onSnapshotChange(nextSnapshot);
     },
     [onSnapshotChange],
+  );
+
+  const beginTextEditing = useCallback((element: ExportElement): void => {
+    textEditSessionRef.current = {
+      elementId: element.id,
+      startText: element.text ?? "",
+    };
+    isComposingTextRef.current = false;
+    setEditingTextElementId(element.id);
+  }, []);
+
+  const finishTextEditing = useCallback(
+    (endText?: string): void => {
+      const session = textEditSessionRef.current;
+      if (session === undefined) {
+        setEditingTextElementId(undefined);
+        return;
+      }
+      const element = state.elements.find((candidate) => candidate.id === session.elementId);
+      const committedText = endText ?? element?.text ?? session.startText;
+      textEditSessionRef.current = undefined;
+      isComposingTextRef.current = false;
+      setEditingTextElementId(undefined);
+      applySnapshot(editor.commitTextEdit(session.elementId, session.startText, committedText));
+    },
+    [applySnapshot, editor, state.elements],
   );
 
   const applyZoom = useCallback(
@@ -386,7 +436,9 @@ export const EditorPage = ({
       if (editingTextElementId !== undefined) {
         if (event.key === "Escape" && isEditingKeyboardTarget(event.target)) {
           event.preventDefault();
-          setEditingTextElementId(undefined);
+          finishTextEditing(
+            event.target instanceof HTMLTextAreaElement ? event.target.value : undefined,
+          );
           applySnapshot(editor.setTool("select"));
         }
         if (isEditingKeyboardTarget(event.target)) {
@@ -399,14 +451,14 @@ export const EditorPage = ({
         const wantsRedo = (key === "z" && event.shiftKey) || (!event.metaKey && key === "y");
         if (wantsUndo && snapshot.canUndo) {
           event.preventDefault();
-          setEditingTextElementId(undefined);
+          finishTextEditing();
           setWhiteoutDraft(undefined);
           applySnapshot(editor.undo());
           return;
         }
         if (wantsRedo && snapshot.canRedo) {
           event.preventDefault();
-          setEditingTextElementId(undefined);
+          finishTextEditing();
           setWhiteoutDraft(undefined);
           applySnapshot(editor.redo());
           return;
@@ -418,7 +470,7 @@ export const EditorPage = ({
         state.selectedElement?.type === "text"
       ) {
         event.preventDefault();
-        setEditingTextElementId(state.selectedElementId);
+        beginTextEditing(state.selectedElement);
         return;
       }
       if (
@@ -427,7 +479,7 @@ export const EditorPage = ({
         !isEditingKeyboardTarget(event.target)
       ) {
         event.preventDefault();
-        setEditingTextElementId(undefined);
+        finishTextEditing();
         applySnapshot(editor.deleteElement(state.selectedElementId));
         return;
       }
@@ -457,6 +509,8 @@ export const EditorPage = ({
   }, [
     applySnapshot,
     applyZoom,
+    beginTextEditing,
+    finishTextEditing,
     currentPageId,
     editingTextElementId,
     editor,
@@ -585,7 +639,7 @@ export const EditorPage = ({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     if (editingTextElementId !== undefined) {
-      setEditingTextElementId(undefined);
+      finishTextEditing();
     }
     setWhiteoutDraft({
       pointerId: event.pointerId,
@@ -636,7 +690,7 @@ export const EditorPage = ({
     setWhiteoutDraft(undefined);
   };
   const clearSelection = (): void => {
-    setEditingTextElementId(undefined);
+    finishTextEditing();
     setWhiteoutDraft(undefined);
     applySnapshot(editor.clearSelection());
   };
@@ -652,7 +706,7 @@ export const EditorPage = ({
       return;
     }
     if (editingTextElementId !== undefined) {
-      setEditingTextElementId(undefined);
+      finishTextEditing();
     }
     const rect = event.currentTarget.getBoundingClientRect();
     const point = {
@@ -664,9 +718,11 @@ export const EditorPage = ({
     }
     if (state.tool === "text") {
       const nextSnapshot = editor.addText(point, "Text");
-      const selectedElementId = nextSnapshot.state.selectedElementId;
+      const selectedElement = nextSnapshot.state.selectedElement;
       applySnapshot(editor.setTool("select"));
-      setEditingTextElementId(selectedElementId);
+      if (selectedElement !== undefined) {
+        beginTextEditing(selectedElement);
+      }
       return;
     }
     if (state.tool === "select" && state.selectedElementId !== undefined) {
@@ -695,7 +751,7 @@ export const EditorPage = ({
     event.preventDefault();
     event.currentTarget.focus();
     if (editingTextElementId !== undefined && editingTextElementId !== element.id) {
-      setEditingTextElementId(undefined);
+      finishTextEditing();
     }
     applySnapshot(editor.selectElement(element.id));
     const overlayLayer = overlayLayerRef.current;
@@ -743,13 +799,13 @@ export const EditorPage = ({
   };
 
   const undo = (): void => {
-    setEditingTextElementId(undefined);
+    finishTextEditing();
     setWhiteoutDraft(undefined);
     applySnapshot(editor.undo());
   };
 
   const redo = (): void => {
-    setEditingTextElementId(undefined);
+    finishTextEditing();
     setWhiteoutDraft(undefined);
     applySnapshot(editor.redo());
   };
@@ -964,23 +1020,45 @@ export const EditorPage = ({
               />
             </label>
             {selectedElement.type === "text" ? (
-              <label>
-                Font size
-                <input
-                  aria-label="Text font size"
-                  type="number"
-                  min={MIN_TEXT_FONT_SIZE}
-                  max={MAX_TEXT_FONT_SIZE}
-                  value={Math.round(selectedElement.textAppearance?.fontSize ?? 16)}
-                  onChange={(event) => {
-                    const fontSize = event.currentTarget.valueAsNumber;
-                    if (!Number.isFinite(fontSize)) {
-                      return;
-                    }
-                    applySnapshot(editor.updateTextFontSize(selectedElement.id, fontSize));
-                  }}
-                />
-              </label>
+              <>
+                <label>
+                  Typeface
+                  <select
+                    aria-label="Text font family"
+                    value={selectedElement.textAppearance?.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY}
+                    onChange={(event) => {
+                      const fontFamily = event.currentTarget.value as TextFontFamily;
+                      if (!STANDARD_TEXT_FONTS.includes(fontFamily)) {
+                        return;
+                      }
+                      applySnapshot(editor.updateTextFontFamily(selectedElement.id, fontFamily));
+                    }}
+                  >
+                    {TEXT_FONTS.map((font) => (
+                      <option key={font.value} value={font.value}>
+                        {font.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Font size
+                  <input
+                    aria-label="Text font size"
+                    type="number"
+                    min={MIN_TEXT_FONT_SIZE}
+                    max={MAX_TEXT_FONT_SIZE}
+                    value={Math.round(selectedElement.textAppearance?.fontSize ?? 16)}
+                    onChange={(event) => {
+                      const fontSize = event.currentTarget.valueAsNumber;
+                      if (!Number.isFinite(fontSize)) {
+                        return;
+                      }
+                      applySnapshot(editor.updateTextFontSize(selectedElement.id, fontSize));
+                    }}
+                  />
+                </label>
+              </>
             ) : null}
             <button
               type="button"
@@ -1068,6 +1146,9 @@ export const EditorPage = ({
                   }
                   tabIndex={element.type === "text" ? 0 : undefined}
                   onPointerDown={(event) => {
+                    if (event.target instanceof HTMLTextAreaElement) {
+                      return;
+                    }
                     startElementMove(element, event);
                   }}
                 >
@@ -1078,22 +1159,37 @@ export const EditorPage = ({
                         aria-label="Edit text element"
                         autoFocus
                         value={element.text ?? ""}
-                        style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                        style={{
+                          ...textFontFamilyStyle(element.textAppearance?.fontFamily),
+                          fontSize: (element.textAppearance?.fontSize ?? 16) * zoom,
+                        }}
                         onChange={(event) => {
                           applySnapshot(editor.updateText(element.id, event.currentTarget.value));
                         }}
-                        onBlur={() => {
-                          setEditingTextElementId(undefined);
+                        onCompositionStart={() => {
+                          isComposingTextRef.current = true;
+                        }}
+                        onCompositionEnd={(event) => {
+                          isComposingTextRef.current = false;
+                          applySnapshot(editor.updateText(element.id, event.currentTarget.value));
+                        }}
+                        onBlur={(event) => {
+                          if (!isComposingTextRef.current) {
+                            finishTextEditing(event.currentTarget.value);
+                          }
                         }}
                       />
                     ) : (
                       <div
                         className="text-element-display"
                         aria-label="Text element content"
-                        style={{ fontSize: (element.textAppearance?.fontSize ?? 16) * zoom }}
+                        style={{
+                          ...textFontFamilyStyle(element.textAppearance?.fontFamily),
+                          fontSize: (element.textAppearance?.fontSize ?? 16) * zoom,
+                        }}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
-                          setEditingTextElementId(element.id);
+                          beginTextEditing(element);
                         }}
                       >
                         {element.text}

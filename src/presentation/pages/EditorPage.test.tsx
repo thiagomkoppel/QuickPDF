@@ -33,7 +33,9 @@ interface TestEditor extends PdfEditorApplication {
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
   readonly updateText: Mock;
+  readonly commitTextEdit: Mock;
   readonly updateTextFontSize: Mock;
+  readonly updateTextFontFamily: Mock;
   readonly resizeElement: Mock;
   readonly previewResizeElement: Mock;
   readonly previewTextResizeElement: Mock;
@@ -75,7 +77,7 @@ const createEditor = (): TestEditor =>
         type: "text",
         bounds: { x: 40, y: 50, width: 160, height: 48 },
         text: "Text",
-        textAppearance: { fontSize: 16, color: "#111111" },
+        textAppearance: { fontSize: 16, color: "#111111", fontFamily: "helvetica" },
       };
       return baseSnapshot({
         selectedElementId: element.id,
@@ -125,7 +127,9 @@ const createEditor = (): TestEditor =>
     duplicateElement: vi.fn(() => baseSnapshot()),
     deleteElement: vi.fn(() => baseSnapshot()),
     updateText: vi.fn(() => baseSnapshot()),
+    commitTextEdit: vi.fn(() => baseSnapshot()),
     updateTextFontSize: vi.fn(() => baseSnapshot()),
+    updateTextFontFamily: vi.fn(() => baseSnapshot()),
     undo: vi.fn(() => baseSnapshot()),
     redo: vi.fn(() => baseSnapshot()),
     exportCurrentPdf: vi.fn(() => Promise.resolve(baseSnapshot())),
@@ -157,7 +161,7 @@ const selectedElementForType = (type: ExportElement["type"]): ExportElement => {
       ...base,
       type,
       text: "Editable text",
-      textAppearance: { fontSize: 16, color: "#111111" },
+      textAppearance: { fontSize: 16, color: "#111111", fontFamily: "helvetica" },
     };
   }
   if (type === "signature" || type === "initials") {
@@ -229,7 +233,7 @@ const textSnapshot = (text: string, fontSize = 16): EditorSnapshot => {
     type: "text",
     bounds: { x: 40, y: 50, width: 160, height: 48 },
     text,
-    textAppearance: { fontSize, color: "#111111" },
+    textAppearance: { fontSize, color: "#111111", fontFamily: "helvetica" },
   };
   return baseSnapshot({
     selectedElementId: element.id,
@@ -836,6 +840,92 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.deleteElement).not.toHaveBeenCalled();
   });
 
+  it("commits one text history entry when editing finishes on blur", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    let currentText = "Hello";
+    editor.selectElement.mockImplementation(() => textSnapshot(currentText));
+    editor.updateText.mockImplementation((_elementId: string, text: string) => {
+      currentText = text;
+      return textSnapshot(currentText);
+    });
+    editor.commitTextEdit.mockImplementation((_elementId: string, _start: string, end: string) =>
+      textSnapshot(end),
+    );
+    renderStatefulEditor(editor, textSnapshot(currentText));
+
+    await user.dblClick(screen.getByLabelText("Text element content"));
+    const textArea = screen.getByLabelText("Edit text element");
+    expect(textArea).toBeInstanceOf(HTMLTextAreaElement);
+    if (!(textArea instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    textArea.setSelectionRange(5, 5);
+    await user.keyboard(" world");
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(editor.updateText).toHaveBeenCalledTimes(6);
+    expect(editor.commitTextEdit).toHaveBeenCalledTimes(1);
+    expect(editor.commitTextEdit).toHaveBeenCalledWith("text-1", "Hello", "Hello world");
+  });
+
+  it("commits cut, paste, deletion, and replacement as the completed text session", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    let currentText = "ABCDE";
+    editor.selectElement.mockImplementation(() => textSnapshot(currentText));
+    editor.updateText.mockImplementation((_elementId: string, text: string) => {
+      currentText = text;
+      return textSnapshot(currentText);
+    });
+    editor.commitTextEdit.mockImplementation((_elementId: string, _start: string, end: string) =>
+      textSnapshot(end),
+    );
+    renderStatefulEditor(editor, textSnapshot(currentText));
+
+    await user.dblClick(screen.getByLabelText("Text element content"));
+    const input = screen.getByLabelText("Edit text element");
+    expect(input).toBeInstanceOf(HTMLTextAreaElement);
+    if (!(input instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    input.setSelectionRange(1, 4);
+    await user.keyboard("XYZ");
+    input.setSelectionRange(0, 3);
+    await user.keyboard("{Backspace}");
+    await user.paste("Done");
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(editor.commitTextEdit).toHaveBeenCalledTimes(1);
+    expect(editor.commitTextEdit).toHaveBeenCalledWith("text-1", "ABCDE", "DoneZE");
+    expect(editor.deleteElement).not.toHaveBeenCalled();
+  });
+
+  it("waits until IME composition finishes before committing text editing", () => {
+    const editor = createEditor();
+    let currentText = "Name";
+    editor.selectElement.mockImplementation(() => textSnapshot(currentText));
+    editor.updateText.mockImplementation((_elementId: string, text: string) => {
+      currentText = text;
+      return textSnapshot(currentText);
+    });
+    editor.commitTextEdit.mockImplementation((_elementId: string, _start: string, end: string) =>
+      textSnapshot(end),
+    );
+    renderStatefulEditor(editor, textSnapshot(currentText));
+
+    fireEvent.doubleClick(screen.getByLabelText("Text element content"));
+    const input = screen.getByLabelText("Edit text element");
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "??" } });
+    fireEvent.blur(input);
+    expect(editor.commitTextEdit).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input);
+    fireEvent.blur(input);
+
+    expect(editor.commitTextEdit).toHaveBeenCalledTimes(1);
+    expect(editor.commitTextEdit).toHaveBeenCalledWith("text-1", "Name", "??");
+  });
   it("types multi-character text without losing prior characters or resetting the caret", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -1289,6 +1379,24 @@ describe("EditorPage PDF rendering", () => {
     );
     expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
   });
+
+  it("shows a standard text font-family control and updates it through the editor use case", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const fontFamily = screen.getByLabelText("Text font family");
+    expect(fontFamily).toHaveValue("helvetica");
+    fireEvent.change(fontFamily, { target: { value: "courier" } });
+
+    expect(editor.updateTextFontFamily).toHaveBeenCalledWith("text-1", "courier");
+  });
   it("shows a text-only font-size control and updates text appearance through the editor use case", () => {
     const editor = createEditor();
     render(
@@ -1320,6 +1428,7 @@ describe("EditorPage PDF rendering", () => {
       );
 
       expect(screen.queryByLabelText("Text font size")).toBeNull();
+      expect(screen.queryByLabelText("Text font family")).toBeNull();
     },
   );
 

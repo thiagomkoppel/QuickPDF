@@ -502,6 +502,16 @@ test("selects text with one click and edits text only through explicit edit acti
   await reopenedEditor.fill("Edited text");
   await reopenedEditor.press("Escape");
   await expect(page.getByText("Edited text")).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByText("Draft text")).toBeVisible();
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByText("Edited text")).toBeVisible();
+  await page.getByLabel("Text font family").selectOption("courier");
+  await expect(page.getByLabel("Text font family")).toHaveValue("courier");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Text font family")).toHaveValue("helvetica");
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByLabel("Text font family")).toHaveValue("courier");
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
 
   const selectedText = page.getByRole("group", { name: "text element" });
@@ -586,9 +596,15 @@ test("undoes and redoes overlay add/delete history and exports the final state",
   await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Text element content")).toHaveText("Text");
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
 
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByLabel("Text element content")).toHaveText("Text");
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.getByText("History text")).toBeVisible();
 

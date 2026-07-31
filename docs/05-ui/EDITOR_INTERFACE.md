@@ -90,7 +90,7 @@ Show nothing.
 
 Text selected:
 
-Show text properties, including a simple 8-96 pt font-size control.
+Show text properties, including a standard font-family selector and a simple 8-96 pt font-size control. The font-family selector uses bundled/browser-safe standard PDF families only: Helvetica, Times Roman, and Courier.
 
 Whiteout selected:
 
@@ -170,7 +170,7 @@ While the current page is rendering, the UI shows rendering status. If rendering
 
 The editor toolbar includes Undo and Redo controls. They are disabled when the application history cannot move in that direction. Keyboard shortcuts are Ctrl+Z for undo and Ctrl+Y or Ctrl+Shift+Z for redo on Windows/Linux; Cmd+Z and Cmd+Shift+Z on macOS. Shortcuts do not override active text fields, text editing, selects, contenteditable controls, or the signature drawing canvas.
 
-Phase 1 history covers adding, deleting, and duplicating text, whiteout, signature, and initials overlays. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate.
+History covers adding, deleting, duplicating, moving, resizing, text-content editing, text font-size changes, and text font-family changes for the current overlay model. Undoing Add removes the added element and clears selection. Redoing Add restores and selects it. Undoing Delete restores and selects the deleted element. Redoing Delete removes it and clears selection. Undoing Duplicate removes the duplicate and restores selection to the original. Redoing Duplicate restores and selects the duplicate. Undoing text-content or text-appearance changes restores the previous committed value and keeps the element selected when possible.
 
 Export marks the current revision clean but does not clear undo or redo history.
 
@@ -178,15 +178,15 @@ Export marks the current revision clean but does not clear undo or redo history.
 
 Text, Signature, and Initials are one-shot placement tools: after one accepted placement, the active tool returns to Select without creating a history entry or dirty-state change. Whiteout remains active after placement because repeated visual cover creation is a common workflow. Tool buttons expose `aria-pressed` and a visible active label.
 
-Creating text is fast: activate Text, click the page, and the new selected text element enters editing immediately. The placement click creates exactly one text element, then the editor returns to Select. Clicking outside commits and exits editing without creating another text element; choosing Text again is required for another placement.
+Creating text is fast: activate Text, click the page, and the new selected text element enters editing immediately. The placement click creates exactly one text element, then the editor returns to Select. Clicking outside, pressing Escape, or using an explicit editor action commits the focus-session text edit without creating another text element; choosing Text again is required for another placement.
 
-After creation, text selection and text editing are separate. A single click anywhere inside the visible text box selects the element for moving, resizing, duplicating, deleting, or changing font size. Double-clicking selected or unselected text, or pressing Enter while selected, enters text editing. Escape exits text editing, preserves the current text, and keeps the element selected.
+After creation, text selection and text editing are separate. A single click anywhere inside the visible text box selects the element for moving, resizing, duplicating, deleting, or changing text appearance. Double-clicking selected or unselected text, or pressing Enter while selected, enters text editing. Escape exits text editing, preserves and commits the current text, and keeps the element selected. Native textarea undo is preserved while the textarea has focus.
 
 With the Select tool active, clicking empty page space clears the selected overlay. Clicking an overlay selects it, dragging a selected overlay moves it, and clicking resize handles or editor controls does not trigger empty-space deselection. Clicking empty workspace outside the PDF page follows the same clearing policy unless the click is on editor controls.
 
 Creating whiteout uses pointer drag: activate Whiteout, press on the page, drag to define the rectangle, and release to create it. Tiny accidental drags are ignored. Whiteout remains a visual cover only.
 
-Unselected text, whiteout, signature, and initials overlays have no decorative borders. Selected overlays may show temporary editor-only outlines and resize handles. Text uses a corner resize handle that preserves aspect ratio and scales the text font size between 8 and 96 pt; the inspector font-size value stays synchronized and export uses the displayed size. These selection affordances are never exported.
+Unselected text, whiteout, signature, and initials overlays have no decorative borders. Selected overlays may show temporary editor-only outlines and resize handles. Text uses a corner resize handle that preserves aspect ratio and scales the text font size between 8 and 96 pt; the inspector font-size and font-family values stay synchronized and export uses the displayed standard font and size. These selection affordances are never exported.
 
 ## Signatures And Initials
 
