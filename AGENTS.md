@@ -266,6 +266,15 @@ unless a new approved decision record explicitly changes scope.
 8. Update documentation and `PROJECT_STATUS.md`.
 9. Provide a completion report.
 
+For any UI, interaction, or workflow implementation, the following documents are mandatory reading:
+
+- DESIGN_SYSTEM.md
+- LANDING_PAGE.md
+- EDITOR_INTERFACE.md
+- USER_EXPERIENCE.md
+- RESPONSIVE_DESIGN.md
+- USER_WARNINGS.md
+
 ## 12. Completion report format
 
 Every completed task must report:

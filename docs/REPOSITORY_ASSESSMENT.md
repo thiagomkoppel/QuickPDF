@@ -53,3 +53,9 @@ Begin the Phase 0 application boundary with TDD:
 - focused application/domain tests.
 - `PROJECT_STATUS.md`.
 - Relevant architecture or domain documentation if public behavior changes.
+
+## Export milestone assessment
+
+The repository now includes a browser-only export proof of concept. The detected stack is Vite, React, TypeScript, Vitest, React Testing Library, Playwright, and `pdf-lib` isolated behind infrastructure. Missing foundations remain live PDF rendering, full dirty-session warning coverage, undo/redo, and broader PDF fixtures.
+
+Recommended next milestone: add live PDF page rendering behind a PDF rendering boundary so overlay placement can be visually verified against real page content before expanding export features.

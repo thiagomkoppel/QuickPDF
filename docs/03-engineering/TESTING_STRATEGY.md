@@ -35,3 +35,46 @@ Automated browser tests must verify that opening, editing, and exporting a PDF d
 ## Snapshot testing
 
 Avoid broad UI snapshots. Prefer behavioral assertions and focused visual regression tests for the editor canvas and responsive layouts.
+
+## Export coverage
+
+Current tests cover:
+
+- top-left overlay to bottom-left PDF coordinate mapping;
+- page-size variation in export coordinates;
+- application export use case behavior and failure preservation;
+- deterministic whiteout-before-text export ordering;
+- browser download object URL cleanup;
+- `pdf-lib` export preserving page count and dimensions;
+- architecture isolation for PDF libraries.
+
+## Rendering coverage
+
+Current render tests cover:
+
+- PDF.js render document loading and opaque document ids;
+- canvas CSS dimensions and device-pixel-ratio backing dimensions;
+- PDF.js render task invocation;
+- render loading and failure states in the editor;
+- stale render cancellation and cleanup;
+- page-change and zoom-triggered rerenders;
+- overlay scaling relative to canvas CSS dimensions;
+- absence of the old placeholder-only page path;
+- Playwright verification that a visible synthetic PDF renders to nonblank canvas pixels before overlays are added and remains visually changed after export/reopen.
+
+## Undo and redo coverage
+
+History tests must cover:
+
+- execute, undo, and redo for every current overlay mutation;
+- toolbar and keyboard paths using the same application use cases;
+- redo clearing after a new edit;
+- one history entry per drag, resize, or continuous text-editing session;
+- failed and no-op commands excluded from history;
+- history reset on close, replacement, and disposal;
+- the 100-entry limit;
+- selection reconciliation when an element disappears or is restored;
+- clean/dirty revision transitions before and after export;
+- repeated undo/redo cycles preserving domain invariants;
+- native text editing and browser zoom shortcuts remaining unaffected;
+- no persistence, network transmission, React warnings, or console errors.

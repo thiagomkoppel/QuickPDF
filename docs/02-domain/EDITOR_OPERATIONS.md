@@ -8,7 +8,7 @@ Each operation must:
 - validate its input;
 - be deterministic;
 - produce no partial state on failure;
-- support undo when it changes document output;
+- define reversible before/after state when it changes document output;
 - be serializable for debugging and testing without including document contents.
 
 ## Pointer interaction
@@ -31,3 +31,13 @@ Duplicating an element creates a new identifier and a small offset while preserv
 ## Page deletion
 
 Deleting the last remaining page is not allowed unless the product later defines an empty-document state.
+
+## Command history boundary
+
+Committed output-changing operations enter history through the application layer. The domain validates and applies transitions but does not depend on React, keyboard shortcuts, toolbar controls, or browser event objects.
+
+Selection, focus, active-tool changes, zoom, page navigation, and live pointer previews are not document operations.
+
+## No-op behavior
+
+An operation that produces no document-output change succeeds as a no-op or returns an explicit no-change result and must not create a history entry or mark the session dirty.

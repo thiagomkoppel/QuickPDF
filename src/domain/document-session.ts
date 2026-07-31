@@ -1,11 +1,11 @@
-﻿type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
+type Brand<TValue, TBrand extends string> = TValue & { readonly __brand: TBrand };
 
 export type DocumentSessionId = Brand<string, "DocumentSessionId">;
 export type PageId = Brand<string, "PageId">;
 export type ElementId = Brand<string, "ElementId">;
 
 export type DocumentSessionStatus = "ready" | "disposed";
-export type EditorElementType = "text" | "date" | "checkmark" | "cross" | "whiteout" | "highlight";
+export type EditorElementType = "text" | "whiteout" | "signature" | "initials";
 export type PageRotation = 0 | 90 | 180 | 270;
 
 export interface Bounds {
@@ -17,9 +17,24 @@ export interface Bounds {
 
 export interface TextElementContent {
   readonly text: string;
+  readonly fontSize?: number;
 }
 
-export type EditorElementContent = TextElementContent;
+export interface TypedSignatureContent {
+  readonly kind: "typed";
+  readonly text: string;
+  readonly fontFamily: string;
+}
+
+export interface ImageSignatureContent {
+  readonly kind: "image";
+  readonly dataUrl: string;
+  readonly mimeType: "image/png" | "image/jpeg";
+  readonly source: "draw" | "upload";
+}
+
+export type SignatureElementContent = TypedSignatureContent | ImageSignatureContent;
+export type EditorElementContent = TextElementContent | SignatureElementContent;
 
 export interface DocumentPage {
   readonly id: string;
@@ -409,6 +424,45 @@ export class DocumentSession {
     }
     this.#isDirty = true;
     return success;
+  }
+  public replaceElements(
+    elements: readonly EditorElement[],
+    selectedElementId?: string,
+  ): DomainResult {
+    const disposed = this.#rejectDisposed();
+    if (disposed !== undefined) {
+      return disposed;
+    }
+
+    try {
+      const nextElements = elements.map(validateElement);
+      const seenElementIds = new Set<string>();
+      for (const element of nextElements) {
+        if (!this.#pagesById.has(element.pageId)) {
+          return fail("PageNotFound", "Element page must exist in the session.");
+        }
+        if (seenElementIds.has(element.id)) {
+          return fail("DuplicateElementId", "Element identifiers must be unique within a session.");
+        }
+        seenElementIds.add(element.id);
+      }
+      if (selectedElementId !== undefined && !seenElementIds.has(selectedElementId)) {
+        return fail("ElementNotFound", "Selected element must exist in the session.");
+      }
+
+      this.#elementsById.clear();
+      for (const element of nextElements) {
+        this.#elementsById.set(element.id, element);
+      }
+      this.#selectedElementId = selectedElementId;
+      this.#isDirty = true;
+      return success;
+    } catch (error) {
+      if (isDomainError(error)) {
+        return fail(error.code, error.message);
+      }
+      throw error;
+    }
   }
 
   public selectElement(elementId: string): DomainResult {

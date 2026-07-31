@@ -6,55 +6,47 @@ Phase 0 - Architecture and technical proof of concept.
 
 ## Product status
 
-Repository foundation initialized. The project now has a Vite, React, and TypeScript static client scaffold with strict TypeScript, ESLint, Prettier, Vitest, React Testing Library, jsdom, Playwright configuration, CI workflow, and a minimal accessible application shell.
+Repository foundation initialized. The project has a Vite, React, and TypeScript static client scaffold with strict TypeScript, ESLint, Prettier, Vitest, React Testing Library, jsdom, Playwright configuration, CI workflow, and an accessible application shell.
 
-The first pure domain foundation is implemented: `DocumentSession`, page identity/order handling, minimal editor elements, selection, dirty-state tracking, page deletion, typed domain failures, and disposal behavior.
+Implemented proof-of-concept behavior:
 
-No PDF product functionality exists yet.
+- open one local PDF through browser File APIs;
+- validate basic PDF file properties and signature bytes;
+- parse PDF page metadata with `pdf-lib` behind an infrastructure adapter;
+- render the active PDF page with PDF.js on a real canvas;
+- size the canvas backing store with device pixel ratio while keeping CSS dimensions in page-space scale;
+- keep text and whiteout overlays aligned over the rendered canvas during zoom;
+- add temporary text overlay elements as one-shot placements, including bounded font-size changes and proportional text resize;
+- add temporary whiteout visual cover rectangles by click-drag creation;
+- add drawn, typed, and uploaded signature overlays as one-shot placements;
+- add drawn and typed initials overlays as one-shot placements;
+- select, move, resize, duplicate, and delete text, whiteout, signature, and initials overlays;
+- undo and redo overlay add, duplicate, delete, text font-size, and text resize commands with revision-based dirty state;
+- export the current PDF with text, whiteout, signature, and initials overlays embedded;
+- preserve original page count, page dimensions, page order, and untouched content during export;
+- download the edited PDF through a browser adapter using a temporary object URL;
+- keep the editor session open after successful download;
+- mark the current session clean after successful download;
+- preserve the current session when export fails.
+
+Not implemented: checkmarks, images, form filling, undo/redo, page organization, OCR, secure redaction, native editing of existing PDF text, persistence, backend services.
 
 ## Current objective
 
 Prove that the application can safely and reliably:
 
-1. open a local PDF without uploading it;
-2. render one or more pages;
-3. add text and a signature as overlay elements;
-4. export a valid PDF containing those additions;
-5. discard the document and editing state when the session ends.
-
-## Required Phase 0 deliverables
-
-- Static web application scaffold. Done.
-- Strict TypeScript configuration. Done.
-- Test runner and browser test environment. Done for unit/component tests; Playwright is configured for later end-to-end tests.
-- PDF engine abstraction. Not started.
-- Local file adapter. Not started.
-- In-memory document session. Started with pure domain model; application use case integration not started.
-- PDF rendering proof of concept. Not started.
-- PDF export proof of concept. Not started.
-- Text element. Started as minimal domain element type only; no UI or export behavior.
-- Signature element. Not started.
-- Undo and redo proof of concept. Not started.
-- Privacy verification showing no document network requests. Started with static privacy baseline tests only.
-- Automated tests for the full proof-of-concept flow. Not started.
-
-## Not started
-
-- PDF loading, rendering, editing, signing, and export.
-- Application use cases for document opening or editing.
-- Production UI.
-- Interactive form filling.
-- Page organization UI.
-- Mobile interaction design beyond the initial responsive shell.
-- Whiteout and correction tools beyond a minimal domain element type.
-- Accessibility audit.
-- Large-document performance work.
+1. open a local PDF without uploading it; Done for proof of concept.
+2. add text, visual whiteout, signatures, and initials as overlay elements; Done for current page.
+3. export a valid PDF containing those additions; Done for text, whiteout, signature, and initials overlays.
+4. discard the document and editing state when the session ends; Started; full warning lifecycle remains future work.
 
 ## Blocking decisions
 
-- Canvas/SVG overlay implementation.
-- Exact PDF export library after proof-of-concept validation.
+- Live PDF rendering adapter and visual fidelity checks.
+- Export coordinate behavior for rotated pages beyond the current metadata-preserving baseline.
+- Undo/redo command history model.
+- Larger fixture set and PDF complexity limits.
 
 ## Recent assessment
 
-Document-session domain foundation implemented on 2026-07-28 using strict TDD and pure TypeScript. Repository foundation implemented on 2026-07-28 using Vite, React, TypeScript, npm, Vitest, React Testing Library, jsdom, ESLint, Prettier, and Playwright configuration. The Vite SPA choice is documented in ADR-004.
+Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature and initials overlays, and keeps export coordinates independent from zoom and device pixel ratio.
