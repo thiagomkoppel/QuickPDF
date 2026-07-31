@@ -153,3 +153,47 @@ describe("PdfLibExportGateway signature overlays", () => {
     expect(exported.getPage(0).getWidth()).toBe(300);
   });
 });
+
+describe("PdfLibExportGateway annotation overlays", () => {
+  it("exports checkmark, cross, and captured date overlays without changing pages", async () => {
+    const originalBytes = await createPdf();
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes,
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+      elements: [
+        {
+          id: "checkmark-1",
+          pageId: "page-1",
+          type: "checkmark",
+          bounds: { x: 40, y: 60, width: 32, height: 32 },
+        },
+        {
+          id: "cross-1",
+          pageId: "page-1",
+          type: "cross",
+          bounds: { x: 90, y: 60, width: 32, height: 32 },
+        },
+        {
+          id: "date-1",
+          pageId: "page-1",
+          type: "date",
+          bounds: { x: 130, y: 60, width: 96, height: 28 },
+          text: "07/31/2026",
+          textAppearance: { fontSize: 16, color: "#111111" },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.bytes.length).toBeGreaterThan(originalBytes.length);
+    const exported = await PDFDocument.load(result.bytes);
+    expect(exported.getPageCount()).toBe(2);
+    expect(exported.getPage(0).getWidth()).toBe(300);
+    expect(exported.getPage(0).getHeight()).toBe(400);
+  });
+});

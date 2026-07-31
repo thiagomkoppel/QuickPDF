@@ -117,6 +117,47 @@ const canvasRegionHasDarkContent = (
       return false;
     }, region);
 
+const canvasRegionHasNonWhiteContent = (
+  page: Page,
+  region: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  },
+): Promise<boolean> =>
+  page
+    .locator('canvas[aria-label="Rendered PDF page"]')
+    .evaluate((node: SVGElement | HTMLElement, sampleRegion) => {
+      const canvas = node as HTMLCanvasElement;
+      const context = canvas.getContext("2d");
+      if (context === null) {
+        return false;
+      }
+      const cssWidth = Number.parseFloat(
+        canvas.style.width.length > 0 ? canvas.style.width : String(canvas.width),
+      );
+      const cssHeight = Number.parseFloat(
+        canvas.style.height.length > 0 ? canvas.style.height : String(canvas.height),
+      );
+      const scaleX = canvas.width / cssWidth;
+      const scaleY = canvas.height / cssHeight;
+      const x = Math.floor(sampleRegion.x * scaleX);
+      const y = Math.floor(sampleRegion.y * scaleY);
+      const width = Math.max(1, Math.floor(sampleRegion.width * scaleX));
+      const height = Math.max(1, Math.floor(sampleRegion.height * scaleY));
+      const data = context.getImageData(x, y, width, height).data;
+      for (let index = 0; index < data.length; index += 4) {
+        const red = data[index] ?? 255;
+        const green = data[index + 1] ?? 255;
+        const blue = data[index + 2] ?? 255;
+        const alpha = data[index + 3] ?? 0;
+        if (alpha > 0 && (red < 245 || green < 245 || blue < 245)) {
+          return true;
+        }
+      }
+      return false;
+    }, region);
 const browserScaleSnapshot = (
   page: Page,
 ): Promise<{
@@ -722,6 +763,267 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
     .toBe(false);
+});
+test("places annotation overlays, reuses shared history, and exports visible symbols", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("annotation-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+  const externalRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+        externalRequests.push(request.url());
+      }
+    }
+  });
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "annotation-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Checkmark" }).click();
+  await expect(page.getByRole("button", { name: /Checkmark/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 160);
+  await expect(page.getByRole("button", { name: "Select" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const checkmark = page.getByRole("group", { name: "checkmark element" }).first();
+  await expect(checkmark).toBeVisible();
+  const checkmarkStart = await checkmark.boundingBox();
+  expect(checkmarkStart).not.toBeNull();
+  if (checkmarkStart === null) {
+    return;
+  }
+
+  await page.mouse.move(
+    checkmarkStart.x + checkmarkStart.width / 2,
+    checkmarkStart.y + checkmarkStart.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    checkmarkStart.x + checkmarkStart.width / 2 + 40,
+    checkmarkStart.y + checkmarkStart.height / 2 + 20,
+  );
+  await page.mouse.up();
+  const checkmarkMoved = await checkmark.boundingBox();
+  expect(checkmarkMoved).not.toBeNull();
+  if (checkmarkMoved === null) {
+    return;
+  }
+  expect(checkmarkMoved.x).toBeGreaterThan(checkmarkStart.x + 30);
+
+  const checkmarkHandle = page.getByLabel("Resize checkmark element");
+  const checkmarkHandleBox = await checkmarkHandle.boundingBox();
+  expect(checkmarkHandleBox).not.toBeNull();
+  if (checkmarkHandleBox === null) {
+    return;
+  }
+  await page.mouse.move(
+    checkmarkHandleBox.x + checkmarkHandleBox.width / 2,
+    checkmarkHandleBox.y + checkmarkHandleBox.height / 2,
+  );
+  await page.mouse.down();
+  const checkmarkResizeBoxes: { width: number; height: number }[] = [];
+  for (const delta of [6, 12, 18, 24, 28]) {
+    await page.mouse.move(
+      checkmarkHandleBox.x + checkmarkHandleBox.width / 2 + delta,
+      checkmarkHandleBox.y + checkmarkHandleBox.height / 2 + delta,
+    );
+    await page.waitForTimeout(16);
+    const box = await checkmark.boundingBox();
+    if (box !== null) {
+      checkmarkResizeBoxes.push({ width: box.width, height: box.height });
+    }
+    await expect(checkmark).toBeVisible();
+  }
+  await page.mouse.up();
+  expect(checkmarkResizeBoxes.length).toBeGreaterThan(2);
+  for (let index = 1; index < checkmarkResizeBoxes.length; index += 1) {
+    const previousBox = checkmarkResizeBoxes[index - 1];
+    const currentBox = checkmarkResizeBoxes[index];
+    expect(previousBox).toBeDefined();
+    expect(currentBox).toBeDefined();
+    if (previousBox === undefined || currentBox === undefined) {
+      return;
+    }
+    expect(currentBox.width).toBeGreaterThanOrEqual(previousBox.width - 1);
+    expect(currentBox.height).toBeGreaterThanOrEqual(previousBox.height - 1);
+    expect(Math.abs(currentBox.width - currentBox.height)).toBeLessThanOrEqual(2);
+  }
+  const checkmarkResized = await checkmark.boundingBox();
+  expect(checkmarkResized).not.toBeNull();
+  if (checkmarkResized === null) {
+    return;
+  }
+  expect(checkmarkResized.width).toBeGreaterThan(checkmarkMoved.width + 10);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  const checkmarkUndoResize = await checkmark.boundingBox();
+  expect(checkmarkUndoResize).not.toBeNull();
+  if (checkmarkUndoResize === null) {
+    return;
+  }
+  expect(Math.abs(checkmarkUndoResize.width - checkmarkMoved.width)).toBeLessThanOrEqual(2);
+  await page.getByRole("button", { name: "Redo" }).click();
+  const checkmarkRedoResize = await checkmark.boundingBox();
+  expect(checkmarkRedoResize).not.toBeNull();
+  if (checkmarkRedoResize === null) {
+    return;
+  }
+  expect(Math.abs(checkmarkRedoResize.width - checkmarkResized.width)).toBeLessThanOrEqual(2);
+
+  await page.keyboard.press("Control+C");
+  await page.keyboard.press("Control+V");
+  await expect(page.getByRole("group", { name: "checkmark element" })).toHaveCount(2);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "checkmark element" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByRole("group", { name: "checkmark element" })).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Cross" }).click();
+  await page.mouse.click(overlayBox.x + 180, overlayBox.y + 140);
+  const cross = page.getByRole("group", { name: "cross element" });
+  await expect(cross).toBeVisible();
+  const crossBeforeResize = await cross.boundingBox();
+  expect(crossBeforeResize).not.toBeNull();
+  if (crossBeforeResize === null) {
+    return;
+  }
+  const crossHandleBox = await page.getByLabel("Resize cross element").boundingBox();
+  expect(crossHandleBox).not.toBeNull();
+  if (crossHandleBox === null) {
+    return;
+  }
+  await page.mouse.move(
+    crossHandleBox.x + crossHandleBox.width / 2,
+    crossHandleBox.y + crossHandleBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    crossHandleBox.x + crossHandleBox.width / 2 + 20,
+    crossHandleBox.y + crossHandleBox.height / 2 + 20,
+  );
+  await page.mouse.up();
+  const crossAfterResize = await cross.boundingBox();
+  expect(crossAfterResize).not.toBeNull();
+  if (crossAfterResize === null) {
+    return;
+  }
+  expect(crossAfterResize.width).toBeGreaterThan(crossBeforeResize.width + 8);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect
+    .poll(async () => (await cross.boundingBox())?.width ?? 0)
+    .toBeLessThan(crossAfterResize.width - 6);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await cross.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(crossBeforeResize.width + 8);
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(cross).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(cross).toBeVisible();
+
+  await page.getByRole("button", { name: "Date" }).click();
+  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 240);
+  const date = page.getByRole("group", { name: "date element" });
+  await expect(date).toBeVisible();
+  await expect(date).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
+  const dateHandle = page.getByLabel("Resize date element");
+  const dateHandleBox = await dateHandle.boundingBox();
+  expect(dateHandleBox).not.toBeNull();
+  if (dateHandleBox === null) {
+    return;
+  }
+  const dateBeforeResize = await date.boundingBox();
+  expect(dateBeforeResize).not.toBeNull();
+  if (dateBeforeResize === null) {
+    return;
+  }
+  const dateFontBeforeResize = await page
+    .getByLabel("Text element content")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  await page.mouse.move(
+    dateHandleBox.x + dateHandleBox.width / 2,
+    dateHandleBox.y + dateHandleBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    dateHandleBox.x + dateHandleBox.width / 2 + 100,
+    dateHandleBox.y + dateHandleBox.height / 2 + 40,
+  );
+  await page.mouse.up();
+  const dateAfterResize = await date.boundingBox();
+  expect(dateAfterResize).not.toBeNull();
+  if (dateAfterResize === null) {
+    return;
+  }
+  expect(dateAfterResize.width).toBeGreaterThan(dateBeforeResize.width + 20);
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("Text element content")
+        .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    )
+    .toBeGreaterThan(dateFontBeforeResize + 2);
+  const dateFontAfterResize = await page
+    .getByLabel("Text element content")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect
+    .poll(async () => (await date.boundingBox())?.width ?? 0)
+    .toBeLessThan(dateAfterResize.width - 10);
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("Text element content")
+        .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    )
+    .toBeLessThan(dateFontAfterResize - 1);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await date.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(dateBeforeResize.width + 20);
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("Text element content")
+        .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    )
+    .toBeGreaterThan(dateFontBeforeResize + 2);
+
+  const downloadedPath = testInfo.outputPath("annotation-fixture-edited.pdf");
+  await downloadEditedPdf(page, "annotation-fixture-edited.pdf", downloadedPath);
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(page.getByRole("heading", { name: "annotation-fixture-edited.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+  await expect
+    .poll(() => canvasRegionHasNonWhiteContent(page, { x: 100, y: 160, width: 90, height: 90 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionHasNonWhiteContent(page, { x: 160, y: 120, width: 70, height: 70 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionHasNonWhiteContent(page, { x: 80, y: 235, width: 160, height: 60 }))
+    .toBe(true);
+  expect(externalRequests).toEqual([]);
 });
 test("inserts, edits, copies, pastes, exports, and reopens an image overlay", async ({
   page,

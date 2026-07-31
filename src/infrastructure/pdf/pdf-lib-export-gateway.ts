@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 import type {
   ExportElement,
@@ -55,6 +55,45 @@ const dataUrlBytes = (dataUrl: string): Uint8Array => {
 
 const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFFont): PDFFont =>
   element.type === "signature" || element.type === "initials" ? cursive : fallback;
+const drawCheckmark = (
+  page: PDFPage,
+  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): void => {
+  const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
+  const color = rgb(0.05, 0.42, 0.18);
+  page.drawLine({
+    start: { x: rect.x + rect.width * 0.16, y: rect.y + rect.height * 0.46 },
+    end: { x: rect.x + rect.width * 0.4, y: rect.y + rect.height * 0.2 },
+    thickness,
+    color,
+  });
+  page.drawLine({
+    start: { x: rect.x + rect.width * 0.4, y: rect.y + rect.height * 0.2 },
+    end: { x: rect.x + rect.width * 0.84, y: rect.y + rect.height * 0.82 },
+    thickness,
+    color,
+  });
+};
+
+const drawCross = (
+  page: PDFPage,
+  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): void => {
+  const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
+  const color = rgb(0.72, 0.08, 0.08);
+  page.drawLine({
+    start: { x: rect.x + rect.width * 0.18, y: rect.y + rect.height * 0.18 },
+    end: { x: rect.x + rect.width * 0.82, y: rect.y + rect.height * 0.82 },
+    thickness,
+    color,
+  });
+  page.drawLine({
+    start: { x: rect.x + rect.width * 0.18, y: rect.y + rect.height * 0.82 },
+    end: { x: rect.x + rect.width * 0.82, y: rect.y + rect.height * 0.18 },
+    thickness,
+    color,
+  });
+};
 
 export class PdfLibExportGateway implements PdfExportGateway {
   public async open(bytes: Uint8Array): Promise<PdfOpenResult> {
@@ -117,6 +156,18 @@ export class PdfLibExportGateway implements PdfExportGateway {
       return;
     }
 
+    if (element.type === "checkmark" || element.type === "cross") {
+      const rect = pageTopLeftRectToPdfRect(element.bounds, {
+        width: page.getWidth(),
+        height: page.getHeight(),
+      });
+      if (element.type === "checkmark") {
+        drawCheckmark(page, rect);
+      } else {
+        drawCross(page, rect);
+      }
+      return;
+    }
     if (element.image !== undefined) {
       const imageBytes = dataUrlBytes(element.image.dataUrl);
       const embeddedImage =

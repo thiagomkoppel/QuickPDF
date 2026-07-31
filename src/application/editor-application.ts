@@ -11,7 +11,16 @@ import {
 } from "../domain/document-session";
 
 export type EditorStatus = "empty" | "loading" | "ready" | "exporting" | "error";
-export type EditorTool = "select" | "text" | "whiteout" | "signature" | "initials" | "image";
+export type EditorTool =
+  | "select"
+  | "text"
+  | "whiteout"
+  | "signature"
+  | "initials"
+  | "image"
+  | "checkmark"
+  | "cross"
+  | "date";
 export type SignatureFont = "cursive" | "serif" | "marker" | "hand";
 export type SignatureSource = "draw" | "type" | "upload";
 export type SignatureElementType = "signature" | "initials";
@@ -102,7 +111,8 @@ export interface ImageAppearance {
 export interface ExportElement {
   readonly id: string;
   readonly pageId: string;
-  readonly type: "text" | "whiteout" | "signature" | "initials" | "image";
+  readonly type:
+    "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
   readonly bounds: Bounds;
   readonly text?: string;
   readonly textAppearance?: TextAppearance;
@@ -140,6 +150,10 @@ export interface DownloadAdapter {
 
 export interface IdGenerator {
   nextId(prefix: string): string;
+}
+
+export interface DateProvider {
+  today(): Date;
 }
 
 export interface EditorState {
@@ -201,6 +215,9 @@ export const DEFAULT_INITIALS_APPEARANCE: TextAppearance = {
   color: "#111111",
   fontFamily: "cursive",
 };
+export const DEFAULT_DATE_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
+export const DEFAULT_CHECKMARK_SIZE = 28;
+export const DEFAULT_CROSS_SIZE = 28;
 export const MIN_ELEMENT_WIDTH = 16;
 export const MIN_ELEMENT_HEIGHT = 16;
 export const MAX_SIGNATURE_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -240,25 +257,44 @@ const isSignatureContent = (
 const isImageContent = (content: EditorElement["content"]): content is ImageElementContent =>
   content !== undefined && "kind" in content && content.kind === "image-element";
 
+const isTextLikeElement = (element: EditorElement): boolean =>
+  element.type === "text" || element.type === "date";
+
 const textFromElement = (element: EditorElement): string =>
-  element.type === "text" && isTextContent(element.content) ? element.content.text : "";
+  isTextLikeElement(element) && isTextContent(element.content) ? element.content.text : "";
 
 const textFontSizeFromElement = (element: EditorElement): number => {
   const content = element.content;
-  return element.type === "text" && isTextContent(content) && content.fontSize !== undefined
+  return isTextLikeElement(element) && isTextContent(content) && content.fontSize !== undefined
     ? content.fontSize
-    : DEFAULT_TEXT_APPEARANCE.fontSize;
+    : element.type === "date"
+      ? DEFAULT_DATE_APPEARANCE.fontSize
+      : DEFAULT_TEXT_APPEARANCE.fontSize;
 };
 
 const clampTextFontSize = (fontSize: number): number =>
   Math.min(MAX_TEXT_FONT_SIZE, Math.max(MIN_TEXT_FONT_SIZE, fontSize));
 
+const formatLocalDate = (date: Date): string => {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = String(date.getFullYear()).padStart(4, "0");
+  return `${month}/${day}/${year}`;
+};
 const toExportElement = (element: EditorElement): ExportElement => {
   if (element.type === "whiteout") {
     return {
       id: element.id,
       pageId: element.pageId,
       type: "whiteout",
+      bounds: cloneBounds(element.bounds),
+    };
+  }
+  if (element.type === "checkmark" || element.type === "cross") {
+    return {
+      id: element.id,
+      pageId: element.pageId,
+      type: element.type,
       bounds: cloneBounds(element.bounds),
     };
   }
@@ -300,13 +336,14 @@ const toExportElement = (element: EditorElement): ExportElement => {
       };
     }
   }
+  const appearance = element.type === "date" ? DEFAULT_DATE_APPEARANCE : DEFAULT_TEXT_APPEARANCE;
   return {
     id: element.id,
     pageId: element.pageId,
-    type: "text",
+    type: element.type === "date" ? "date" : "text",
     bounds: cloneBounds(element.bounds),
     text: textFromElement(element),
-    textAppearance: { ...DEFAULT_TEXT_APPEARANCE, fontSize: textFontSizeFromElement(element) },
+    textAppearance: { ...appearance, fontSize: textFontSizeFromElement(element) },
   };
 };
 const safeExportFilename = (fileName: string | undefined): string => {
@@ -356,7 +393,8 @@ export const validateImageFile = (
   return undefined;
 };
 interface ClipboardElement {
-  readonly type: "text" | "whiteout" | "signature" | "initials" | "image";
+  readonly type:
+    "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
   readonly bounds: Bounds;
   readonly text?: string;
   readonly fontSize?: number;
@@ -439,6 +477,7 @@ export class PdfEditorApplication {
   readonly #downloadAdapter: DownloadAdapter;
   readonly #idGenerator: IdGenerator;
   readonly #renderGateway: PdfRenderDocumentGateway | undefined;
+  readonly #dateProvider: DateProvider;
   #session: DocumentSession | undefined;
   #originalBytes: Uint8Array | undefined;
   #renderDocumentId: string | undefined;
@@ -455,12 +494,14 @@ export class PdfEditorApplication {
     downloadAdapter: DownloadAdapter,
     idGenerator: IdGenerator,
     renderGateway?: PdfRenderDocumentGateway,
+    dateProvider: DateProvider = { today: () => new Date() },
   ) {
     this.#fileReader = fileReader;
     this.#pdfGateway = pdfGateway;
     this.#downloadAdapter = downloadAdapter;
     this.#idGenerator = idGenerator;
     this.#renderGateway = renderGateway;
+    this.#dateProvider = dateProvider;
   }
 
   public snapshot(): EditorSnapshot {
@@ -668,6 +709,38 @@ export class PdfEditorApplication {
       },
     });
   }
+  public addCheckmark(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+    return this.#addElement({
+      type: "checkmark",
+      bounds: {
+        x: point.x - DEFAULT_CHECKMARK_SIZE / 2,
+        y: point.y - DEFAULT_CHECKMARK_SIZE / 2,
+        width: DEFAULT_CHECKMARK_SIZE,
+        height: DEFAULT_CHECKMARK_SIZE,
+      },
+    });
+  }
+
+  public addCross(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+    return this.#addElement({
+      type: "cross",
+      bounds: {
+        x: point.x - DEFAULT_CROSS_SIZE / 2,
+        y: point.y - DEFAULT_CROSS_SIZE / 2,
+        width: DEFAULT_CROSS_SIZE,
+        height: DEFAULT_CROSS_SIZE,
+      },
+    });
+  }
+
+  public addDate(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+    return this.#addElement({
+      type: "date",
+      bounds: { x: point.x, y: point.y, width: 96, height: 28 },
+      text: formatLocalDate(this.#dateProvider.today()),
+      fontSize: DEFAULT_DATE_APPEARANCE.fontSize,
+    });
+  }
   public updateText(elementId: string, text: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
     if (element?.type !== "text") {
@@ -683,7 +756,7 @@ export class PdfEditorApplication {
 
   public updateTextFontSize(elementId: string, fontSize: number): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element?.type !== "text") {
+    if (element === undefined || !isTextLikeElement(element)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (!Number.isFinite(fontSize)) {
@@ -702,7 +775,7 @@ export class PdfEditorApplication {
     fontSize: number,
   ): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element?.type !== "text") {
+    if (element === undefined || !isTextLikeElement(element)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (!isFiniteBounds(bounds) || !Number.isFinite(fontSize)) {
@@ -721,7 +794,7 @@ export class PdfEditorApplication {
     end: { readonly bounds: Bounds; readonly fontSize: number },
   ): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element?.type !== "text") {
+    if (element === undefined || !isTextLikeElement(element)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (
@@ -1084,7 +1157,7 @@ export class PdfEditorApplication {
   }
 
   #aspectRatioBounds(element: EditorElement, bounds: Bounds): Bounds {
-    if (element.type !== "image") {
+    if (element.type !== "image" && element.type !== "checkmark" && element.type !== "cross") {
       return bounds;
     }
     const ratio = element.bounds.width / element.bounds.height;
@@ -1100,7 +1173,8 @@ export class PdfEditorApplication {
   }
 
   #clipboardAddRequest(element: ClipboardElement): {
-    readonly type: "text" | "whiteout" | "signature" | "initials" | "image";
+    readonly type:
+      "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
     readonly bounds: Bounds;
     readonly text?: string;
     readonly fontSize?: number;
@@ -1115,6 +1189,13 @@ export class PdfEditorApplication {
         fontSize: element.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
       };
     }
+    if (element.type === "date") {
+      return {
+        ...base,
+        text: element.text ?? formatLocalDate(this.#dateProvider.today()),
+        fontSize: element.fontSize ?? DEFAULT_DATE_APPEARANCE.fontSize,
+      };
+    }
     if (element.type === "signature" || element.type === "initials") {
       const signatureContent = cloneSignatureContent(element.signatureContent);
       return signatureContent === undefined ? base : { ...base, signatureContent };
@@ -1125,7 +1206,6 @@ export class PdfEditorApplication {
     }
     return base;
   }
-
   #offsetPastedBounds(bounds: Bounds): Bounds {
     const preferred = this.#constrainBounds({
       ...bounds,
@@ -1183,7 +1263,8 @@ export class PdfEditorApplication {
 
   #addElement(request: {
     readonly historyType?: HistoryEntry["type"];
-    readonly type: "text" | "whiteout" | "signature" | "initials" | "image";
+    readonly type:
+      "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
     readonly bounds: Bounds;
     readonly text?: string;
     readonly fontSize?: number;
@@ -1219,13 +1300,17 @@ export class PdfEditorApplication {
       pageId,
       type: request.type,
       bounds: this.#constrainBounds(request.bounds),
-      ...(request.type === "text"
+      ...(request.type === "text" || request.type === "date"
         ? {
             content: {
-              text: request.text ?? "Text",
+              text:
+                request.text ??
+                (request.type === "date" ? formatLocalDate(this.#dateProvider.today()) : "Text"),
               fontSize:
                 request.fontSize === undefined
-                  ? DEFAULT_TEXT_APPEARANCE.fontSize
+                  ? request.type === "date"
+                    ? DEFAULT_DATE_APPEARANCE.fontSize
+                    : DEFAULT_TEXT_APPEARANCE.fontSize
                   : clampTextFontSize(request.fontSize),
             },
           }
@@ -1298,8 +1383,11 @@ export class PdfEditorApplication {
       ...elements.filter((element) => element.type === "whiteout"),
       ...elements.filter((element) => element.type === "signature" || element.type === "initials"),
       ...elements.filter((element) => element.type === "image" && element.image !== undefined),
+      ...elements.filter((element) => element.type === "checkmark" || element.type === "cross"),
       ...elements.filter(
-        (element) => element.type === "text" && (element.text ?? "").trim().length > 0,
+        (element) =>
+          (element.type === "text" || element.type === "date") &&
+          (element.text ?? "").trim().length > 0,
       ),
     ];
   }
