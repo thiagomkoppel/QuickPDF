@@ -17,6 +17,7 @@ import type {
   SignatureElementType,
 } from "../../application/editor-application";
 import {
+  DEFAULT_TEXT_APPEARANCE,
   MAX_TEXT_FONT_SIZE,
   MIN_ELEMENT_HEIGHT,
   MIN_ELEMENT_WIDTH,
@@ -44,9 +45,15 @@ type PointerAction =
   | {
       readonly kind: "resize";
       readonly elementId: string;
-      readonly startX: number;
-      readonly startY: number;
+      readonly type: ExportElement["type"];
+      readonly startBounds: ExportElement["bounds"];
+      readonly startFontSize?: number;
     };
+
+interface ResizePreview {
+  readonly bounds: ExportElement["bounds"];
+  readonly fontSize?: number;
+}
 
 interface WhiteoutDraft {
   readonly pointerId: number;
@@ -196,6 +203,7 @@ export const EditorPage = ({
   const [editingTextElementId, setEditingTextElementId] = useState<string | undefined>();
   const editingTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const textFocusRetryRef = useRef<number | undefined>(undefined);
+  const resizePreviewRef = useRef<ResizePreview | undefined>(undefined);
 
   const applySnapshot = useCallback(
     (nextSnapshot: EditorSnapshot): void => {
@@ -351,6 +359,25 @@ export const EditorPage = ({
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (pointerAction?.kind === "resize" && event.key === "Escape") {
+        event.preventDefault();
+        if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+          applySnapshot(
+            editor.previewTextResizeElement(
+              pointerAction.elementId,
+              pointerAction.startBounds,
+              pointerAction.startFontSize,
+            ),
+          );
+        } else {
+          applySnapshot(
+            editor.previewResizeElement(pointerAction.elementId, pointerAction.startBounds),
+          );
+        }
+        resizePreviewRef.current = undefined;
+        setPointerAction(undefined);
+        return;
+      }
       if (whiteoutDraft !== undefined && event.key === "Escape") {
         event.preventDefault();
         setWhiteoutDraft(undefined);
@@ -360,8 +387,28 @@ export const EditorPage = ({
         if (event.key === "Escape" && isEditingKeyboardTarget(event.target)) {
           event.preventDefault();
           setEditingTextElementId(undefined);
+          applySnapshot(editor.setTool("select"));
         }
         if (isEditingKeyboardTarget(event.target)) {
+          return;
+        }
+      }
+      if ((event.ctrlKey || event.metaKey) && !isEditingKeyboardTarget(event.target)) {
+        const key = event.key.toLowerCase();
+        const wantsUndo = key === "z" && !event.shiftKey;
+        const wantsRedo = (key === "z" && event.shiftKey) || (!event.metaKey && key === "y");
+        if (wantsUndo && snapshot.canUndo) {
+          event.preventDefault();
+          setEditingTextElementId(undefined);
+          setWhiteoutDraft(undefined);
+          applySnapshot(editor.undo());
+          return;
+        }
+        if (wantsRedo && snapshot.canRedo) {
+          event.preventDefault();
+          setEditingTextElementId(undefined);
+          setWhiteoutDraft(undefined);
+          applySnapshot(editor.redo());
           return;
         }
       }
@@ -413,6 +460,9 @@ export const EditorPage = ({
     currentPageId,
     editingTextElementId,
     editor,
+    pointerAction,
+    snapshot.canRedo,
+    snapshot.canUndo,
     state.selectedElement,
     state.selectedElementId,
     whiteoutDraft,
@@ -445,15 +495,60 @@ export const EditorPage = ({
         );
         return;
       }
-      applySnapshot(
-        editor.resizeElement(pointerAction.elementId, {
-          width: point.x - pointerAction.startX,
-          height: point.y - pointerAction.startY,
-        }),
-      );
+      if (pointerAction.type === "text" && pointerAction.startFontSize !== undefined) {
+        const rawScale =
+          Math.max(point.x - pointerAction.startBounds.x, point.y - pointerAction.startBounds.y) /
+          Math.max(pointerAction.startBounds.width, pointerAction.startBounds.height);
+        const nextFontSize = Math.min(
+          MAX_TEXT_FONT_SIZE,
+          Math.max(MIN_TEXT_FONT_SIZE, pointerAction.startFontSize * rawScale),
+        );
+        const scale = nextFontSize / pointerAction.startFontSize;
+        const bounds = {
+          ...pointerAction.startBounds,
+          width: pointerAction.startBounds.width * scale,
+          height: pointerAction.startBounds.height * scale,
+        };
+        resizePreviewRef.current = { bounds, fontSize: nextFontSize };
+        applySnapshot(
+          editor.previewTextResizeElement(pointerAction.elementId, bounds, nextFontSize),
+        );
+        return;
+      }
+      const bounds = {
+        ...pointerAction.startBounds,
+        width: point.x - pointerAction.startBounds.x,
+        height: point.y - pointerAction.startBounds.y,
+      };
+      resizePreviewRef.current = { bounds };
+      applySnapshot(editor.previewResizeElement(pointerAction.elementId, bounds));
     };
 
     const stopPointerAction = (): void => {
+      if (pointerAction.kind === "resize") {
+        const preview = resizePreviewRef.current;
+        if (
+          pointerAction.type === "text" &&
+          pointerAction.startFontSize !== undefined &&
+          preview?.fontSize !== undefined
+        ) {
+          applySnapshot(
+            editor.commitTextResizeElement(
+              pointerAction.elementId,
+              { bounds: pointerAction.startBounds, fontSize: pointerAction.startFontSize },
+              { bounds: preview.bounds, fontSize: preview.fontSize },
+            ),
+          );
+        } else if (preview !== undefined) {
+          applySnapshot(
+            editor.resizeElement(pointerAction.elementId, {
+              width: preview.bounds.width,
+              height: preview.bounds.height,
+            }),
+          );
+        }
+      }
+      resizePreviewRef.current = undefined;
       setPointerAction(undefined);
     };
 
@@ -540,6 +635,12 @@ export const EditorPage = ({
     }
     setWhiteoutDraft(undefined);
   };
+  const clearSelection = (): void => {
+    setEditingTextElementId(undefined);
+    setWhiteoutDraft(undefined);
+    applySnapshot(editor.clearSelection());
+  };
+
   const handleOverlayClick = (event: MouseEvent<HTMLDivElement>): void => {
     if (currentPage === undefined) {
       return;
@@ -563,10 +664,25 @@ export const EditorPage = ({
     }
     if (state.tool === "text") {
       const nextSnapshot = editor.addText(point, "Text");
-      applySnapshot(nextSnapshot);
-      setEditingTextElementId(nextSnapshot.state.selectedElementId);
+      const selectedElementId = nextSnapshot.state.selectedElementId;
+      applySnapshot(editor.setTool("select"));
+      setEditingTextElementId(selectedElementId);
       return;
     }
+    if (state.tool === "select" && state.selectedElementId !== undefined) {
+      clearSelection();
+    }
+  };
+
+  const handleWorkspaceClick = (event: MouseEvent<HTMLElement>): void => {
+    if (
+      event.target !== event.currentTarget ||
+      state.tool !== "select" ||
+      state.selectedElementId === undefined
+    ) {
+      return;
+    }
+    clearSelection();
   };
 
   const startElementMove = (element: ExportElement, event: PointerEvent<HTMLDivElement>): void => {
@@ -609,14 +725,34 @@ export const EditorPage = ({
     event.preventDefault();
     event.stopPropagation();
     applySnapshot(editor.selectElement(element.id));
+    resizePreviewRef.current = {
+      bounds: element.bounds,
+      ...(element.textAppearance?.fontSize === undefined
+        ? {}
+        : { fontSize: element.textAppearance.fontSize }),
+    };
     setPointerAction({
       kind: "resize",
       elementId: element.id,
-      startX: element.bounds.x,
-      startY: element.bounds.y,
+      type: element.type,
+      startBounds: element.bounds,
+      ...(element.type === "text"
+        ? { startFontSize: element.textAppearance?.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize }
+        : {}),
     });
   };
 
+  const undo = (): void => {
+    setEditingTextElementId(undefined);
+    setWhiteoutDraft(undefined);
+    applySnapshot(editor.undo());
+  };
+
+  const redo = (): void => {
+    setEditingTextElementId(undefined);
+    setWhiteoutDraft(undefined);
+    applySnapshot(editor.redo());
+  };
   const download = async (): Promise<void> => {
     applySnapshot(await editor.exportCurrentPdf());
   };
@@ -626,13 +762,14 @@ export const EditorPage = ({
       return;
     }
     const point = defaultPlacement(dialogType);
-    applySnapshot(
+    const nextSnapshot =
       dialogType === "signature"
         ? image.source === "upload"
           ? editor.addUploadedSignature(point, image)
           : editor.addDrawnSignature(point, image)
-        : editor.addDrawnInitials(point, image),
-    );
+        : editor.addDrawnInitials(point, image);
+    applySnapshot(nextSnapshot);
+    applySnapshot(editor.setTool("select"));
     setDialogType(undefined);
   };
 
@@ -641,11 +778,12 @@ export const EditorPage = ({
       return;
     }
     const point = defaultPlacement(dialogType);
-    applySnapshot(
+    const nextSnapshot =
       dialogType === "signature"
         ? editor.addTypedSignature(point, { text, fontFamily })
-        : editor.addTypedInitials(point, { text, fontFamily }),
-    );
+        : editor.addTypedInitials(point, { text, fontFamily });
+    applySnapshot(nextSnapshot);
+    applySnapshot(editor.setTool("select"));
     setDialogType(undefined);
   };
 
@@ -691,86 +829,177 @@ export const EditorPage = ({
         </button>
       </header>
 
-      <div className="viewer-toolbar" aria-label="PDF editor controls">
-        <button
-          type="button"
-          aria-pressed={state.tool === "select"}
-          onClick={() => {
-            applySnapshot(editor.setTool("select"));
-          }}
-        >
-          <span>Select</span>
-          {activeToolLabel(state.tool === "select")}
-        </button>
-        <button
-          type="button"
-          aria-pressed={state.tool === "text"}
-          onClick={() => {
-            applySnapshot(editor.setTool("text"));
-          }}
-        >
-          <span>Text</span>
-          {activeToolLabel(state.tool === "text")}
-        </button>
-        <button
-          type="button"
-          aria-pressed={state.tool === "signature"}
-          onClick={() => {
-            applySnapshot(editor.setTool("signature"));
-            setDialogType("signature");
-          }}
-        >
-          <span>Signature</span>
-          {activeToolLabel(state.tool === "signature")}
-        </button>
-        <button
-          type="button"
-          aria-pressed={state.tool === "initials"}
-          onClick={() => {
-            applySnapshot(editor.setTool("initials"));
-            setDialogType("initials");
-          }}
-        >
-          <span>Initials</span>
-          {activeToolLabel(state.tool === "initials")}
-        </button>
-        <button
-          type="button"
-          aria-pressed={state.tool === "whiteout"}
-          onClick={() => {
-            applySnapshot(editor.setTool("whiteout"));
-          }}
-        >
-          <span>Whiteout</span>
-          {activeToolLabel(state.tool === "whiteout")}
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out"
-          onClick={() => {
-            applyZoom(zoomRef.current - ZOOM_STEP);
-          }}
-        >
-          -
-        </button>
-        <output aria-label="Zoom level">{Math.round(zoom * 100)}%</output>
-        <button
-          type="button"
-          aria-label="Zoom in"
-          onClick={() => {
-            applyZoom(zoomRef.current + ZOOM_STEP);
-          }}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            applyZoom(1);
-          }}
-        >
-          Reset zoom
-        </button>
+      <div className="editor-controls">
+        <div className="viewer-toolbar" aria-label="PDF editor controls">
+          <button type="button" aria-label="Undo" disabled={!snapshot.canUndo} onClick={undo}>
+            Undo
+          </button>
+          <button type="button" aria-label="Redo" disabled={!snapshot.canRedo} onClick={redo}>
+            Redo
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "select"}
+            onClick={() => {
+              applySnapshot(editor.setTool("select"));
+            }}
+          >
+            <span>Select</span>
+            {activeToolLabel(state.tool === "select")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "text"}
+            onClick={() => {
+              applySnapshot(editor.setTool("text"));
+            }}
+          >
+            <span>Text</span>
+            {activeToolLabel(state.tool === "text")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "signature"}
+            onClick={() => {
+              applySnapshot(editor.setTool("signature"));
+              setDialogType("signature");
+            }}
+          >
+            <span>Signature</span>
+            {activeToolLabel(state.tool === "signature")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "initials"}
+            onClick={() => {
+              applySnapshot(editor.setTool("initials"));
+              setDialogType("initials");
+            }}
+          >
+            <span>Initials</span>
+            {activeToolLabel(state.tool === "initials")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.tool === "whiteout"}
+            onClick={() => {
+              applySnapshot(editor.setTool("whiteout"));
+            }}
+          >
+            <span>Whiteout</span>
+            {activeToolLabel(state.tool === "whiteout")}
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onClick={() => {
+              applyZoom(zoomRef.current - ZOOM_STEP);
+            }}
+          >
+            -
+          </button>
+          <output aria-label="Zoom level">{Math.round(zoom * 100)}%</output>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onClick={() => {
+              applyZoom(zoomRef.current + ZOOM_STEP);
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              applyZoom(1);
+            }}
+          >
+            Reset zoom
+          </button>
+        </div>
+
+        {selectedElement === undefined ? null : (
+          <aside className="element-inspector" aria-label="Selected element actions">
+            <strong>{elementLabel(selectedElement)}</strong>
+            <label>
+              Width
+              <input
+                aria-label="Selected element width"
+                type="number"
+                min="16"
+                value={Math.round(selectedElement.bounds.width)}
+                onChange={(event) => {
+                  const width = event.currentTarget.valueAsNumber;
+                  if (!Number.isFinite(width)) {
+                    return;
+                  }
+                  applySnapshot(
+                    editor.resizeElement(selectedElement.id, {
+                      width,
+                      height: selectedElement.bounds.height,
+                    }),
+                  );
+                }}
+              />
+            </label>
+            <label>
+              Height
+              <input
+                aria-label="Selected element height"
+                type="number"
+                min="16"
+                value={Math.round(selectedElement.bounds.height)}
+                onChange={(event) => {
+                  const height = event.currentTarget.valueAsNumber;
+                  if (!Number.isFinite(height)) {
+                    return;
+                  }
+                  applySnapshot(
+                    editor.resizeElement(selectedElement.id, {
+                      width: selectedElement.bounds.width,
+                      height,
+                    }),
+                  );
+                }}
+              />
+            </label>
+            {selectedElement.type === "text" ? (
+              <label>
+                Font size
+                <input
+                  aria-label="Text font size"
+                  type="number"
+                  min={MIN_TEXT_FONT_SIZE}
+                  max={MAX_TEXT_FONT_SIZE}
+                  value={Math.round(selectedElement.textAppearance?.fontSize ?? 16)}
+                  onChange={(event) => {
+                    const fontSize = event.currentTarget.valueAsNumber;
+                    if (!Number.isFinite(fontSize)) {
+                      return;
+                    }
+                    applySnapshot(editor.updateTextFontSize(selectedElement.id, fontSize));
+                  }}
+                />
+              </label>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                applySnapshot(editor.duplicateElement(selectedElement.id));
+              }}
+            >
+              Duplicate
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                applySnapshot(editor.deleteElement(selectedElement.id));
+              }}
+            >
+              Delete
+            </button>
+          </aside>
+        )}
       </div>
 
       <p className="whiteout-note">
@@ -798,7 +1027,12 @@ export const EditorPage = ({
       ) : null}
 
       <div className="editor-viewport" aria-label="PDF editor viewport">
-        <main ref={workspaceRef} className="viewer-main" aria-label="PDF workspace">
+        <main
+          ref={workspaceRef}
+          className="viewer-main"
+          aria-label="PDF workspace"
+          onClick={handleWorkspaceClick}
+        >
           <div
             className="pdf-page-frame"
             style={{ width: pageCssWidth, height: pageCssHeight }}
@@ -895,89 +1129,6 @@ export const EditorPage = ({
           </div>
         </main>
       </div>
-
-      {selectedElement === undefined ? null : (
-        <aside className="element-inspector" aria-label="Selected element actions">
-          <strong>{elementLabel(selectedElement)}</strong>
-          <label>
-            Width
-            <input
-              aria-label="Selected element width"
-              type="number"
-              min="16"
-              value={Math.round(selectedElement.bounds.width)}
-              onChange={(event) => {
-                const width = event.currentTarget.valueAsNumber;
-                if (!Number.isFinite(width)) {
-                  return;
-                }
-                applySnapshot(
-                  editor.resizeElement(selectedElement.id, {
-                    width,
-                    height: selectedElement.bounds.height,
-                  }),
-                );
-              }}
-            />
-          </label>
-          <label>
-            Height
-            <input
-              aria-label="Selected element height"
-              type="number"
-              min="16"
-              value={Math.round(selectedElement.bounds.height)}
-              onChange={(event) => {
-                const height = event.currentTarget.valueAsNumber;
-                if (!Number.isFinite(height)) {
-                  return;
-                }
-                applySnapshot(
-                  editor.resizeElement(selectedElement.id, {
-                    width: selectedElement.bounds.width,
-                    height,
-                  }),
-                );
-              }}
-            />
-          </label>
-          {selectedElement.type === "text" ? (
-            <label>
-              Font size
-              <input
-                aria-label="Text font size"
-                type="number"
-                min={MIN_TEXT_FONT_SIZE}
-                max={MAX_TEXT_FONT_SIZE}
-                value={Math.round(selectedElement.textAppearance?.fontSize ?? 16)}
-                onChange={(event) => {
-                  const fontSize = event.currentTarget.valueAsNumber;
-                  if (!Number.isFinite(fontSize)) {
-                    return;
-                  }
-                  applySnapshot(editor.updateTextFontSize(selectedElement.id, fontSize));
-                }}
-              />
-            </label>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => {
-              applySnapshot(editor.duplicateElement(selectedElement.id));
-            }}
-          >
-            Duplicate
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              applySnapshot(editor.deleteElement(selectedElement.id));
-            }}
-          >
-            Delete
-          </button>
-        </aside>
-      )}
 
       {dialogType === undefined ? null : (
         <SignatureDialog

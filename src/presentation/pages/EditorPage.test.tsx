@@ -28,12 +28,18 @@ interface TestEditor extends PdfEditorApplication {
   readonly addText: Mock;
   readonly addWhiteout: Mock;
   readonly selectElement: Mock;
+  readonly clearSelection: Mock;
   readonly moveElement: Mock;
   readonly duplicateElement: Mock;
   readonly deleteElement: Mock;
   readonly updateText: Mock;
   readonly updateTextFontSize: Mock;
   readonly resizeElement: Mock;
+  readonly previewResizeElement: Mock;
+  readonly previewTextResizeElement: Mock;
+  readonly commitTextResizeElement: Mock;
+  readonly undo: Mock;
+  readonly redo: Mock;
   readonly addTypedSignature: Mock;
   readonly addTypedInitials: Mock;
   readonly addUploadedSignature: Mock;
@@ -42,6 +48,8 @@ interface TestEditor extends PdfEditorApplication {
 
 const baseSnapshot = (overrides: Partial<EditorSnapshot["state"]> = {}): EditorSnapshot => ({
   canExport: true,
+  canUndo: false,
+  canRedo: false,
   state: {
     status: "ready",
     fileName: "visible.pdf",
@@ -108,12 +116,18 @@ const createEditor = (): TestEditor =>
     addTypedInitials: vi.fn(() => baseSnapshot()),
     addDrawnInitials: vi.fn(() => baseSnapshot()),
     selectElement: vi.fn(() => baseSnapshot()),
+    clearSelection: vi.fn(() => baseSnapshot()),
     moveElement: vi.fn(() => baseSnapshot()),
     resizeElement: vi.fn(() => baseSnapshot()),
+    previewResizeElement: vi.fn(() => baseSnapshot()),
+    previewTextResizeElement: vi.fn(() => baseSnapshot()),
+    commitTextResizeElement: vi.fn(() => baseSnapshot()),
     duplicateElement: vi.fn(() => baseSnapshot()),
     deleteElement: vi.fn(() => baseSnapshot()),
     updateText: vi.fn(() => baseSnapshot()),
     updateTextFontSize: vi.fn(() => baseSnapshot()),
+    undo: vi.fn(() => baseSnapshot()),
+    redo: vi.fn(() => baseSnapshot()),
     exportCurrentPdf: vi.fn(() => Promise.resolve(baseSnapshot())),
   }) as unknown as TestEditor;
 
@@ -637,12 +651,126 @@ describe("EditorPage PDF rendering", () => {
     expect(plainAtMax.defaultPrevented).toBe(false);
   });
 
+  it("renders Undo and Redo controls disabled when history is unavailable", () => {
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+
+  it("routes Undo and Redo toolbar actions through the application API", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...baseSnapshot(), canUndo: true, canRedo: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+
+    expect(editor.undo).toHaveBeenCalledTimes(1);
+    expect(editor.redo).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles Undo and Redo keyboard shortcuts when history is available", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...baseSnapshot(), canUndo: true, canRedo: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const undo = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "z",
+    });
+    const redoShift = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      shiftKey: true,
+      key: "Z",
+    });
+    const redoY = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "y",
+    });
+    const macRedo = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+      shiftKey: true,
+      key: "z",
+    });
+
+    act(() => {
+      window.dispatchEvent(undo);
+      window.dispatchEvent(redoShift);
+      window.dispatchEvent(redoY);
+      window.dispatchEvent(macRedo);
+    });
+
+    expect(undo.defaultPrevented).toBe(true);
+    expect(redoShift.defaultPrevented).toBe(true);
+    expect(redoY.defaultPrevented).toBe(true);
+    expect(macRedo.defaultPrevented).toBe(true);
+    expect(editor.undo).toHaveBeenCalledTimes(1);
+    expect(editor.redo).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not hijack history shortcuts inside active text editing controls", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={{ ...selectedSnapshot("text"), canUndo: true, canRedo: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.dblClick(screen.getByLabelText("Text element content"));
+    const textArea = screen.getByLabelText("Edit text element");
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "z",
+    });
+    act(() => {
+      textArea.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.undo).not.toHaveBeenCalled();
+  });
   it("does not intercept browser zoom shortcuts when no editor document is open", () => {
     render(
       <EditorPage
         editor={createEditor()}
         snapshot={{
           canExport: false,
+          canUndo: false,
+          canRedo: false,
           state: {
             status: "empty",
             pageCount: 0,
@@ -823,7 +951,7 @@ describe("EditorPage PDF rendering", () => {
     expect(input).not.toHaveFocus();
   });
 
-  it("clicking outside text editing commits and exits editing", async () => {
+  it("clicking empty page space with Select clears selection after exiting text editing", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
     render(
@@ -839,7 +967,78 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByLabelText("PDF overlay"));
 
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
-    expect(screen.getByRole("complementary", { name: "Selected element actions" })).toBeVisible();
+    expect(editor.clearSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking empty page space with Select clears the current selected element", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("whiteout")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(editor.clearSelection).toHaveBeenCalledTimes(1);
+    expect(editor.selectElement).not.toHaveBeenCalled();
+  });
+
+  it("does not clear selection when empty page space is used by a creation tool", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({ ...selectedSnapshot("text").state, tool: "text" })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(editor.addText).toHaveBeenCalled();
+    expect(editor.clearSelection).not.toHaveBeenCalled();
+  });
+
+  it("does not clear selection when selected-element inspector controls are used", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Duplicate" }));
+
+    expect(editor.duplicateElement).toHaveBeenCalledWith("text-1");
+    expect(editor.clearSelection).not.toHaveBeenCalled();
+  });
+
+  it("clears selection when Select clicks empty workspace outside the PDF page", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("signature")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText("PDF workspace"));
+
+    expect(editor.clearSelection).toHaveBeenCalledTimes(1);
   });
 
   it("Backspace edits text while editing and does not delete the selected text element", async () => {
@@ -906,6 +1105,62 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
   });
 
+  it("places text as a one-shot tool and switches back to Select", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({ tool: "text" })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(editor.addText).toHaveBeenCalledTimes(1);
+    expect(editor.setTool).toHaveBeenCalledWith("select");
+  });
+
+  it("does not create a second text element when the outside click exits initial editing", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={textSnapshot("Placed text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    await user.dblClick(screen.getByLabelText("Text element content"));
+
+    await user.click(screen.getByLabelText("PDF overlay"));
+
+    expect(screen.queryByLabelText("Edit text element")).toBeNull();
+    expect(editor.addText).not.toHaveBeenCalled();
+    expect(editor.clearSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape exits text editing and switches back to Select", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    await user.dblClick(screen.getByLabelText("Text element content"));
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByLabelText("Edit text element")).toBeNull();
+    expect(editor.setTool).toHaveBeenCalledWith("select");
+  });
   it("newly created text is selected and enters editing automatically", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -935,6 +1190,105 @@ describe("EditorPage PDF rendering", () => {
     });
   });
 
+  it("resizes text proportionally and commits one text resize command", () => {
+    const editor = createEditor();
+    editor.previewTextResizeElement.mockImplementation(
+      (elementId: string, _bounds: ExportElement["bounds"], fontSize: number) =>
+        textSnapshot("Editable text", fontSize).state.selectedElement?.id === elementId
+          ? textSnapshot("Editable text", fontSize)
+          : baseSnapshot(),
+    );
+    editor.commitTextResizeElement.mockImplementation(
+      (
+        _elementId: string,
+        _start: unknown,
+        end: { readonly bounds: ExportElement["bounds"]; readonly fontSize: number },
+      ) =>
+        baseSnapshot({
+          selectedElementId: "text-1",
+          selectedElement: {
+            ...selectedElementForType("text"),
+            bounds: end.bounds,
+            textAppearance: { fontSize: end.fontSize, color: "#111111" },
+          },
+          visibleElements: [
+            {
+              ...selectedElementForType("text"),
+              bounds: end.bounds,
+              textAppearance: { fontSize: end.fontSize, color: "#111111" },
+            },
+          ],
+          isDirty: true,
+        }),
+    );
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByLabelText("Resize text element"), "pointerdown", {
+      clientX: 200,
+      clientY: 98,
+      pointerId: 9,
+    });
+    dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 9 });
+    dispatchPointerEvent(window, "pointerup", { clientX: 280, clientY: 122, pointerId: 9 });
+
+    expect(editor.previewTextResizeElement).toHaveBeenCalledWith(
+      "text-1",
+      { x: 40, y: 50, width: 240, height: 96 },
+      32,
+    );
+    expect(editor.commitTextResizeElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitTextResizeElement).toHaveBeenCalledWith(
+      "text-1",
+      { bounds: { x: 40, y: 50, width: 120, height: 48 }, fontSize: 16 },
+      { bounds: { x: 40, y: 50, width: 240, height: 96 }, fontSize: 32 },
+    );
+  });
+
+  it("cancels text resize with Escape by restoring the starting geometry without a commit", () => {
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(screen.getByLabelText("Resize text element"), "pointerdown", {
+      clientX: 200,
+      clientY: 98,
+      pointerId: 10,
+    });
+    dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 10 });
+    const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });
+    act(() => {
+      window.dispatchEvent(escape);
+    });
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(editor.previewTextResizeElement).toHaveBeenLastCalledWith(
+      "text-1",
+      { x: 40, y: 50, width: 120, height: 48 },
+      16,
+    );
+    expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
+  });
   it("shows a text-only font-size control and updates text appearance through the editor use case", () => {
     const editor = createEditor();
     render(
@@ -1001,6 +1355,32 @@ describe("EditorPage PDF rendering", () => {
     expect(whiteout).not.toHaveStyle({ border: "1px solid #245e47" });
   });
 
+  it("keeps Whiteout active after creating a whiteout", () => {
+    const editor = createEditor();
+    editor.addWhiteout.mockReturnValue(baseSnapshot({ tool: "whiteout", isDirty: true }));
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({ tool: "whiteout" })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    Object.defineProperty(overlay, "setPointerCapture", { value: vi.fn() });
+    Object.defineProperty(overlay, "hasPointerCapture", { value: vi.fn(() => false) });
+    Object.defineProperty(overlay, "releasePointerCapture", { value: vi.fn() });
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+    });
+
+    dispatchPointerEvent(overlay, "pointerdown", { clientX: 40, clientY: 50, pointerId: 12 });
+    dispatchPointerEvent(overlay, "pointermove", { clientX: 100, clientY: 110, pointerId: 12 });
+    dispatchPointerEvent(overlay, "pointerup", { clientX: 100, clientY: 110, pointerId: 12 });
+
+    expect(editor.addWhiteout).toHaveBeenCalled();
+    expect(editor.setTool).not.toHaveBeenCalledWith("select");
+  });
   it("draws whiteout by pointer drag with a live preview and pointer capture", () => {
     const editor = createEditor();
     render(
@@ -1237,6 +1617,28 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByRole("complementary", { name: "Selected element actions" })).toBeNull();
   });
 
+  it("renders selected-element actions before the PDF viewport so they stay outside document flow", () => {
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const controls = container.querySelector(".editor-controls");
+    const inspector = container.querySelector(".element-inspector");
+    const viewport = container.querySelector(".editor-viewport");
+    expect(controls).toBeInstanceOf(HTMLElement);
+    expect(inspector).toBeInstanceOf(HTMLElement);
+    expect(viewport).toBeInstanceOf(HTMLElement);
+    expect(controls?.contains(inspector)).toBe(true);
+    expect(controls?.compareDocumentPosition(viewport as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   it("does not delete selected overlays while focus is inside editing controls", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -1346,6 +1748,7 @@ describe("EditorPage PDF rendering", () => {
       { x: 56, y: 250 },
       { text: "Ada Lovelace", fontFamily: "serif" },
     );
+    expect(editor.setTool).toHaveBeenLastCalledWith("select");
   });
 
   it("opens initials without an upload tab and accepts typed initials", async () => {
@@ -1373,6 +1776,7 @@ describe("EditorPage PDF rendering", () => {
       { x: 56, y: 180 },
       { text: "AL", fontFamily: "cursive" },
     );
+    expect(editor.setTool).toHaveBeenLastCalledWith("select");
   });
 
   it("rejects unsupported signature uploads and closes the dialog with Escape", async () => {

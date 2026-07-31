@@ -196,7 +196,7 @@ p {
 .editor-viewer {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr;
   min-height: 100%;
   background: #eef2ef;
 }
@@ -210,6 +210,13 @@ p {
   padding: 1rem clamp(1rem, 4vw, 2rem);
   background: #ffffff;
   border-bottom: 1px solid #d7ded8;
+}
+
+.editor-controls {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: transparent;
 }
 
 .editor-header {
@@ -306,17 +313,19 @@ p {
 
 .element-inspector {
   position: absolute;
+  top: calc(100% + 0.75rem);
   right: clamp(1rem, 4vw, 2rem);
-  bottom: 1rem;
-  left: clamp(1rem, 4vw, 2rem);
-  z-index: 10;
+  z-index: 30;
+  max-width: min(92vw, 760px);
   display: flex;
   flex-wrap: wrap;
   align-items: end;
   gap: 0.75rem;
-  padding: 0.75rem clamp(1rem, 4vw, 2rem);
+  padding: 0.75rem;
   border: 1px solid #d7ded8;
+  border-radius: 12px;
   background: #ffffff;
+  box-shadow: 0 12px 40px rgb(22 32 27 / 18%);
 }
 
 .element-inspector label {
@@ -514,4 +523,18 @@ p {
   border: 2px dashed #5b4dff;
   background: rgb(255 255 255 / 72%);
   pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .viewer-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .element-inspector {
+    right: 0.75rem;
+    left: 0.75rem;
+    max-width: none;
+    overflow-x: auto;
+  }
 }

@@ -61,3 +61,20 @@ Current render tests cover:
 - overlay scaling relative to canvas CSS dimensions;
 - absence of the old placeholder-only page path;
 - Playwright verification that a visible synthetic PDF renders to nonblank canvas pixels before overlays are added and remains visually changed after export/reopen.
+
+## Undo and redo coverage
+
+History tests must cover:
+
+- execute, undo, and redo for every current overlay mutation;
+- toolbar and keyboard paths using the same application use cases;
+- redo clearing after a new edit;
+- one history entry per drag, resize, or continuous text-editing session;
+- failed and no-op commands excluded from history;
+- history reset on close, replacement, and disposal;
+- the 100-entry limit;
+- selection reconciliation when an element disappears or is restored;
+- clean/dirty revision transitions before and after export;
+- repeated undo/redo cycles preserving domain invariants;
+- native text editing and browser zoom shortcuts remaining unaffected;
+- no persistence, network transmission, React warnings, or console errors.

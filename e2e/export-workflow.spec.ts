@@ -440,6 +440,15 @@ test("selects text with one click and edits text only through explicit edit acti
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.locator(".viewer-main").evaluate((workspace) => {
+    workspace.scrollTop = 180;
+  });
+  await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset zoom" }).click();
+
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();
   if (overlayBox === null) {
@@ -453,6 +462,12 @@ test("selects text with one click and edits text only through explicit edit acti
   await initialEditor.fill("Click selectable text");
   await initialEditor.press("Escape");
   await expect(page.getByLabel("Edit text element")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Select" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.mouse.click(overlayBox.x + 22, overlayBox.y + 22);
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(1);
 
   const firstTextContent = page.getByLabel("Text element content");
   const firstTextBox = await firstTextContent.boundingBox();
@@ -466,9 +481,18 @@ test("selects text with one click and edits text only through explicit edit acti
   );
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
   await expect(page.getByLabel("Edit text element")).toHaveCount(0);
+  await page.mouse.click(overlayBox.x + 20, overlayBox.y + 20);
+  await expect(page.getByRole("button", { name: "Duplicate" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(1);
+  await page.mouse.click(
+    firstTextBox.x + firstTextBox.width / 2,
+    firstTextBox.y + firstTextBox.height / 2,
+  );
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
 
+  await page.getByRole("button", { name: "Text" }).click();
   await page.mouse.click(overlayBox.x + 90, overlayBox.y + 180);
   const secondEditor = page.getByLabel("Edit text element");
   await secondEditor.fill("Draft text");
@@ -481,27 +505,134 @@ test("selects text with one click and edits text only through explicit edit acti
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
 
   const selectedText = page.getByRole("group", { name: "text element" });
-  const beforeMove = await selectedText.boundingBox();
-  expect(beforeMove).not.toBeNull();
-  if (beforeMove === null) {
+  const beforeResize = await selectedText.boundingBox();
+  expect(beforeResize).not.toBeNull();
+  if (beforeResize === null) {
     return;
   }
-  await page.mouse.move(beforeMove.x + beforeMove.width / 2, beforeMove.y + beforeMove.height / 2);
+  const beforeFontSize = await page
+    .getByLabel("Text element content")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  const resizeHandle = page.getByLabel("Resize text element");
+  const handleBox = await resizeHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  if (handleBox === null) {
+    return;
+  }
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(
-    beforeMove.x + beforeMove.width / 2 + 24,
-    beforeMove.y + beforeMove.height / 2 + 18,
+    handleBox.x + handleBox.width / 2 + 80,
+    handleBox.y + handleBox.height / 2 + 48,
   );
   await page.mouse.up();
-  const afterMove = await selectedText.boundingBox();
-  expect(afterMove).not.toBeNull();
-  if (afterMove === null) {
+  const resizedText = await selectedText.boundingBox();
+  expect(resizedText).not.toBeNull();
+  if (resizedText === null) {
     return;
   }
-  expect(afterMove.x).toBeGreaterThan(beforeMove.x + 10);
-  expect(afterMove.y).toBeGreaterThan(beforeMove.y + 8);
+  const resizedFontSize = await page
+    .getByLabel("Text element content")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(resizedText.width).toBeGreaterThan(beforeResize.width + 20);
+  expect(resizedFontSize).toBeGreaterThan(beforeFontSize + 2);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect
+    .poll(async () => (await selectedText.boundingBox())?.width ?? 0)
+    .toBeLessThan(resizedText.width - 10);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect
+    .poll(async () => (await selectedText.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(beforeResize.width + 20);
+
+  const resizedDownloadPath = testInfo.outputPath("text-interaction-fixture-edited.pdf");
+  await downloadEditedPdf(page, "text-interaction-fixture-edited.pdf", resizedDownloadPath);
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(resizedDownloadPath);
+  await expect(
+    page.getByRole("heading", { name: "text-interaction-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+});
+test("undoes and redoes overlay add/delete history and exports the final state", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("history-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "history-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Redo" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 170, overlayBox.y + 220);
+  const firstText = page.getByLabel("Edit text element");
+  await firstText.fill("History text");
+  await firstText.press("Escape");
+  await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByText("History text")).toBeVisible();
+
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+
+  await page.keyboard.press("Control+Z");
+  await expect(page.getByText("History text")).toBeVisible();
+
+  await page.keyboard.press("Control+Y");
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Whiteout" }).click();
+  await dragWhiteout(
+    page,
+    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
+    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+  );
+  await expect(page.getByRole("group", { name: "whiteout element" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "whiteout element" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 170, overlayBox.y + 220);
+  const finalText = page.getByLabel("Edit text element");
+  await finalText.fill("Final state");
+  await finalText.press("Escape");
+  await expect(page.getByRole("button", { name: "Redo" })).toBeDisabled();
+
+  const downloadedPath = testInfo.outputPath("history-fixture-edited.pdf");
+  await downloadEditedPdf(page, "history-fixture-edited.pdf", downloadedPath);
+  await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+  await page.goto("/");
+  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await expect(page.getByRole("heading", { name: "history-fixture-edited.pdf" })).toBeVisible();
+  await expect
+    .poll(() => canvasRegionHasDarkContent(page, { x: 170, y: 220, width: 100, height: 40 }))
+    .toBe(true);
+  await expect
+    .poll(() => canvasRegionIsMostlyWhite(page, { x: 40, y: 50, width: 120, height: 48 }))
+    .toBe(false);
 });
 test("deletes every selected overlay type and excludes deleted overlays from export", async ({
   page,
@@ -515,6 +646,24 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await expect(page.getByRole("heading", { name: "delete-overlays-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.locator(".viewer-main").evaluate((workspace) => {
+    workspace.scrollTop = 180;
+  });
+  await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset zoom" }).click();
+
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.locator(".viewer-main").evaluate((workspace) => {
+    workspace.scrollTop = 180;
+  });
+  await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset zoom" }).click();
 
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();

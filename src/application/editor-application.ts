@@ -1,6 +1,8 @@
 import {
   DocumentSession,
+  DomainError,
   type Bounds,
+  type DomainResult,
   type DocumentPage,
   type EditorElement,
   type SignatureElementContent,
@@ -156,6 +158,8 @@ export interface EditorState {
 export interface EditorSnapshot {
   readonly state: EditorState;
   readonly canExport: boolean;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
 }
 
 export interface SignatureImageInput {
@@ -171,6 +175,7 @@ export interface TypedSignatureInput {
   readonly fontFamily: SignatureFont;
 }
 
+export const COMMAND_HISTORY_LIMIT = 100;
 export const MIN_TEXT_FONT_SIZE = 8;
 export const MAX_TEXT_FONT_SIZE = 96;
 export const DEFAULT_TEXT_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
@@ -302,6 +307,39 @@ export const validateSignatureImageFile = (
   return undefined;
 };
 
+interface HistoryState {
+  readonly elements: readonly EditorElement[];
+  readonly selectedElementId?: string;
+}
+
+interface HistoryEntry {
+  readonly type: "add-element" | "delete-element" | "duplicate-element" | "update-element";
+  readonly before: HistoryState;
+  readonly after: HistoryState;
+  readonly beforeRevision: number;
+  readonly afterRevision: number;
+}
+
+const cloneHistoryElement = (element: EditorElement): EditorElement => ({
+  ...element,
+  bounds: { ...element.bounds },
+  ...(element.content === undefined ? {} : { content: { ...element.content } }),
+});
+
+const cloneHistoryState = (state: HistoryState): HistoryState => ({
+  elements: state.elements.map(cloneHistoryElement),
+  ...(state.selectedElementId === undefined ? {} : { selectedElementId: state.selectedElementId }),
+});
+
+const elementsMatch = (left: EditorElement, right: EditorElement): boolean =>
+  left.id === right.id &&
+  left.pageId === right.pageId &&
+  left.type === right.type &&
+  left.bounds.x === right.bounds.x &&
+  left.bounds.y === right.bounds.y &&
+  left.bounds.width === right.bounds.width &&
+  left.bounds.height === right.bounds.height &&
+  JSON.stringify(left.content ?? {}) === JSON.stringify(right.content ?? {});
 export class SequentialIdGenerator implements IdGenerator {
   #next = 1;
 
@@ -322,6 +360,10 @@ export class PdfEditorApplication {
   #originalBytes: Uint8Array | undefined;
   #renderDocumentId: string | undefined;
   #state: EditorState = emptyState();
+  #undoStack: HistoryEntry[] = [];
+  #redoStack: HistoryEntry[] = [];
+  #currentRevision = 0;
+  #cleanRevision = 0;
 
   public constructor(
     fileReader: LocalPdfFileReader,
@@ -338,13 +380,19 @@ export class PdfEditorApplication {
   }
 
   public snapshot(): EditorSnapshot {
-    return { state: this.#state, canExport: this.#session !== undefined };
+    return {
+      state: this.#state,
+      canExport: this.#session !== undefined,
+      canUndo: this.#undoStack.length > 0,
+      canRedo: this.#redoStack.length > 0,
+    };
   }
 
   public async openFile(file: LocalPdfFile): Promise<EditorSnapshot> {
     this.#disposeRenderDocument();
     this.#session = undefined;
     this.#originalBytes = undefined;
+    this.#resetHistory();
     const {
       error: discardedOpenError,
       exportFilename: discardedExportFilename,
@@ -376,12 +424,14 @@ export class PdfEditorApplication {
     }
 
     this.#originalBytes = originalBytes;
+    this.#resetHistory();
     this.#session = DocumentSession.create({
       id: this.#idGenerator.nextId("session"),
       pages: openResult.pages,
       temporaryPersonalInfo: { originalFileName: readResult.fileName },
       sourceReference: this.#idGenerator.nextId("source"),
     });
+    this.#resetHistory();
     this.#syncState({ fileName: readResult.fileName, status: "ready" });
     return this.snapshot();
   }
@@ -390,6 +440,7 @@ export class PdfEditorApplication {
     this.#disposeRenderDocument();
     this.#session = undefined;
     this.#originalBytes = undefined;
+    this.#resetHistory();
     this.#state = emptyState();
     return this.snapshot();
   }
@@ -403,6 +454,15 @@ export class PdfEditorApplication {
     const result = this.#session?.selectElement(elementId);
     if (result?.ok !== true) {
       return this.#operationError("MissingElement", "The selected element no longer exists.");
+    }
+    this.#syncState();
+    return this.snapshot();
+  }
+
+  public clearSelection(): EditorSnapshot {
+    const result = this.#session?.clearSelection();
+    if (result?.ok !== true) {
+      return this.#operationError("NoActiveDocument", "Open a PDF before editing.");
     }
     this.#syncState();
     return this.snapshot();
@@ -471,7 +531,7 @@ export class PdfEditorApplication {
     }
     const content = element.content;
     const fontSize = isTextContent(content) ? content.fontSize : undefined;
-    return this.#replaceElement({
+    return this.#untrackedElementUpdate({
       ...element,
       content: { text, ...(fontSize === undefined ? {} : { fontSize }) },
     });
@@ -486,10 +546,66 @@ export class PdfEditorApplication {
       return this.#operationError("InvalidTextAppearance", "Text size must be a finite number.");
     }
     const text = textFromElement(element);
-    return this.#replaceElement({
+    return this.#commitElementUpdate({
       ...element,
       content: { text, fontSize: clampTextFontSize(fontSize) },
     });
+  }
+
+  public previewTextResizeElement(
+    elementId: string,
+    bounds: Bounds,
+    fontSize: number,
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element?.type !== "text") {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    if (!isFiniteBounds(bounds) || !Number.isFinite(fontSize)) {
+      return this.#operationError("InvalidElementBounds", "Text resize values must be finite.");
+    }
+    return this.#previewElementUpdate({
+      ...element,
+      bounds: this.#constrainBounds(bounds),
+      content: { text: textFromElement(element), fontSize: clampTextFontSize(fontSize) },
+    });
+  }
+
+  public commitTextResizeElement(
+    elementId: string,
+    start: { readonly bounds: Bounds; readonly fontSize: number },
+    end: { readonly bounds: Bounds; readonly fontSize: number },
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element?.type !== "text") {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    if (
+      !isFiniteBounds(start.bounds) ||
+      !isFiniteBounds(end.bounds) ||
+      !Number.isFinite(start.fontSize) ||
+      !Number.isFinite(end.fontSize)
+    ) {
+      return this.#operationError("InvalidElementBounds", "Text resize values must be finite.");
+    }
+    const text = textFromElement(element);
+    const beforeElement: EditorElement = {
+      ...element,
+      bounds: this.#constrainBounds(start.bounds),
+      content: { text, fontSize: clampTextFontSize(start.fontSize) },
+    };
+    const afterElement: EditorElement = {
+      ...element,
+      bounds: this.#constrainBounds(end.bounds),
+      content: { text, fontSize: clampTextFontSize(end.fontSize) },
+    };
+    if (elementsMatch(beforeElement, afterElement)) {
+      return this.#previewElementUpdate(afterElement);
+    }
+    return this.#commitElementUpdate(
+      afterElement,
+      this.#historyStateWithElement(beforeElement, elementId),
+    );
   }
 
   public moveElement(
@@ -500,10 +616,21 @@ export class PdfEditorApplication {
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
-    return this.#replaceElement({
+    return this.#untrackedElementUpdate({
       ...element,
       bounds: this.#constrainBounds({ ...element.bounds, x: point.x, y: point.y }),
     });
+  }
+
+  public previewResizeElement(elementId: string, bounds: Bounds): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    if (!isFiniteBounds(bounds)) {
+      return this.#operationError("InvalidElementBounds", "Element bounds must be finite.");
+    }
+    return this.#previewElementUpdate({ ...element, bounds: this.#constrainBounds(bounds) });
   }
 
   public resizeElement(
@@ -526,6 +653,7 @@ export class PdfEditorApplication {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
     return this.#addElement({
+      historyType: "duplicate-element",
       type: element.type,
       bounds: { ...element.bounds, x: element.bounds.x + 12, y: element.bounds.y + 12 },
       ...(isTextContent(element.content)
@@ -536,14 +664,55 @@ export class PdfEditorApplication {
   }
 
   public deleteElement(elementId: string): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    const before = this.#currentHistoryState(elementId);
     const result = this.#session?.deleteElement(elementId);
     if (result?.ok !== true) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
+    const after = this.#currentHistoryState(undefined);
+    this.#recordHistory("delete-element", before, after);
     this.#syncState();
     return this.snapshot();
   }
 
+  public undo(): EditorSnapshot {
+    const entry = this.#undoStack.at(-1);
+    if (entry === undefined) {
+      return this.snapshot();
+    }
+    const result = this.#restoreHistoryState(entry.before);
+    if (!result.ok) {
+      return this.#operationError("OperationRejected", "The last action could not be undone.");
+    }
+    this.#undoStack.pop();
+    this.#redoStack.push(entry);
+    this.#currentRevision = entry.beforeRevision;
+    this.#syncState();
+    return this.snapshot();
+  }
+
+  public redo(): EditorSnapshot {
+    const entry = this.#redoStack.at(-1);
+    if (entry === undefined) {
+      return this.snapshot();
+    }
+    const result = this.#restoreHistoryState(entry.after);
+    if (!result.ok) {
+      return this.#operationError(
+        "OperationRejected",
+        "The last undone action could not be redone.",
+      );
+    }
+    this.#redoStack.pop();
+    this.#undoStack.push(entry);
+    this.#currentRevision = entry.afterRevision;
+    this.#syncState();
+    return this.snapshot();
+  }
   public async exportCurrentPdf(): Promise<EditorSnapshot> {
     const session = this.#session;
     const originalBytes = this.#originalBytes;
@@ -581,10 +750,90 @@ export class PdfEditorApplication {
     }
 
     session.markClean();
+    this.#cleanRevision = this.#currentRevision;
     this.#syncState({ status: "ready", exportFilename: filename });
     return this.snapshot();
   }
 
+  #currentHistoryState(selectedElementId = this.#session?.selectedElementId): HistoryState {
+    return cloneHistoryState({
+      elements: this.#session?.elements() ?? [],
+      ...(selectedElementId === undefined ? {} : { selectedElementId }),
+    });
+  }
+
+  #historyStateWithElement(element: EditorElement, selectedElementId = element.id): HistoryState {
+    return cloneHistoryState({
+      elements: (this.#session?.elements() ?? []).map((candidate) =>
+        candidate.id === element.id ? cloneHistoryElement(element) : candidate,
+      ),
+      selectedElementId,
+    });
+  }
+
+  #restoreHistoryState(state: HistoryState): DomainResult {
+    const session = this.#session;
+    if (session === undefined) {
+      return { ok: false, error: new DomainError("SessionDisposed", "No active session.") };
+    }
+    return session.replaceElements(state.elements, state.selectedElementId);
+  }
+
+  #recordHistory(type: HistoryEntry["type"], before: HistoryState, after: HistoryState): void {
+    const beforeRevision = this.#currentRevision;
+    const afterRevision = beforeRevision + 1;
+    this.#currentRevision = afterRevision;
+    this.#undoStack.push({
+      type,
+      before: cloneHistoryState(before),
+      after: cloneHistoryState(after),
+      beforeRevision,
+      afterRevision,
+    });
+    if (this.#undoStack.length > COMMAND_HISTORY_LIMIT) {
+      this.#undoStack.shift();
+    }
+    this.#redoStack = [];
+  }
+
+  #rewriteHistoryElement(element: EditorElement): void {
+    const replaceInState = (state: HistoryState): HistoryState => {
+      if (!state.elements.some((candidate) => candidate.id === element.id)) {
+        return state;
+      }
+      return cloneHistoryState({
+        ...state,
+        elements: state.elements.map((candidate) =>
+          candidate.id === element.id ? cloneHistoryElement(element) : candidate,
+        ),
+      });
+    };
+
+    const rewriteEntry = (entry: HistoryEntry): HistoryEntry => {
+      const nextBefore = replaceInState(entry.before);
+      const nextAfter = replaceInState(entry.after);
+      return {
+        ...entry,
+        before: nextBefore,
+        after: nextAfter,
+        afterRevision: nextAfter !== entry.after ? this.#currentRevision : entry.afterRevision,
+      };
+    };
+
+    this.#undoStack = this.#undoStack.map(rewriteEntry);
+    this.#redoStack = this.#redoStack.map(rewriteEntry);
+  }
+  #markUntrackedEdit(): void {
+    this.#currentRevision += 1;
+    this.#redoStack = [];
+  }
+
+  #resetHistory(): void {
+    this.#undoStack = [];
+    this.#redoStack = [];
+    this.#currentRevision = 0;
+    this.#cleanRevision = 0;
+  }
   #addImageSignature(
     type: SignatureElementType,
     point: { readonly x: number; readonly y: number },
@@ -613,6 +862,7 @@ export class PdfEditorApplication {
   }
 
   #addElement(request: {
+    readonly historyType?: HistoryEntry["type"];
     readonly type: "text" | "whiteout" | "signature" | "initials";
     readonly bounds: Bounds;
     readonly text?: string;
@@ -633,6 +883,12 @@ export class PdfEditorApplication {
     ) {
       return this.#operationError("InvalidSignature", "Signature content is required.");
     }
+
+    const before = this.#currentHistoryState(
+      request.historyType === "add-element" || request.historyType === undefined
+        ? undefined
+        : session.selectedElementId,
+    );
 
     const element: EditorElement = {
       id: this.#idGenerator.nextId("element"),
@@ -659,16 +915,54 @@ export class PdfEditorApplication {
       return this.#operationError("OperationRejected", "The element could not be added.");
     }
     session.selectElement(element.id);
+    this.#recordHistory(
+      request.historyType ?? "add-element",
+      before,
+      this.#currentHistoryState(element.id),
+    );
     this.#syncState();
     return this.snapshot();
   }
 
   #replaceElement(element: EditorElement): EditorSnapshot {
+    return this.#commitElementUpdate(element);
+  }
+
+  #previewElementUpdate(element: EditorElement): EditorSnapshot {
     const result = this.#session?.updateElement(element);
     if (result?.ok !== true) {
       return this.#operationError("OperationRejected", "The element could not be updated.");
     }
     this.#session?.selectElement(element.id);
+    this.#syncState();
+    return this.snapshot();
+  }
+
+  #untrackedElementUpdate(element: EditorElement): EditorSnapshot {
+    const result = this.#session?.updateElement(element);
+    if (result?.ok !== true) {
+      return this.#operationError("OperationRejected", "The element could not be updated.");
+    }
+    this.#session?.selectElement(element.id);
+    this.#markUntrackedEdit();
+    this.#rewriteHistoryElement(element);
+    this.#syncState();
+    return this.snapshot();
+  }
+
+  #commitElementUpdate(
+    element: EditorElement,
+    before = this.#currentHistoryState(element.id),
+  ): EditorSnapshot {
+    const result = this.#session?.updateElement(element);
+    if (result?.ok !== true) {
+      return this.#operationError("OperationRejected", "The element could not be updated.");
+    }
+    this.#session?.selectElement(element.id);
+    const after = this.#currentHistoryState(element.id);
+    if (JSON.stringify(before.elements) !== JSON.stringify(after.elements)) {
+      this.#recordHistory("update-element", before, after);
+    }
     this.#syncState();
     return this.snapshot();
   }
@@ -732,7 +1026,7 @@ export class PdfEditorApplication {
       pageCount: pages.length,
       currentPageNumber: currentPageIndex + 1,
       tool: this.#state.tool,
-      isDirty: session.isDirty,
+      isDirty: this.#currentRevision !== this.#cleanRevision,
       elements,
       visibleElements: elements.filter((element) => element.pageId === session.currentPageId),
       ...(originalFileName === undefined ? {} : { fileName: originalFileName }),

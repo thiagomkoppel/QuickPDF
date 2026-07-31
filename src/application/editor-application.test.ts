@@ -173,6 +173,23 @@ describe("PdfEditorApplication export", () => {
     const duplicated = app.duplicateElement(elementId);
     expect(duplicated.state.selectedElement?.textAppearance?.fontSize).toBe(32);
   });
+
+  it("clears selection without marking dirty or adding command history", async () => {
+    const added = app.addText({ x: 45, y: 55 }, "Selectable");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    await app.exportCurrentPdf();
+
+    const cleared = app.clearSelection();
+
+    expect(cleared.state.selectedElementId).toBeUndefined();
+    expect(cleared.state.selectedElement).toBeUndefined();
+    expect(cleared.state.isDirty).toBe(false);
+    expect(cleared.canUndo).toBe(true);
+    expect(cleared.canRedo).toBe(false);
+    const undone = app.undo();
+    expect(undone.state.visibleElements).toHaveLength(0);
+  });
   it("preserves dirty state and session when export fails", async () => {
     app.addText({ x: 45, y: 55 }, "Replacement");
     exportResult = { ok: false, error: { code: "ExportFailed", message: "Nope" } };
@@ -394,6 +411,249 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     expect(deleted.state.isDirty).toBe(true);
   });
 
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "undoes and redoes add for %s overlays with stable identity",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Undo me")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 10, y: 20 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 10, y: 20 }, { text: "AL", fontFamily: "hand" });
+      const elementId = added.state.selectedElementId;
+      expect(elementId).toBeDefined();
+      expect(added.canUndo).toBe(true);
+      expect(added.canRedo).toBe(false);
+
+      const undone = app.undo();
+      expect(undone.state.visibleElements).toHaveLength(0);
+      expect(undone.state.selectedElementId).toBeUndefined();
+      expect(undone.state.isDirty).toBe(false);
+      expect(undone.canRedo).toBe(true);
+
+      const redone = app.redo();
+      expect(redone.state.visibleElements).toHaveLength(1);
+      expect(redone.state.selectedElementId).toBe(elementId);
+      expect(redone.state.selectedElement?.id).toBe(elementId);
+      expect(redone.state.selectedElement?.type).toBe(type);
+      expect(redone.state.isDirty).toBe(true);
+    },
+  );
+
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "undoes and redoes delete for %s overlays by restoring the same element",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Delete me")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 10, y: 20 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 10, y: 20 }, { text: "AL", fontFamily: "hand" });
+      const element = added.state.selectedElement;
+      expect(element).toBeDefined();
+      if (element === undefined) {
+        return;
+      }
+      app.deleteElement(element.id);
+      expect(app.snapshot().state.visibleElements).toHaveLength(0);
+
+      const undone = app.undo();
+      expect(undone.state.selectedElementId).toBe(element.id);
+      expect(undone.state.selectedElement).toEqual(element);
+
+      const redone = app.redo();
+      expect(redone.state.visibleElements).toHaveLength(0);
+      expect(redone.state.selectedElementId).toBeUndefined();
+    },
+  );
+
+  it.each(["text", "whiteout", "signature", "initials"] as const)(
+    "undoes and redoes duplicate for %s overlays with original and duplicate selection policy",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Copy me")
+          : type === "whiteout"
+            ? app.addWhiteout({ x: 10, y: 20, width: 80, height: 40 })
+            : type === "signature"
+              ? app.addTypedSignature({ x: 10, y: 20 }, { text: "Ada", fontFamily: "serif" })
+              : app.addTypedInitials({ x: 10, y: 20 }, { text: "AL", fontFamily: "hand" });
+      const originalId = added.state.selectedElementId;
+      expect(originalId).toBeDefined();
+      if (originalId === undefined) {
+        return;
+      }
+      const duplicated = app.duplicateElement(originalId);
+      const duplicateId = duplicated.state.selectedElementId;
+      expect(duplicateId).toBeDefined();
+      expect(duplicateId).not.toBe(originalId);
+      expect(duplicated.state.visibleElements).toHaveLength(2);
+
+      const undone = app.undo();
+      expect(undone.state.visibleElements.map((element) => element.id)).toEqual([originalId]);
+      expect(undone.state.selectedElementId).toBe(originalId);
+
+      const redone = app.redo();
+      expect(redone.state.visibleElements.map((element) => element.id)).toEqual([
+        originalId,
+        duplicateId,
+      ]);
+      expect(redone.state.selectedElementId).toBe(duplicateId);
+    },
+  );
+
+  it("redoing an added text element restores later text updates on the same element", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Text");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.updateText(elementId, "Typed after creation");
+    app.updateTextFontSize(elementId, 28);
+
+    app.undo();
+    const redone = app.redo();
+
+    expect(redone.state.selectedElement?.id).toBe(elementId);
+    expect(redone.state.selectedElement?.text).toBe("Typed after creation");
+    expect(redone.state.selectedElement?.textAppearance?.fontSize).toBe(28);
+  });
+  it("undoes and redoes committed text resize geometry and font size", async () => {
+    const added = app.addText({ x: 10, y: 20 }, "Resize me");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    await app.exportCurrentPdf();
+
+    const resized = app.commitTextResizeElement(
+      elementId,
+      { bounds: { x: 10, y: 20, width: 160, height: 40 }, fontSize: 16 },
+      { bounds: { x: 10, y: 20, width: 240, height: 60 }, fontSize: 24 },
+    );
+    expect(resized.state.selectedElement?.bounds).toEqual({ x: 10, y: 20, width: 240, height: 60 });
+    expect(resized.state.selectedElement?.textAppearance?.fontSize).toBe(24);
+    expect(resized.canUndo).toBe(true);
+    expect(resized.state.isDirty).toBe(true);
+
+    const undone = app.undo();
+    expect(undone.state.selectedElement?.bounds).toEqual({ x: 10, y: 20, width: 160, height: 40 });
+    expect(undone.state.selectedElement?.textAppearance?.fontSize).toBe(16);
+    expect(undone.state.isDirty).toBe(false);
+
+    const redone = app.redo();
+    expect(redone.state.selectedElement?.bounds).toEqual({ x: 10, y: 20, width: 240, height: 60 });
+    expect(redone.state.selectedElement?.textAppearance?.fontSize).toBe(24);
+    expect(redone.state.isDirty).toBe(true);
+
+    await app.exportCurrentPdf();
+    expect(exportRequests.at(-1)?.elements[0]?.textAppearance?.fontSize).toBe(24);
+  });
+
+  it("previews text resize without creating history until commit", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Preview me");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.undo();
+    app.redo();
+    const beforePreviewUndoCount = app.snapshot().canUndo;
+
+    const previewed = app.previewTextResizeElement(
+      elementId,
+      { x: 10, y: 20, width: 320, height: 80 },
+      32,
+    );
+
+    expect(previewed.state.selectedElement?.bounds).toEqual({
+      x: 0,
+      y: 20,
+      width: 300,
+      height: 80,
+    });
+    expect(previewed.state.selectedElement?.textAppearance?.fontSize).toBe(32);
+    expect(previewed.canUndo).toBe(beforePreviewUndoCount);
+    const undone = app.undo();
+    expect(undone.state.visibleElements).toHaveLength(0);
+  });
+
+  it("makes font-size inspector commits undoable and clamps the committed value", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Size me");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+
+    const sized = app.updateTextFontSize(elementId, 240);
+    expect(sized.state.selectedElement?.textAppearance?.fontSize).toBe(MAX_TEXT_FONT_SIZE);
+
+    const undone = app.undo();
+    expect(undone.state.selectedElement?.textAppearance?.fontSize).toBe(16);
+
+    const redone = app.redo();
+    expect(redone.state.selectedElement?.textAppearance?.fontSize).toBe(MAX_TEXT_FONT_SIZE);
+  });
+  it("clears redo after a divergent edit", () => {
+    app.addText({ x: 10, y: 20 }, "First");
+    expect(app.undo().canRedo).toBe(true);
+
+    const divergent = app.addWhiteout({ x: 20, y: 30, width: 80, height: 40 });
+
+    expect(divergent.canRedo).toBe(false);
+    expect(app.redo().state.visibleElements.map((element) => element.type)).toEqual(["whiteout"]);
+  });
+
+  it("keeps history through export and updates dirty state by revision", async () => {
+    app.addText({ x: 10, y: 20 }, "Saved");
+    expect(app.snapshot().state.isDirty).toBe(true);
+
+    const exported = await app.exportCurrentPdf();
+    expect(exported.state.isDirty).toBe(false);
+    expect(exported.canUndo).toBe(true);
+
+    const undone = app.undo();
+    expect(undone.state.isDirty).toBe(true);
+    expect(undone.canRedo).toBe(true);
+
+    const redone = app.redo();
+    expect(redone.state.isDirty).toBe(false);
+  });
+
+  it("enforces the command history limit", () => {
+    for (let index = 0; index < 101; index += 1) {
+      app.addText({ x: 10, y: 20 }, `Text ${String(index)}`);
+    }
+
+    for (let index = 0; index < 100; index += 1) {
+      app.undo();
+    }
+
+    const snapshot = app.snapshot();
+    expect(snapshot.canUndo).toBe(false);
+    expect(snapshot.state.visibleElements).toHaveLength(1);
+    expect(snapshot.state.visibleElements[0]?.text).toBe("Text 0");
+  });
+
+  it("resets history when the document is replaced or closed", async () => {
+    app.addText({ x: 10, y: 20 }, "Reset me");
+    expect(app.snapshot().canUndo).toBe(true);
+
+    await app.openFile(file);
+    expect(app.snapshot().canUndo).toBe(false);
+    expect(app.snapshot().canRedo).toBe(false);
+
+    app.addText({ x: 10, y: 20 }, "Close me");
+    expect(app.closeDocument()).toMatchObject({ canUndo: false, canRedo: false });
+  });
   it("duplicates every supported overlay type through the shared element lifecycle", () => {
     const adders = [
       () => app.addText({ x: 10, y: 20 }, "Text"),
