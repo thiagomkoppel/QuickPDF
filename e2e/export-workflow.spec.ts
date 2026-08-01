@@ -376,7 +376,7 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   await installWheelListenerRecorder(page);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "export-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -461,7 +461,7 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   ).toBeVisible();
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(page.getByRole("heading", { name: "export-fixture-edited.pdf" })).toBeVisible();
   await expect
     .poll(() => canvasRegionIsMostlyWhite(page, { x: 130, y: 84, width: 20, height: 10 }))
@@ -476,7 +476,7 @@ test("selects text with one click and edits text only through explicit edit acti
   await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "text-interaction-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -591,7 +591,7 @@ test("selects text with one click and edits text only through explicit edit acti
   const resizedDownloadPath = testInfo.outputPath("text-interaction-fixture-edited.pdf");
   await downloadEditedPdf(page, "text-interaction-fixture-edited.pdf", resizedDownloadPath);
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(resizedDownloadPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(resizedDownloadPath);
   await expect(
     page.getByRole("heading", { name: "text-interaction-fixture-edited.pdf" }),
   ).toBeVisible();
@@ -606,7 +606,7 @@ test("undoes and redoes overlay add/delete history and exports the final state",
   await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "history-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -667,7 +667,7 @@ test("undoes and redoes overlay add/delete history and exports the final state",
   await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(page.getByRole("heading", { name: "history-fixture-edited.pdf" })).toBeVisible();
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 170, y: 220, width: 100, height: 40 }))
@@ -684,7 +684,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "delete-overlays-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -747,7 +747,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await downloadEditedPdf(page, "delete-overlays-fixture-edited.pdf", downloadedPath);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(
     page.getByRole("heading", { name: "delete-overlays-fixture-edited.pdf" }),
   ).toBeVisible();
@@ -780,7 +780,7 @@ test("places annotation overlays, reuses shared history, and exports visible sym
   });
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "annotation-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -1010,7 +1010,7 @@ test("places annotation overlays, reuses shared history, and exports visible sym
   await downloadEditedPdf(page, "annotation-fixture-edited.pdf", downloadedPath);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(page.getByRole("heading", { name: "annotation-fixture-edited.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
@@ -1038,7 +1038,7 @@ test("inserts, edits, copies, pastes, exports, and reopens an image overlay", as
   await import("node:fs/promises").then((fs) => fs.writeFile(imagePath, blackPng));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "image-fixture.pdf" })).toBeVisible();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 
@@ -1146,7 +1146,7 @@ test("inserts, edits, copies, pastes, exports, and reopens an image overlay", as
   await downloadEditedPdf(page, "image-fixture-edited.pdf", downloadedPath);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(page.getByRole("heading", { name: "image-fixture-edited.pdf" })).toBeVisible();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 });
@@ -1156,7 +1156,7 @@ test("draws, resizes, exports, and reopens a signature", async ({ page }, testIn
   await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "draw-signature-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await addDrawnSignature(page);
@@ -1170,7 +1170,7 @@ test("draws, resizes, exports, and reopens a signature", async ({ page }, testIn
   await downloadEditedPdf(page, "draw-signature-fixture-edited.pdf", downloadedPath);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(
     page.getByRole("heading", { name: "draw-signature-fixture-edited.pdf" }),
   ).toBeVisible();
@@ -1185,7 +1185,7 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
   await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(fixturePath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
   await expect(page.getByRole("heading", { name: "typed-signature-fixture.pdf" })).toBeVisible();
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await addTypedSignature(page, "Ada Lovelace");
@@ -1194,7 +1194,7 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
   await downloadEditedPdf(page, "typed-signature-fixture-edited.pdf", downloadedPath);
 
   await page.goto("/");
-  await page.getByLabel(/open a local pdf/i).setInputFiles(downloadedPath);
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
   await expect(
     page.getByRole("heading", { name: "typed-signature-fixture-edited.pdf" }),
   ).toBeVisible();

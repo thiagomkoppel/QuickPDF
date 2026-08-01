@@ -49,7 +49,7 @@ Status: Completed
 - Undoable font-family changes
 - Standard-font PDF export
 
-## Completed Phase 3 - Remaining Overlay Tools
+## ✅ Completed Phase 3 - Remaining Overlay Tools
 
 Status: Completed
 

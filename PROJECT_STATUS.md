@@ -33,6 +33,8 @@ Implemented proof-of-concept behavior:
 
 Not implemented: form filling, page organization, OCR, secure redaction, native editing of existing PDF text, arbitrary symbol picker, stickers, emojis, date picker, time/timestamps, custom annotation colors, annotation rotation, image cropping, image rotation, image filters, image opacity, persistence, backend services.
 
+UI redesign progress: the shared presentation tokens and branded, browser-local landing experience are complete. The landing page now provides accessible click-to-browse and drag-and-drop opening states, local processing messaging, reduced-motion support, and recoverable opening errors. The editor presentation structure remains intentionally unchanged for Part 2.
+
 ## Current objective
 
 Prove that the application can safely and reliably:

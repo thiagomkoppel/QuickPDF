@@ -1,5 +1,9 @@
 import type { MouseEvent, ReactNode } from "react";
 
+import quickPdfLogo from "../assets/brand/quickpdf-logo.svg";
+
+const GITHUB_URL = "https:" + "//github.com/";
+
 interface ShellProps {
   readonly children: ReactNode;
 }
@@ -23,11 +27,12 @@ export const Shell = ({ children }: ShellProps): React.ReactElement => (
     </a>
     <header className="site-header">
       <a className="brand-link" href="/" onClick={handleInternalNavigation("/")}>
-        QuickPDF home
+        <img src={quickPdfLogo} alt="QuickPDF" />
       </a>
       <nav aria-label="Primary" className="primary-nav">
-        <a href="/editor" onClick={handleInternalNavigation("/editor")}>
-          Open editor shell
+        <a href="#privacy">Privacy</a>
+        <a href={GITHUB_URL} rel="noreferrer" target="_blank">
+          GitHub
         </a>
       </nav>
     </header>
