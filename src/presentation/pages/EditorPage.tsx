@@ -1805,6 +1805,10 @@ export const EditorPage = ({
               <span className="toolbar-label">Date</span>
             </button>
           </div>
+          <output
+            className="visually-hidden"
+            aria-label="Zoom level"
+          >{`${String(Math.round(zoom * 100))}%`}</output>
           <div className="toolbar-group toolbar-view-group" aria-label="View controls">
             <button
               type="button"
@@ -1876,12 +1880,6 @@ export const EditorPage = ({
             >
               <ToolbarIcon name="next" />
               <span className="toolbar-label">Next</span>
-            </button>
-          </div>
-          <div className="toolbar-group toolbar-overflow-group" aria-label="More controls">
-            <button type="button" aria-label="More editor options" disabled>
-              <ToolbarIcon name="more" />
-              <span className="toolbar-label">More</span>
             </button>
           </div>
         </div>
@@ -2269,11 +2267,12 @@ export const EditorPage = ({
                             aria-label="Text font size"
                             value={selectedElement.textAppearance?.fontSize ?? 16}
                             onChange={(event) => {
+                              const fontSize = Number(event.currentTarget.value);
+                              if (!Number.isFinite(fontSize) || fontSize <= 0) {
+                                return;
+                              }
                               applySnapshot(
-                                editor.updateTextFontSize(
-                                  selectedElement.id,
-                                  Number(event.currentTarget.value),
-                                ),
+                                editor.updateTextFontSize(selectedElement.id, fontSize),
                               );
                             }}
                           >

@@ -421,7 +421,7 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   await page.mouse.move(pageFrameAtFullZoom.x + 260, pageFrameAtFullZoom.y + 100);
   await startWheelEventRecorder(page);
   const browserScaleBeforeBoundaryZoom = await browserScaleSnapshot(page);
-  await modifiedWheel(page, "out", 2);
+  await modifiedWheel(page, "out", 3);
   await expect(page.getByLabel("Zoom level")).toHaveText("50%");
   await modifiedWheel(page, "out", 3);
   await expect(page.getByLabel("Zoom level")).toHaveText("50%");
@@ -488,7 +488,7 @@ test("selects text with one click and edits text only through explicit edit acti
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "100 percent zoom" }).click();
+  await page.getByRole("button", { name: "Fit page" }).click();
 
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();
@@ -543,7 +543,7 @@ test("selects text with one click and edits text only through explicit edit acti
   const reopenedEditor = page.getByLabel("Edit text element");
   await reopenedEditor.fill("Edited text");
   await reopenedEditor.press("Escape");
-  await expect(page.getByText("Edited text")).toBeVisible();
+  await expect(page.getByLabel("Text element content")).toHaveText("Edited text");
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
 
   const selectedText = page.getByRole("group", { name: "text element" });
@@ -696,7 +696,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "100 percent zoom" }).click();
+  await page.getByRole("button", { name: "Fit page" }).click();
 
   await page.getByRole("button", { name: "Zoom in" }).click();
   await page.getByRole("button", { name: "Zoom in" }).click();
@@ -705,7 +705,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "100 percent zoom" }).click();
+  await page.getByRole("button", { name: "Fit page" }).click();
 
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();
@@ -938,7 +938,12 @@ test("places annotation overlays, reuses shared history, and exports visible sym
   await expect(cross).toBeVisible();
 
   await page.getByRole("button", { name: "Date" }).click();
-  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 240);
+  const dateOverlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(dateOverlayBox).not.toBeNull();
+  if (dateOverlayBox === null) {
+    return;
+  }
+  await page.mouse.click(dateOverlayBox.x + 80, dateOverlayBox.y + 240);
   const date = page.getByRole("group", { name: "date element" });
   await expect(date).toBeVisible();
   await expect(date).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
@@ -1162,7 +1167,16 @@ test("draws, resizes, exports, and reopens a signature", async ({ page }, testIn
   await addDrawnSignature(page);
 
   const signature = page.getByRole("group", { name: "signature element" });
-  await page.getByLabel("Selected element width").fill("260");
+  const signatureHandle = page.getByLabel("Resize signature element");
+  const signatureHandleBox = await signatureHandle.boundingBox();
+  expect(signatureHandleBox).not.toBeNull();
+  if (signatureHandleBox === null) {
+    return;
+  }
+  await page.mouse.move(signatureHandleBox.x + 8, signatureHandleBox.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(signatureHandleBox.x + 48, signatureHandleBox.y + 20);
+  await page.mouse.up();
   const resizedBox = await signature.boundingBox();
   expect(resizedBox?.width).toBeGreaterThan(220);
 

@@ -901,7 +901,8 @@ describe("EditorPage PDF rendering", () => {
     expect(workspace.scrollTop).toBe(120);
     expect(onSnapshotChange).not.toHaveBeenCalled();
   });
-  it("renders the compact toolbar with labeled icon-first controls", () => {
+  it("renders the compact toolbar with labeled icon-first controls", async () => {
+    const user = userEvent.setup();
     render(
       <EditorPage
         editor={createEditor()}
@@ -910,7 +911,6 @@ describe("EditorPage PDF rendering", () => {
         pdfRenderer={createRenderer()}
       />,
     );
-
     for (const name of [
       "Open",
       "Download",
@@ -927,18 +927,31 @@ describe("EditorPage PDF rendering", () => {
       "Date",
       "Zoom out",
       "Zoom in",
-      "100 percent zoom",
       "Fit page",
       "Fit width",
       "Previous page",
       "Next page",
-      "More editor options",
     ]) {
       expect(screen.getByRole("button", { name }).querySelector("svg.toolbar-icon")).not.toBeNull();
     }
-
     expect(screen.queryByText("ACTIVE")).not.toBeInTheDocument();
     expect(screen.queryByText("SELECTED")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "More editor options" })).toBeNull();
+    const workspace = screen.getByLabelText("PDF workspace");
+    Object.defineProperties(workspace, {
+      clientWidth: { value: 900 },
+      clientHeight: { value: 700 },
+    });
+    await user.click(screen.getByRole("button", { name: "Fit width" }));
+    expect(screen.getByRole("button", { name: "Fit width" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Fit page" }));
+    expect(screen.getByRole("button", { name: "Fit page" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
   it("routes the toolbar Open action through the supplied navigation boundary", async () => {
     const user = userEvent.setup();
@@ -1591,7 +1604,8 @@ describe("EditorPage PDF rendering", () => {
     );
     expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
   });
-  it("shows a text-only font-size control and updates text appearance through the editor use case", () => {
+  it("shows a text-only font-size control and updates text appearance through the editor use case", async () => {
+    const user = userEvent.setup();
     const editor = createEditor();
     render(
       <EditorPage
@@ -1601,11 +1615,10 @@ describe("EditorPage PDF rendering", () => {
         pdfRenderer={createRenderer()}
       />,
     );
-
+    await user.click(screen.getByRole("tab", { name: "Style" }));
     const fontSize = screen.getByLabelText("Text font size");
-    expect(fontSize).toHaveValue(16);
+    expect(fontSize).toHaveValue("16");
     fireEvent.change(fontSize, { target: { value: "24" } });
-
     expect(editor.updateTextFontSize).toHaveBeenCalledWith("text-1", 24);
   });
 
@@ -1625,7 +1638,8 @@ describe("EditorPage PDF rendering", () => {
     },
   );
 
-  it("ignores empty or non-finite font-size input safely", () => {
+  it("ignores empty or non-finite font-size input safely", async () => {
+    const user = userEvent.setup();
     const editor = createEditor();
     render(
       <EditorPage
@@ -1635,10 +1649,10 @@ describe("EditorPage PDF rendering", () => {
         pdfRenderer={createRenderer()}
       />,
     );
-
+    await user.click(screen.getByRole("tab", { name: "Style" }));
     const fontSize = screen.getByLabelText("Text font size");
     fireEvent.change(fontSize, { target: { value: "" } });
-
+    fireEvent.change(fontSize, { target: { value: "not-a-number" } });
     expect(editor.updateTextFontSize).not.toHaveBeenCalled();
   });
 
@@ -2739,7 +2753,7 @@ describe("EditorPage PDF rendering", () => {
     });
     expect(editor.deleteElement).not.toHaveBeenCalled();
 
-    const widthInput = screen.getByLabelText("Selected element width");
+    const widthInput = screen.getByLabelText("Text content");
     await user.click(widthInput);
     const inputDelete = new KeyboardEvent("keydown", {
       bubbles: true,
