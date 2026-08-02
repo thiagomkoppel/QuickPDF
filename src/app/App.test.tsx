@@ -132,9 +132,9 @@ describe("QuickPDF application shell", () => {
       screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds." }),
     ).toBeInTheDocument();
     expect(screen.getByText("Your files never leave your browser.")).toBeInTheDocument();
-    expect(screen.getByText("Browser Only")).toBeInTheDocument();
-    expect(screen.getByText("Private")).toBeInTheDocument();
-    expect(screen.getByText("Free")).toBeInTheDocument();
+    expect(screen.getByText("100% Private")).toBeInTheDocument();
+    expect(screen.getByText("Fast & Simple")).toBeInTheDocument();
+    expect(screen.getByText("Your Control")).toBeInTheDocument();
     expect(screen.getByLabelText("Choose a PDF file")).toHaveAttribute(
       "accept",
       "application/pdf,.pdf",
@@ -182,11 +182,11 @@ describe("QuickPDF application shell", () => {
     fireEvent.change(screen.getByLabelText("Choose a PDF file"), {
       target: { files: [pdfFile()] },
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Opening document...");
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
-    expect(screen.getByRole("status")).toHaveTextContent("Reading pages...");
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing workspace...");
+    expect(await screen.findByRole("status")).toHaveTextContent("Reading PDF...");
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 1300));
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing pages...");
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 1300));
+    expect(screen.getByRole("status")).toHaveTextContent("Building workspace...");
     expect(screen.getByText("Processing locally in your browser")).toBeInTheDocument();
 
     act(() => {
@@ -210,7 +210,7 @@ describe("QuickPDF application shell", () => {
       dataTransfer: { files: [pdfFile()], types: ["Files"] },
     });
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Opening document...");
+    expect(await screen.findByRole("status")).toHaveTextContent("Reading PDF...");
     act(() => {
       resolveOpen({ ok: true, pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }] });
     });
@@ -254,9 +254,7 @@ describe("QuickPDF application shell", () => {
     fireEvent.change(screen.getByLabelText("Choose a PDF file"), {
       target: { files: [pdfFile()] },
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Opening document...");
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 1600));
-    expect(screen.getByRole("status")).toHaveTextContent("Opening document...");
+    expect(await screen.findByRole("status")).toHaveTextContent("Opening editor...");
 
     act(() => {
       resolveOpen({ ok: true, pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }] });
@@ -268,7 +266,9 @@ describe("QuickPDF application shell", () => {
     renderAt("/");
 
     await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
-    expect(await screen.findByRole("heading", { name: "contract.pdf" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 }),
+    ).toBeInTheDocument();
     expect(await screen.findByLabelText("Rendered PDF page")).toBeInTheDocument();
     await waitFor(() => {
       expect(startRenderPage).toHaveBeenCalledWith(
@@ -315,7 +315,7 @@ describe("QuickPDF application shell", () => {
     renderAt("/");
 
     await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
-    await screen.findByRole("heading", { name: "contract.pdf" });
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
     await user.click(screen.getByRole("button", { name: "Text" }));
     clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
     await screen.findByLabelText("Edit text element");
@@ -343,7 +343,7 @@ describe("QuickPDF application shell", () => {
     renderAt("/");
 
     await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
-    await screen.findByRole("heading", { name: "contract.pdf" });
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
 
     expect(window.location.pathname).toBe("/editor");
     expect(screen.getByLabelText("Rendered PDF page")).toBeInTheDocument();

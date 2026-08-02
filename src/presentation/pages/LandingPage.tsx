@@ -10,11 +10,12 @@ import {
 import type { EditorSnapshot, PdfEditorApplication } from "../../application/editor-application";
 
 const GITHUB_URL = "//github.com/";
-
+const MINIMUM_OPENING_DURATION_MS = 5_000;
 const OPENING_STAGES = [
-  "Opening document...",
-  "Reading pages...",
-  "Preparing workspace...",
+  "Reading PDF...",
+  "Preparing pages...",
+  "Building workspace...",
+  "Opening editor...",
 ] as const;
 
 interface LandingPageProps {
@@ -23,6 +24,11 @@ interface LandingPageProps {
   readonly onSnapshotChange: (snapshot: EditorSnapshot) => void;
   readonly onDocumentOpened: () => void;
 }
+
+const sleep = (duration: number): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, duration);
+  });
 
 export const LandingPage = ({
   editor,
@@ -42,7 +48,6 @@ export const LandingPage = ({
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-
     const updateMotionPreference = (): void => {
       setPrefersReducedMotion(mediaQuery.matches);
     };
@@ -53,19 +58,21 @@ export const LandingPage = ({
   }, []);
 
   useEffect(() => {
-    if (!isOpening || prefersReducedMotion) {
+    if (!isOpening) {
       return undefined;
     }
-
-    const readingTimer = window.setTimeout(() => {
-      setOpeningStage(1);
-    }, 650);
-    const workspaceTimer = window.setTimeout(() => {
-      setOpeningStage(2);
-    }, 1300);
+    if (prefersReducedMotion) {
+      return undefined;
+    }
+    const stageTimers = [1_250, 2_500, 3_750].map((delay, index) =>
+      window.setTimeout(() => {
+        setOpeningStage(index + 1);
+      }, delay),
+    );
     return () => {
-      window.clearTimeout(readingTimer);
-      window.clearTimeout(workspaceTimer);
+      stageTimers.forEach((timer) => {
+        window.clearTimeout(timer);
+      });
     };
   }, [isOpening, prefersReducedMotion]);
 
@@ -73,19 +80,25 @@ export const LandingPage = ({
     if (file === undefined || isOpening) {
       return;
     }
-
     dragDepthRef.current = 0;
     setIsDragActive(false);
     setOpeningFileName(file.name);
     setOpeningStage(0);
     setIsOpening(true);
+    const startedAt = performance.now();
 
     try {
       const nextSnapshot = await editor.openFile(file);
       onSnapshotChange(nextSnapshot);
-      if (nextSnapshot.state.status === "ready") {
-        onDocumentOpened();
+      if (nextSnapshot.state.status !== "ready") {
+        return;
       }
+      const remaining = Math.max(0, MINIMUM_OPENING_DURATION_MS - (performance.now() - startedAt));
+      if (remaining > 0) {
+        await sleep(remaining);
+      }
+      setOpeningStage(3);
+      onDocumentOpened();
     } finally {
       setIsOpening(false);
     }
@@ -95,7 +108,6 @@ export const LandingPage = ({
     void openFile(event.currentTarget.files?.[0]);
     event.currentTarget.value = "";
   };
-
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
     const files = event.dataTransfer.files;
@@ -106,7 +118,6 @@ export const LandingPage = ({
     }
     void openFile(files[0]);
   };
-
   const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
     if (!isOpening && event.dataTransfer.types.includes("Files")) {
@@ -114,7 +125,6 @@ export const LandingPage = ({
       setIsDragActive(true);
     }
   };
-
   const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
@@ -122,9 +132,7 @@ export const LandingPage = ({
       setIsDragActive(false);
     }
   };
-
   const openPicker = (): void => inputRef.current?.click();
-
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -133,11 +141,17 @@ export const LandingPage = ({
   };
 
   const isError = snapshot.state.error !== undefined && !isOpening;
-  const openingCopy = OPENING_STAGES[openingStage];
+  const visibleOpeningStage = prefersReducedMotion ? 3 : openingStage;
+  const openingProgress = `${String((visibleOpeningStage + 1) * 25)}%`;
 
   return (
     <section className="landing-page" aria-labelledby="landing-title">
       <div className="landing-hero">
+        <div aria-hidden="true" className="landing-hero-icon">
+          <span />
+          <span />
+          <span />
+        </div>
         <p className="landing-eyebrow">Private PDF workspace</p>
         <h1 id="landing-title">Edit PDFs in seconds.</h1>
         <p className="landing-subtitle">Your files never leave your browser.</p>
@@ -155,7 +169,7 @@ export const LandingPage = ({
           aria-describedby="drop-zone-support"
           aria-label="Open a PDF file"
           className={`file-drop${isDragActive ? " is-drag-active" : ""}${isOpening ? " is-opening" : ""}${isError ? " has-error" : ""}`}
-          onClick={openPicker}
+          onClick={isOpening ? undefined : openPicker}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={(event) => {
@@ -166,27 +180,36 @@ export const LandingPage = ({
           role="button"
           tabIndex={isOpening ? -1 : 0}
         >
-          <span aria-hidden="true" className="file-drop-icon">
-            <span />
-            <span />
-            <span />
-          </span>
           {isOpening ? (
             <span className="file-drop-opening" role="status">
-              <strong>{openingCopy}</strong>
+              <span aria-hidden="true" className="landing-loader" />
+              <strong>{OPENING_STAGES[visibleOpeningStage]}</strong>
               <span>{openingFileName}</span>
+              <span aria-label={`Opening progress ${openingProgress}`} className="opening-progress">
+                <i style={{ width: openingProgress }} />
+              </span>
               <small>Processing locally in your browser</small>
             </span>
           ) : (
-            <span className="file-drop-copy">
-              <strong>{isDragActive ? "Release to open your PDF" : "Drop your PDF here"}</strong>
-              <span>
-                {isDragActive
-                  ? "Your file stays in this browser session."
-                  : "or choose a file from your device"}
+            <>
+              <span aria-hidden="true" className="file-drop-upload-icon">
+                ↑
               </span>
-              <small id="drop-zone-support">Your document never leaves this browser session.</small>
-            </span>
+              <span className="file-drop-copy">
+                <strong>{isDragActive ? "Release to open your PDF" : "Drop your PDF here"}</strong>
+                <span>
+                  {isDragActive
+                    ? "Your file stays in this browser session."
+                    : "or choose a file from your device"}
+                </span>
+                <small id="drop-zone-support">
+                  Your document never leaves this browser session.
+                </small>
+              </span>
+              <span aria-hidden="true" className="file-drop-button">
+                Choose File
+              </span>
+            </>
           )}
         </div>
         {isError ? (
@@ -199,17 +222,39 @@ export const LandingPage = ({
           </div>
         ) : null}
         <ul aria-label="QuickPDF privacy promises" className="landing-badges">
-          <li>Browser Only</li>
-          <li>Private</li>
-          <li>Free</li>
+          <li>
+            <b>⌑</b>
+            <span>
+              <strong>100% Private</strong>
+              <small>Stays in your browser</small>
+            </span>
+          </li>
+          <li>
+            <b>ϟ</b>
+            <span>
+              <strong>Fast &amp; Simple</strong>
+              <small>Edit in seconds</small>
+            </span>
+          </li>
+          <li>
+            <b>♢</b>
+            <span>
+              <strong>Your Control</strong>
+              <small>No accounts, no tracking</small>
+            </span>
+          </li>
         </ul>
       </div>
       <footer className="landing-footer" id="privacy">
-        <span>Privacy</span>
-        <a href={GITHUB_URL} rel="noreferrer" target="_blank">
-          GitHub
-        </a>
-        <span>Version 0.1</span>
+        <span>
+          <strong>QuickPDF</strong> — Browser-Based PDF Editor
+        </span>
+        <span>
+          <a href="#privacy">Privacy Policy</a>
+          <a href={GITHUB_URL} rel="noreferrer" target="_blank">
+            GitHub
+          </a>
+        </span>
       </footer>
     </section>
   );
