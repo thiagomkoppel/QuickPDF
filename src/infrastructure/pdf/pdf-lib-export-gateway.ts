@@ -26,7 +26,7 @@ const openFailure = (message: string): PdfOpenResult => ({
 const parseHexColor = (
   value: string | undefined,
 ): { readonly red: number; readonly green: number; readonly blue: number } => {
-  const normalized = value?.match(/^#?([0-9a-fA-F]{6})$/)?.[1] ?? "111111";
+  const normalized = value?.match(/^#?([0-9a-fA-F]{6})$/)?.[1] ?? "000000";
   return {
     red: Number.parseInt(normalized.slice(0, 2), 16) / 255,
     green: Number.parseInt(normalized.slice(2, 4), 16) / 255,
@@ -58,9 +58,11 @@ const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFF
 const drawCheckmark = (
   page: PDFPage,
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  _hex = "#000000",
 ): void => {
   const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
-  const color = rgb(0.05, 0.42, 0.18);
+  const colorParts = parseHexColor(_hex);
+  const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
   page.drawLine({
     start: { x: rect.x + rect.width * 0.16, y: rect.y + rect.height * 0.46 },
     end: { x: rect.x + rect.width * 0.4, y: rect.y + rect.height * 0.2 },
@@ -78,9 +80,11 @@ const drawCheckmark = (
 const drawCross = (
   page: PDFPage,
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  _hex = "#000000",
 ): void => {
   const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
-  const color = rgb(0.72, 0.08, 0.08);
+  const colorParts = parseHexColor(_hex);
+  const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
   page.drawLine({
     start: { x: rect.x + rect.width * 0.18, y: rect.y + rect.height * 0.18 },
     end: { x: rect.x + rect.width * 0.82, y: rect.y + rect.height * 0.82 },
@@ -162,9 +166,9 @@ export class PdfLibExportGateway implements PdfExportGateway {
         height: page.getHeight(),
       });
       if (element.type === "checkmark") {
-        drawCheckmark(page, rect);
+        drawCheckmark(page, rect, element.color);
       } else {
-        drawCross(page, rect);
+        drawCross(page, rect, element.color);
       }
       return;
     }

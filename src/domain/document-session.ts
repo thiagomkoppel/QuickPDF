@@ -19,6 +19,13 @@ export interface Bounds {
 export interface TextElementContent {
   readonly text: string;
   readonly fontSize?: number;
+  readonly fontFamily?: string;
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly underline?: boolean;
+  readonly alignment?: "left" | "center" | "right";
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
 }
 
 export interface TypedSignatureContent {
@@ -59,6 +66,7 @@ export interface EditorElement {
   readonly pageId: string;
   readonly type: EditorElementType;
   readonly bounds: Bounds;
+  readonly color?: string;
   readonly content?: EditorElementContent;
 }
 
@@ -149,6 +157,7 @@ const clonePage = (page: DocumentPage): DocumentPage => ({ ...page });
 const cloneElement = (element: EditorElement): EditorElement => ({
   ...element,
   bounds: { ...element.bounds },
+  ...(element.color === undefined ? {} : { color: element.color }),
   ...(element.content === undefined ? {} : { content: { ...element.content } }),
 });
 

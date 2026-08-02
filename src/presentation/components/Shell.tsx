@@ -6,6 +6,7 @@ const GITHUB_URL = "https:" + "//github.com/";
 
 interface ShellProps {
   readonly children: ReactNode;
+  readonly hideHeader?: boolean;
 }
 
 const navigate = (href: string): void => {
@@ -20,22 +21,24 @@ const handleInternalNavigation =
     navigate(href);
   };
 
-export const Shell = ({ children }: ShellProps): React.ReactElement => (
+export const Shell = ({ children, hideHeader = false }: ShellProps): React.ReactElement => (
   <div className="app-shell">
     <a className="skip-link" href="#main-content">
       Skip to main content
     </a>
-    <header className="site-header">
-      <a className="brand-link" href="/" onClick={handleInternalNavigation("/")}>
-        <img src={quickPdfLogo} alt="QuickPDF" />
-      </a>
-      <nav aria-label="Primary" className="primary-nav">
-        <a href="#privacy">Privacy</a>
-        <a href={GITHUB_URL} rel="noreferrer" target="_blank">
-          GitHub
+    {hideHeader ? null : (
+      <header className="site-header">
+        <a className="brand-link" href="/" onClick={handleInternalNavigation("/")}>
+          <img src={quickPdfLogo} alt="QuickPDF" />
         </a>
-      </nav>
-    </header>
+        <nav aria-label="Primary" className="primary-nav">
+          <a href="#privacy">Privacy</a>
+          <a href={GITHUB_URL} rel="noreferrer" target="_blank">
+            GitHub
+          </a>
+        </nav>
+      </header>
+    )}
     <main id="main-content" className="main-content" tabIndex={-1}>
       {children}
     </main>

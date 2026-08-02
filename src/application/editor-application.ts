@@ -5,6 +5,7 @@ import {
   type DomainResult,
   type DocumentPage,
   type EditorElement,
+  type EditorElementContent,
   type ImageElementContent,
   type SignatureElementContent,
   type TextElementContent,
@@ -101,6 +102,12 @@ export interface TextAppearance {
   readonly fontSize: number;
   readonly color: string;
   readonly fontFamily?: string;
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly underline?: boolean;
+  readonly alignment?: "left" | "center" | "right";
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
 }
 
 export interface ImageAppearance {
@@ -118,6 +125,7 @@ export interface ExportElement {
   readonly textAppearance?: TextAppearance;
   readonly image?: ImageAppearance;
   readonly source?: SignatureSource;
+  readonly color?: string;
 }
 
 export interface PdfExportRequest {
@@ -160,6 +168,7 @@ export interface EditorState {
   readonly status: EditorStatus;
   readonly fileName?: string;
   readonly pageCount: number;
+  readonly pages: readonly DocumentPage[];
   readonly currentPageNumber: number;
   readonly currentPage?: DocumentPage;
   readonly renderDocumentId?: string;
@@ -204,18 +213,18 @@ export interface TypedSignatureInput {
 export const COMMAND_HISTORY_LIMIT = 100;
 export const MIN_TEXT_FONT_SIZE = 8;
 export const MAX_TEXT_FONT_SIZE = 96;
-export const DEFAULT_TEXT_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
+export const DEFAULT_TEXT_APPEARANCE: TextAppearance = { fontSize: 16, color: "#000000" };
 export const DEFAULT_SIGNATURE_APPEARANCE: TextAppearance = {
   fontSize: 34,
-  color: "#111111",
+  color: "#000000",
   fontFamily: "cursive",
 };
 export const DEFAULT_INITIALS_APPEARANCE: TextAppearance = {
   fontSize: 26,
-  color: "#111111",
+  color: "#000000",
   fontFamily: "cursive",
 };
-export const DEFAULT_DATE_APPEARANCE: TextAppearance = { fontSize: 16, color: "#111111" };
+export const DEFAULT_DATE_APPEARANCE: TextAppearance = { fontSize: 16, color: "#000000" };
 export const DEFAULT_CHECKMARK_SIZE = 28;
 export const DEFAULT_CROSS_SIZE = 28;
 export const MIN_ELEMENT_WIDTH = 16;
@@ -227,6 +236,7 @@ export const PASTE_OFFSET = 16;
 const emptyState = (): EditorState => ({
   status: "empty",
   pageCount: 0,
+  pages: [],
   currentPageNumber: 0,
   tool: "select",
   isDirty: false,
@@ -272,6 +282,9 @@ const textFontSizeFromElement = (element: EditorElement): number => {
       : DEFAULT_TEXT_APPEARANCE.fontSize;
 };
 
+const isHexColor = (color: string): boolean => /^#[0-9a-fA-F]{6}$/.test(color);
+const elementColor = (element: EditorElement): string => element.color ?? "#000000";
+
 const clampTextFontSize = (fontSize: number): number =>
   Math.min(MAX_TEXT_FONT_SIZE, Math.max(MIN_TEXT_FONT_SIZE, fontSize));
 
@@ -296,6 +309,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
       pageId: element.pageId,
       type: element.type,
       bounds: cloneBounds(element.bounds),
+      color: elementColor(element),
     };
   }
   if (element.type === "image") {
@@ -307,7 +321,12 @@ const toExportElement = (element: EditorElement): ExportElement => {
       bounds: cloneBounds(element.bounds),
       ...(content === undefined
         ? {}
-        : { image: { dataUrl: content.dataUrl, mimeType: content.mimeType } }),
+        : {
+            image: {
+              dataUrl: content.dataUrl,
+              mimeType: content.mimeType,
+            },
+          }),
     };
   }
   if (element.type === "signature" || element.type === "initials") {
@@ -321,7 +340,11 @@ const toExportElement = (element: EditorElement): ExportElement => {
         type: element.type,
         bounds: cloneBounds(element.bounds),
         text: content.text,
-        textAppearance: { ...appearance, fontFamily: content.fontFamily },
+        textAppearance: {
+          ...appearance,
+          color: elementColor(element),
+          fontFamily: content.fontFamily,
+        },
         source: "type",
       };
     }
@@ -331,7 +354,10 @@ const toExportElement = (element: EditorElement): ExportElement => {
         pageId: element.pageId,
         type: element.type,
         bounds: cloneBounds(element.bounds),
-        image: { dataUrl: content.dataUrl, mimeType: content.mimeType },
+        image: {
+          dataUrl: content.dataUrl,
+          mimeType: content.mimeType,
+        },
         source: content.source,
       };
     }
@@ -342,8 +368,24 @@ const toExportElement = (element: EditorElement): ExportElement => {
     pageId: element.pageId,
     type: element.type === "date" ? "date" : "text",
     bounds: cloneBounds(element.bounds),
+    color: elementColor(element),
     text: textFromElement(element),
-    textAppearance: { ...appearance, fontSize: textFontSizeFromElement(element) },
+    textAppearance: {
+      ...appearance,
+      color: elementColor(element),
+      fontSize: textFontSizeFromElement(element),
+      ...(isTextContent(element.content)
+        ? {
+            fontFamily: element.content.fontFamily,
+            bold: element.content.bold,
+            italic: element.content.italic,
+            underline: element.content.underline,
+            alignment: element.content.alignment,
+            lineHeight: element.content.lineHeight,
+            letterSpacing: element.content.letterSpacing,
+          }
+        : {}),
+    },
   };
 };
 const safeExportFilename = (fileName: string | undefined): string => {
@@ -396,10 +438,8 @@ interface ClipboardElement {
   readonly type:
     "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
   readonly bounds: Bounds;
-  readonly text?: string;
-  readonly fontSize?: number;
-  readonly signatureContent?: SignatureElementContent;
-  readonly imageContent?: ImageElementContent;
+  readonly color?: string;
+  readonly content?: EditorElementContent;
 }
 
 interface HistoryState {
@@ -409,7 +449,12 @@ interface HistoryState {
 
 interface HistoryEntry {
   readonly type:
-    "add-element" | "delete-element" | "duplicate-element" | "paste-element" | "update-element";
+    | "add-element"
+    | "delete-element"
+    | "duplicate-element"
+    | "paste-element"
+    | "update-element"
+    | "update-text";
   readonly before: HistoryState;
   readonly after: HistoryState;
   readonly beforeRevision: number;
@@ -422,31 +467,12 @@ const cloneHistoryElement = (element: EditorElement): EditorElement => ({
   ...(element.content === undefined ? {} : { content: { ...element.content } }),
 });
 
-const cloneSignatureContent = (
-  content: SignatureElementContent | undefined,
-): SignatureElementContent | undefined => (content === undefined ? undefined : { ...content });
-
-const cloneImageContent = (
-  content: ImageElementContent | undefined,
-): ImageElementContent | undefined => (content === undefined ? undefined : { ...content });
-
-const clipboardElementFrom = (element: EditorElement): ClipboardElement => {
-  const base = { type: element.type, bounds: cloneBounds(element.bounds) };
-  if (isTextContent(element.content)) {
-    return {
-      ...base,
-      text: element.content.text,
-      fontSize: textFontSizeFromElement(element),
-    };
-  }
-  if (isSignatureContent(element.content)) {
-    return { ...base, signatureContent: { ...element.content } };
-  }
-  if (isImageContent(element.content)) {
-    return { ...base, imageContent: { ...element.content } };
-  }
-  return base;
-};
+const clipboardElementFrom = (element: EditorElement): ClipboardElement => ({
+  type: element.type,
+  bounds: cloneBounds(element.bounds),
+  ...(element.color === undefined ? {} : { color: element.color }),
+  ...(element.content === undefined ? {} : { content: { ...element.content } }),
+});
 const cloneHistoryState = (state: HistoryState): HistoryState => ({
   elements: state.elements.map(cloneHistoryElement),
   ...(state.selectedElementId === undefined ? {} : { selectedElementId: state.selectedElementId }),
@@ -456,6 +482,7 @@ const elementsMatch = (left: EditorElement, right: EditorElement): boolean =>
   left.id === right.id &&
   left.pageId === right.pageId &&
   left.type === right.type &&
+  left.color === right.color &&
   left.bounds.x === right.bounds.x &&
   left.bounds.y === right.bounds.y &&
   left.bounds.width === right.bounds.width &&
@@ -573,6 +600,24 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
+  public selectPage(pageId: string): EditorSnapshot {
+    const result = this.#session?.setCurrentPage(pageId);
+    if (result?.ok !== true) {
+      return this.#operationError("OperationRejected", "The requested page does not exist.");
+    }
+    this.#syncState();
+    return this.snapshot();
+  }
+
+  public previousPage(): EditorSnapshot {
+    const previousPage = this.#state.pages[this.#state.currentPageNumber - 2];
+    return previousPage === undefined ? this.snapshot() : this.selectPage(previousPage.id);
+  }
+
+  public nextPage(): EditorSnapshot {
+    const nextPage = this.#state.pages[this.#state.currentPageNumber];
+    return nextPage === undefined ? this.snapshot() : this.selectPage(nextPage.id);
+  }
   public setTool(tool: EditorTool): EditorSnapshot {
     this.#state = { ...this.#state, tool };
     return this.snapshot();
@@ -614,10 +659,14 @@ export class PdfEditorApplication {
     if (this.#session === undefined || clipboardElement === undefined) {
       return this.snapshot();
     }
-    const snapshot = this.#addElement({
+    const snapshot = this.#insertExistingElement({
       historyType: "paste-element",
-      ...this.#clipboardAddRequest(clipboardElement),
+      type: clipboardElement.type,
       bounds: this.#offsetPastedBounds(clipboardElement.bounds),
+      ...(clipboardElement.color === undefined ? {} : { color: clipboardElement.color }),
+      ...(clipboardElement.content === undefined
+        ? {}
+        : { content: { ...clipboardElement.content } }),
     });
     const pastedElementId = snapshot.state.selectedElementId;
     const pastedElement =
@@ -743,39 +792,83 @@ export class PdfEditorApplication {
   }
   public updateText(elementId: string, text: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element?.type !== "text") {
+    if (element === undefined || !isTextLikeElement(element) || !isTextContent(element.content)) {
+      return this.#operationError("MissingElement", "The text element no longer exists.");
+    }
+    return this.#commitTextUpdate({ ...element, content: { ...element.content, text } });
+  }
+
+  public updateTextAppearance(
+    elementId: string,
+    appearance: Partial<TextAppearance>,
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined || !isTextLikeElement(element) || !isTextContent(element.content)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     const content = element.content;
-    const fontSize = isTextContent(content) ? content.fontSize : undefined;
-    return this.#untrackedElementUpdate({
+    return this.#commitElementUpdate({
       ...element,
-      content: { text, ...(fontSize === undefined ? {} : { fontSize }) },
+      content: {
+        ...content,
+        ...(appearance.fontSize === undefined
+          ? {}
+          : { fontSize: clampTextFontSize(appearance.fontSize) }),
+        ...(appearance.fontFamily === undefined ? {} : { fontFamily: appearance.fontFamily }),
+        ...(appearance.bold === undefined ? {} : { bold: appearance.bold }),
+        ...(appearance.italic === undefined ? {} : { italic: appearance.italic }),
+        ...(appearance.underline === undefined ? {} : { underline: appearance.underline }),
+        ...(appearance.alignment === undefined ? {} : { alignment: appearance.alignment }),
+        ...(appearance.lineHeight === undefined ? {} : { lineHeight: appearance.lineHeight }),
+        ...(appearance.letterSpacing === undefined
+          ? {}
+          : { letterSpacing: appearance.letterSpacing }),
+      },
     });
   }
-
   public updateTextFontSize(elementId: string, fontSize: number): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element === undefined || !isTextLikeElement(element)) {
+    if (element === undefined || !isTextLikeElement(element) || !isTextContent(element.content)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (!Number.isFinite(fontSize)) {
       return this.#operationError("InvalidTextAppearance", "Text size must be a finite number.");
     }
-    const text = textFromElement(element);
     return this.#commitElementUpdate({
       ...element,
-      content: { text, fontSize: clampTextFontSize(fontSize) },
+      content: { ...element.content, fontSize: clampTextFontSize(fontSize) },
     });
   }
 
+  public updateElementColor(elementId: string, color: string): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined || element.type === "whiteout" || element.type === "image") {
+      return this.#operationError("MissingElement", "This element does not support an ink colour.");
+    }
+    if (
+      (element.type === "signature" || element.type === "initials") &&
+      element.content !== undefined &&
+      "kind" in element.content &&
+      element.content.kind === "image" &&
+      element.content.source === "upload"
+    ) {
+      return this.#operationError(
+        "OperationRejected",
+        "Uploaded signatures retain their original colours.",
+      );
+    }
+    if (!isHexColor(color)) {
+      return this.#operationError("InvalidTextAppearance", "Choose a valid six-digit colour.");
+    }
+    return this.#commitElementUpdate({ ...element, color: color.toLowerCase() });
+  }
   public previewTextResizeElement(
     elementId: string,
     bounds: Bounds,
     fontSize: number,
   ): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element === undefined || !isTextLikeElement(element)) {
+    if (element === undefined || !isTextLikeElement(element) || !isTextContent(element.content)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (!isFiniteBounds(bounds) || !Number.isFinite(fontSize)) {
@@ -784,7 +877,7 @@ export class PdfEditorApplication {
     return this.#previewElementUpdate({
       ...element,
       bounds: this.#constrainBounds(bounds),
-      content: { text: textFromElement(element), fontSize: clampTextFontSize(fontSize) },
+      content: { ...element.content, fontSize: clampTextFontSize(fontSize) },
     });
   }
 
@@ -794,7 +887,7 @@ export class PdfEditorApplication {
     end: { readonly bounds: Bounds; readonly fontSize: number },
   ): EditorSnapshot {
     const element = this.#session?.element(elementId);
-    if (element === undefined || !isTextLikeElement(element)) {
+    if (element === undefined || !isTextLikeElement(element) || !isTextContent(element.content)) {
       return this.#operationError("MissingElement", "The text element no longer exists.");
     }
     if (
@@ -805,16 +898,15 @@ export class PdfEditorApplication {
     ) {
       return this.#operationError("InvalidElementBounds", "Text resize values must be finite.");
     }
-    const text = textFromElement(element);
     const beforeElement: EditorElement = {
       ...element,
       bounds: this.#constrainBounds(start.bounds),
-      content: { text, fontSize: clampTextFontSize(start.fontSize) },
+      content: { ...element.content, fontSize: clampTextFontSize(start.fontSize) },
     };
     const afterElement: EditorElement = {
       ...element,
       bounds: this.#constrainBounds(end.bounds),
-      content: { text, fontSize: clampTextFontSize(end.fontSize) },
+      content: { ...element.content, fontSize: clampTextFontSize(end.fontSize) },
     };
     if (elementsMatch(beforeElement, afterElement)) {
       return this.#previewElementUpdate(afterElement);
@@ -946,15 +1038,12 @@ export class PdfEditorApplication {
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
     }
-    return this.#addElement({
+    return this.#insertExistingElement({
       historyType: "duplicate-element",
       type: element.type,
       bounds: { ...element.bounds, x: element.bounds.x + 12, y: element.bounds.y + 12 },
-      ...(isTextContent(element.content)
-        ? { text: element.content.text, fontSize: textFontSizeFromElement(element) }
-        : {}),
-      ...(isSignatureContent(element.content) ? { signatureContent: element.content } : {}),
-      ...(isImageContent(element.content) ? { imageContent: element.content } : {}),
+      ...(element.color === undefined ? {} : { color: element.color }),
+      ...(element.content === undefined ? {} : { content: { ...element.content } }),
     });
   }
 
@@ -1091,38 +1180,6 @@ export class PdfEditorApplication {
     this.#redoStack = [];
   }
 
-  #rewriteHistoryElement(element: EditorElement): void {
-    const replaceInState = (state: HistoryState): HistoryState => {
-      if (!state.elements.some((candidate) => candidate.id === element.id)) {
-        return state;
-      }
-      return cloneHistoryState({
-        ...state,
-        elements: state.elements.map((candidate) =>
-          candidate.id === element.id ? cloneHistoryElement(element) : candidate,
-        ),
-      });
-    };
-
-    const rewriteEntry = (entry: HistoryEntry): HistoryEntry => {
-      const nextBefore = replaceInState(entry.before);
-      const nextAfter = replaceInState(entry.after);
-      return {
-        ...entry,
-        before: nextBefore,
-        after: nextAfter,
-        afterRevision: nextAfter !== entry.after ? this.#currentRevision : entry.afterRevision,
-      };
-    };
-
-    this.#undoStack = this.#undoStack.map(rewriteEntry);
-    this.#redoStack = this.#redoStack.map(rewriteEntry);
-  }
-  #markUntrackedEdit(): void {
-    this.#currentRevision += 1;
-    this.#redoStack = [];
-  }
-
   #resetHistory(): void {
     this.#undoStack = [];
     this.#redoStack = [];
@@ -1172,40 +1229,6 @@ export class PdfEditorApplication {
     return { ...bounds, height: bounds.width / ratio };
   }
 
-  #clipboardAddRequest(element: ClipboardElement): {
-    readonly type:
-      "text" | "whiteout" | "signature" | "initials" | "image" | "checkmark" | "cross" | "date";
-    readonly bounds: Bounds;
-    readonly text?: string;
-    readonly fontSize?: number;
-    readonly signatureContent?: SignatureElementContent;
-    readonly imageContent?: ImageElementContent;
-  } {
-    const base = { type: element.type, bounds: cloneBounds(element.bounds) };
-    if (element.type === "text") {
-      return {
-        ...base,
-        text: element.text ?? "Text",
-        fontSize: element.fontSize ?? DEFAULT_TEXT_APPEARANCE.fontSize,
-      };
-    }
-    if (element.type === "date") {
-      return {
-        ...base,
-        text: element.text ?? formatLocalDate(this.#dateProvider.today()),
-        fontSize: element.fontSize ?? DEFAULT_DATE_APPEARANCE.fontSize,
-      };
-    }
-    if (element.type === "signature" || element.type === "initials") {
-      const signatureContent = cloneSignatureContent(element.signatureContent);
-      return signatureContent === undefined ? base : { ...base, signatureContent };
-    }
-    if (element.type === "image") {
-      const imageContent = cloneImageContent(element.imageContent);
-      return imageContent === undefined ? base : { ...base, imageContent };
-    }
-    return base;
-  }
   #offsetPastedBounds(bounds: Bounds): Bounds {
     const preferred = this.#constrainBounds({
       ...bounds,
@@ -1270,6 +1293,7 @@ export class PdfEditorApplication {
     readonly fontSize?: number;
     readonly signatureContent?: SignatureElementContent;
     readonly imageContent?: ImageElementContent;
+    readonly color?: string;
   }): EditorSnapshot {
     const session = this.#session;
     const pageId = session?.currentPageId;
@@ -1300,6 +1324,9 @@ export class PdfEditorApplication {
       pageId,
       type: request.type,
       bounds: this.#constrainBounds(request.bounds),
+      ...(request.type === "whiteout" || request.type === "image"
+        ? {}
+        : { color: request.color ?? "#000000" }),
       ...(request.type === "text" || request.type === "date"
         ? {
             content: {
@@ -1334,6 +1361,36 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
+  #insertExistingElement(request: {
+    readonly historyType: "duplicate-element" | "paste-element";
+    readonly type: EditorElement["type"];
+    readonly bounds: Bounds;
+    readonly color?: string;
+    readonly content?: EditorElementContent;
+  }): EditorSnapshot {
+    const session = this.#session;
+    const pageId = session?.currentPageId;
+    if (session === undefined || pageId === undefined) {
+      return this.#operationError("NoActiveDocument", "Open a PDF before adding elements.");
+    }
+    const before = this.#currentHistoryState(session.selectedElementId);
+    const element: EditorElement = {
+      id: this.#idGenerator.nextId("element"),
+      pageId,
+      type: request.type,
+      bounds: this.#constrainBounds(request.bounds),
+      ...(request.color === undefined ? {} : { color: request.color }),
+      ...(request.content === undefined ? {} : { content: { ...request.content } }),
+    };
+    const result = session.addElement(element);
+    if (!result.ok) {
+      return this.#operationError("OperationRejected", "The element could not be added.");
+    }
+    session.selectElement(element.id);
+    this.#recordHistory(request.historyType, before, this.#currentHistoryState(element.id));
+    this.#syncState();
+    return this.snapshot();
+  }
   #replaceElement(element: EditorElement): EditorSnapshot {
     return this.#commitElementUpdate(element);
   }
@@ -1348,18 +1405,40 @@ export class PdfEditorApplication {
     return this.snapshot();
   }
 
-  #untrackedElementUpdate(element: EditorElement): EditorSnapshot {
-    const result = this.#session?.updateElement(element);
-    if (result?.ok !== true) {
-      return this.#operationError("OperationRejected", "The element could not be updated.");
+  #commitTextUpdate(element: EditorElement): EditorSnapshot {
+    const session = this.#session;
+    if (session === undefined) {
+      return this.#operationError("NoActiveDocument", "Open a PDF before editing.");
     }
-    this.#session?.selectElement(element.id);
-    this.#markUntrackedEdit();
-    this.#rewriteHistoryElement(element);
+    const before = this.#currentHistoryState(element.id);
+    const result = session.updateElement(element);
+    if (!result.ok) {
+      return this.#operationError("OperationRejected", "The text element could not be updated.");
+    }
+    session.selectElement(element.id);
+    const after = this.#currentHistoryState(element.id);
+    if (JSON.stringify(before.elements) === JSON.stringify(after.elements)) {
+      this.#syncState();
+      return this.snapshot();
+    }
+
+    const latest = this.#undoStack.at(-1);
+    const shouldMergeWithInitialAdd =
+      latest?.type === "add-element" && latest.after.selectedElementId === element.id;
+    const shouldMergeTextEdit =
+      latest?.type === "update-text" && latest.after.selectedElementId === element.id;
+    if (shouldMergeWithInitialAdd || shouldMergeTextEdit) {
+      this.#undoStack[this.#undoStack.length - 1] = {
+        ...latest,
+        after: cloneHistoryState(after),
+      };
+      this.#redoStack = [];
+    } else {
+      this.#recordHistory("update-text", before, after);
+    }
     this.#syncState();
     return this.snapshot();
   }
-
   #commitElementUpdate(
     element: EditorElement,
     before = this.#currentHistoryState(element.id),
@@ -1438,6 +1517,7 @@ export class PdfEditorApplication {
     const baseState: EditorState = {
       status: "ready",
       pageCount: pages.length,
+      pages,
       currentPageNumber: currentPageIndex + 1,
       tool: this.#state.tool,
       isDirty: this.#currentRevision !== this.#cleanRevision,

@@ -326,10 +326,27 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
   });
 
-  it("renders the editor route without a document as an open-first state", () => {
+  it("redirects an editor route without an active in-memory document to the landing page", async () => {
     renderAt("/editor");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Open a PDF first" })).toBeInTheDocument();
+    expect(screen.queryByText("Open a PDF first")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/");
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds." }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps an active document on the editor route", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" });
+
+    expect(window.location.pathname).toBe("/editor");
+    expect(screen.getByLabelText("Rendered PDF page")).toBeInTheDocument();
   });
 
   it("renders a not-found page for unknown routes", () => {

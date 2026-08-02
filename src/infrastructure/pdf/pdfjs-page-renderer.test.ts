@@ -115,6 +115,34 @@ describe("PdfJsPageRenderer", () => {
     );
   });
 
+  it("renders a page thumbnail at a bounded CSS size with DPR backing dimensions", async () => {
+    const fixture = createPdfDocument();
+    pdfjsMock.getDocument.mockReturnValueOnce(fixture.task);
+    const renderer = new PdfJsPageRenderer();
+    const openResult = await renderer.openRenderDocument(new Uint8Array([37, 80, 68, 70, 45]));
+    expect(openResult.ok).toBe(true);
+    if (!openResult.ok) {
+      return;
+    }
+    const canvas = createCanvas();
+    const result = await renderer.startRenderThumbnail({
+      documentId: openResult.documentId,
+      pageNumber: 1,
+      maxWidth: 120,
+      devicePixelRatio: 2,
+      canvas,
+    }).promise;
+    expect(result).toMatchObject({
+      ok: true,
+      cssWidth: 120,
+      cssHeight: 160,
+      backingWidth: 240,
+      backingHeight: 320,
+    });
+    expect(fixture.page.render).toHaveBeenCalledWith(
+      expect.objectContaining({ canvas, transform: [2, 0, 0, 2, 0, 0] }),
+    );
+  });
   it("cancels a stale render task", async () => {
     const render = deferred<undefined>();
     const fixture = createPdfDocument(render.promise);

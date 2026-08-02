@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import {
   PdfEditorApplication,
@@ -28,9 +28,21 @@ const subscribeToNavigation = (onStoreChange: () => void): (() => void) => {
 
 const getServerPathname = (): string => "/";
 
-const navigate = (href: string): void => {
-  window.history.pushState({}, "", href);
+const navigate = (href: string, replace = false): void => {
+  if (replace) {
+    window.history.replaceState({}, "", href);
+  } else {
+    window.history.pushState({}, "", href);
+  }
   window.dispatchEvent(new Event("quickpdf:navigation"));
+};
+
+const RedirectToLanding = (): null => {
+  useLayoutEffect(() => {
+    navigate("/", true);
+  }, []);
+
+  return null;
 };
 
 interface EditorServices {
@@ -81,13 +93,19 @@ export const App = (): React.ReactElement => {
         </Shell>
       );
     case "/editor":
+      if (snapshot.state.status === "empty") {
+        return <RedirectToLanding />;
+      }
       return (
-        <Shell>
+        <Shell hideHeader>
           <EditorPage
             editor={editor}
             snapshot={snapshot}
             onSnapshotChange={setSnapshot}
             pdfRenderer={pdfRenderer}
+            onOpenRequest={() => {
+              navigate("/");
+            }}
           />
         </Shell>
       );

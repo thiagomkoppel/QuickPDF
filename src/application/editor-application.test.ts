@@ -82,6 +82,245 @@ describe("PdfEditorApplication export", () => {
     await app.openFile(file);
   });
 
+  it("navigates ordered pages by stable ID without affecting history or dirty state", async () => {
+    openResult = {
+      ok: true,
+      pages: [
+        { id: "first", width: 300, height: 400, rotation: 0 },
+        { id: "middle", width: 400, height: 300, rotation: 0 },
+        { id: "last", width: 300, height: 500, rotation: 0 },
+      ],
+    };
+    await app.openFile(file);
+
+    expect(app.selectPage("middle").state).toMatchObject({
+      currentPageNumber: 2,
+      currentPage: { id: "middle" },
+      isDirty: false,
+    });
+    expect(app.previousPage().state.currentPage?.id).toBe("first");
+    expect(app.nextPage().state.currentPage?.id).toBe("middle");
+    expect(app.nextPage().state.currentPage?.id).toBe("last");
+    expect(app.nextPage().state.currentPage?.id).toBe("last");
+    expect(app.snapshot().canUndo).toBe(false);
+    expect(app.selectPage("missing").state.error?.code).toBe("OperationRejected");
+  });
+  it.each(["text", "checkmark", "cross"] as const)(
+    "records %s color changes as one undoable element update",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Colour history")
+          : type === "checkmark"
+            ? app.addCheckmark({ x: 10, y: 20 })
+            : app.addCross({ x: 10, y: 20 });
+      const elementId = added.state.selectedElementId;
+      expect(elementId).toBeDefined();
+      if (elementId === undefined) {
+        return;
+      }
+      expect(added.state.selectedElement?.color).toBe("#000000");
+
+      const changed = app.updateElementColor(elementId, "#c62828");
+      expect(changed.state.selectedElement?.color).toBe("#c62828");
+
+      const undone = app.undo();
+      expect(undone.state.selectedElement?.id).toBe(elementId);
+      expect(undone.state.selectedElement?.color).toBe("#000000");
+
+      const redone = app.redo();
+      expect(redone.state.selectedElement?.id).toBe(elementId);
+      expect(redone.state.selectedElement?.color).toBe("#c62828");
+    },
+  );
+  it.each(["text", "date", "checkmark", "cross"] as const)(
+    "preserves %s color through move and resize history",
+    (type) => {
+      const added =
+        type === "text"
+          ? app.addText({ x: 10, y: 20 }, "Ink")
+          : type === "date"
+            ? app.addDate({ x: 10, y: 20 })
+            : type === "checkmark"
+              ? app.addCheckmark({ x: 10, y: 20 })
+              : app.addCross({ x: 10, y: 20 });
+      const elementId = added.state.selectedElementId;
+      const startBounds = added.state.selectedElement?.bounds;
+      expect(elementId).toBeDefined();
+      expect(startBounds).toBeDefined();
+      if (elementId === undefined || startBounds === undefined) {
+        return;
+      }
+
+      app.updateElementColor(elementId, "#c62828");
+      const moved = app.commitMoveElement(elementId, startBounds, {
+        ...startBounds,
+        x: startBounds.x + 24,
+        y: startBounds.y + 16,
+      });
+      const movedBounds = moved.state.selectedElement?.bounds;
+      expect(moved.state.selectedElement?.color).toBe("#c62828");
+      expect(movedBounds).toBeDefined();
+      if (movedBounds === undefined) {
+        return;
+      }
+
+      const resized = app.commitResizeElement(elementId, movedBounds, {
+        ...movedBounds,
+        width: movedBounds.width + 20,
+        height: movedBounds.height + 12,
+      });
+      expect(resized.state.selectedElement?.color).toBe("#c62828");
+      expect(app.undo().state.selectedElement?.color).toBe("#c62828");
+      expect(app.undo().state.selectedElement?.color).toBe("#c62828");
+      expect(app.redo().state.selectedElement?.color).toBe("#c62828");
+      expect(app.redo().state.selectedElement?.color).toBe("#c62828");
+    },
+  );
+  it("keeps color history intact after coalesced text edits", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Original");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+
+    app.updateElementColor(elementId, "#c62828");
+    app.updateText(elementId, "First edit");
+    app.updateText(elementId, "Final edit");
+
+    expect(app.undo().state.selectedElement).toMatchObject({
+      text: "Original",
+      color: "#c62828",
+    });
+    expect(app.undo().state.selectedElement).toMatchObject({
+      text: "Original",
+      color: "#000000",
+    });
+    expect(app.redo().state.selectedElement).toMatchObject({ color: "#c62828" });
+    expect(app.redo().state.selectedElement).toMatchObject({
+      text: "Final edit",
+      color: "#c62828",
+    });
+  });
+  it("preserves text color and appearance through size and resize history", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Styled text");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+
+    app.updateTextAppearance(elementId, {
+      fontFamily: "Georgia",
+      bold: true,
+      italic: true,
+      underline: true,
+      alignment: "center",
+      lineHeight: 1.5,
+      letterSpacing: 1,
+    });
+    app.updateElementColor(elementId, "#c62828");
+    const resizedFont = app.updateTextFontSize(elementId, 24);
+    expect(resizedFont.state.selectedElement).toMatchObject({
+      color: "#c62828",
+      textAppearance: {
+        fontSize: 24,
+        fontFamily: "Georgia",
+        bold: true,
+        italic: true,
+        underline: true,
+        alignment: "center",
+        lineHeight: 1.5,
+        letterSpacing: 1,
+      },
+    });
+
+    const resized = app.commitTextResizeElement(
+      elementId,
+      { bounds: { x: 10, y: 20, width: 160, height: 40 }, fontSize: 24 },
+      { bounds: { x: 10, y: 20, width: 220, height: 55 }, fontSize: 32 },
+    );
+    expect(resized.state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 220, height: 55 },
+      textAppearance: { fontSize: 32, fontFamily: "Georgia", bold: true },
+    });
+
+    expect(app.undo().state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 160, height: 40 },
+      textAppearance: { fontSize: 24, fontFamily: "Georgia", bold: true },
+    });
+    expect(app.redo().state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 220, height: 55 },
+      textAppearance: { fontSize: 32, fontFamily: "Georgia", bold: true },
+    });
+  });
+
+  it("preserves full text appearance through duplicate and session-local paste history", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Copied text");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.updateTextAppearance(elementId, { fontFamily: "Georgia", bold: true, alignment: "right" });
+    app.updateElementColor(elementId, "#c62828");
+
+    const duplicate = app.duplicateElement(elementId);
+    expect(duplicate.state.selectedElement).toMatchObject({
+      color: "#c62828",
+      textAppearance: { fontFamily: "Georgia", bold: true, alignment: "right" },
+    });
+    expect(app.undo().state.visibleElements).toHaveLength(1);
+    expect(app.redo().state.selectedElement).toMatchObject({ color: "#c62828" });
+
+    app.selectElement(elementId);
+    app.copySelectedElement();
+    const pasted = app.pasteCopiedElement();
+    expect(pasted.state.selectedElement).toMatchObject({
+      color: "#c62828",
+      textAppearance: { fontFamily: "Georgia", bold: true, alignment: "right" },
+    });
+    expect(app.undo().state.visibleElements).toHaveLength(2);
+    expect(app.redo().state.selectedElement).toMatchObject({ color: "#c62828" });
+  });
+
+  it("supports at least fifteen consecutive committed geometry changes with undo and redo", () => {
+    const added = app.addCheckmark({ x: 10, y: 20 });
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+    app.updateElementColor(elementId, "#c62828");
+
+    for (let index = 1; index <= 16; index += 1) {
+      app.resizeElement(elementId, { width: 28 + index, height: 28 + index });
+    }
+    expect(app.snapshot().state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 44, height: 44 },
+    });
+
+    for (let index = 0; index < 16; index += 1) {
+      app.undo();
+    }
+    expect(app.snapshot().state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 28, height: 28 },
+    });
+
+    for (let index = 0; index < 16; index += 1) {
+      app.redo();
+    }
+    expect(app.snapshot().state.selectedElement).toMatchObject({
+      color: "#c62828",
+      bounds: { width: 44, height: 44 },
+    });
+  });
   it("exports from a copy of original bytes and keeps the editor session open", async () => {
     app.addWhiteout({ x: 40, y: 50, width: 120, height: 30 });
     app.addText({ x: 45, y: 55 }, "Replacement");

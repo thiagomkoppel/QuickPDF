@@ -488,7 +488,7 @@ test("selects text with one click and edits text only through explicit edit acti
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await page.getByRole("button", { name: "100 percent zoom" }).click();
 
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();
@@ -696,7 +696,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await page.getByRole("button", { name: "100 percent zoom" }).click();
 
   await page.getByRole("button", { name: "Zoom in" }).click();
   await page.getByRole("button", { name: "Zoom in" }).click();
@@ -705,7 +705,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   });
   await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
-  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await page.getByRole("button", { name: "100 percent zoom" }).click();
 
   const overlayBox = await page.locator(".overlay-layer").boundingBox();
   expect(overlayBox).not.toBeNull();
@@ -1201,4 +1201,23 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
     .toBe(true);
+});
+
+test("returns to the landing page after reloading a memory-only editor session", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("memory-only-session.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "memory-only-session.pdf" })).toBeVisible();
+  await expect(page.getByLabel("Rendered PDF page")).toBeVisible();
+
+  await page.reload();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("button", { name: "Open a PDF file" })).toBeVisible();
+  await expect(page.getByText("Open a PDF first")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: /element$/ })).toHaveCount(0);
 });
