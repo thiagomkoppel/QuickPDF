@@ -1,5 +1,5 @@
-import { PDFDocument } from "pdf-lib";
-import { describe, expect, it } from "vitest";
+import { PDFDocument, PDFPage } from "pdf-lib";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ExportElement } from "../../application/editor-application";
 import { PdfLibExportGateway } from "./pdf-lib-export-gateway";
@@ -71,6 +71,46 @@ describe("PdfLibExportGateway", () => {
     expect(exported.getPage(1).getHeight()).toBe(700);
   });
 
+  it("exports multiline text as individual lines with preserved alignment, spacing, and underlines", async () => {
+    const drawText = vi.spyOn(PDFPage.prototype, "drawText");
+    const drawLine = vi.spyOn(PDFPage.prototype, "drawLine");
+    const gateway = new PdfLibExportGateway();
+    const result = await gateway.exportPdf({
+      originalBytes: await createPdf(),
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+      elements: [
+        {
+          ...textElement("multiline", "page-1", "\nRua T 135 Paraíso\r\n\r\nBarra Mansa - RJ\n"),
+          bounds: { x: 40, y: 50, width: 200, height: 100 },
+          textAppearance: {
+            fontSize: 16,
+            color: "#112233",
+            alignment: "center",
+            lineHeight: 1.5,
+            letterSpacing: 0,
+            underline: true,
+          },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    const multilineCalls = drawText.mock.calls.filter(([value]) =>
+      ["", "Rua T 135 Paraíso", "Barra Mansa - RJ"].includes(value),
+    );
+    expect(multilineCalls.map(([value]) => value)).toEqual([
+      "",
+      "Rua T 135 Paraíso",
+      "",
+      "Barra Mansa - RJ",
+      "",
+    ]);
+    expect(multilineCalls[1]?.[1]).toMatchObject({ y: 310 });
+    expect(multilineCalls[3]?.[1]).toMatchObject({ y: 262 });
+    expect(drawLine).toHaveBeenCalledTimes(2);
+    drawText.mockRestore();
+    drawLine.mockRestore();
+  });
   it("fails safely for invalid PDF bytes", async () => {
     const result = await new PdfLibExportGateway().exportPdf({
       originalBytes: new Uint8Array([1, 2, 3]),

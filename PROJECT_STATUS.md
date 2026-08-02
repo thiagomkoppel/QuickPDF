@@ -16,13 +16,14 @@ Implemented proof-of-concept behavior:
 - render the active PDF page with PDF.js on a real canvas;
 - size the canvas backing store with device pixel ratio while keeping CSS dimensions in page-space scale;
 - keep text and whiteout overlays aligned over the rendered canvas during zoom;
-- add temporary text overlay elements as one-shot placements, including bounded font-size changes and proportional text resize;
+- add temporary text overlay elements as one-shot placements, with bounded font-size changes in the Style tab and user-controlled canvas bounds;
 - add temporary whiteout visual cover rectangles by click-drag creation;
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
 - add drawn and typed initials overlays as one-shot placements;
 - add PNG, JPG, and JPEG image overlays through a browser-local file picker and click-to-place workflow;
 - add checkmark, cross, and captured-date annotation overlays as one-shot placements;
 - select, move, resize, duplicate, delete, and session-local copy/paste text, whiteout, signature, initials, image, checkmark, cross, and date overlays;
+- reorder current-page overlay layers through the inspector with canvas/export synchronization and Undo/Redo;
 - undo and redo overlay add, paste, duplicate, delete, move, resize, text/date font-size, text/date resize, and image/annotation lifecycle commands with revision-based dirty state;
 - export the current PDF with text, whiteout, signature, initials, image, checkmark, cross, and date overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;

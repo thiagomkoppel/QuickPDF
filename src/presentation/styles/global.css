@@ -326,16 +326,6 @@ p {
   user-select: none;
 }
 
-.text-element-display {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  padding: 0.15rem;
-  line-height: 1.2;
-  white-space: pre-wrap;
-  cursor: move;
-}
-
 .overlay-text textarea {
   width: 100%;
   height: 100%;
@@ -2261,6 +2251,9 @@ body {
   color: #f5fbfc;
   font: inherit;
 }
+.text-inspector-content textarea {
+  min-height: clamp(16rem, 42vh, 30rem);
+}
 .text-inspector textarea {
   min-height: 5rem;
   resize: vertical;
@@ -2348,12 +2341,6 @@ body {
   font-size: 1rem !important;
   font-weight: 750 !important;
 }
-.text-element-display {
-  box-sizing: border-box;
-  color: #000000;
-  white-space: pre-wrap;
-}
-
 /* Keep the command menu together; spare viewport width belongs outside the menu. */
 .viewer-toolbar {
   justify-content: center;
@@ -2844,4 +2831,194 @@ body {
   .file-drop.is-drag-active {
     transform: none;
   }
+}
+
+.layers-panel {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1.25rem -0.15rem 0;
+  padding: 1.15rem 0.15rem 0;
+  border-top: 1px solid rgb(159 219 218 / 18%);
+  color: #e6edf3;
+}
+.layers-panel h2,
+.layers-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.layers-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: end;
+}
+.layers-panel-header p,
+.layers-help p {
+  margin: 0.2rem 0 0;
+  color: rgb(230 237 243 / 68%);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.layers-order-actions,
+.layers-bulk-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(2.5rem, 1fr));
+  gap: 0.35rem;
+}
+.layers-order-actions button,
+.layers-bulk-actions button {
+  min-height: 2.65rem;
+  border: 1px solid rgb(159 219 218 / 23%);
+  border-radius: 0.55rem;
+  background: rgb(7 29 35 / 74%);
+  color: #e6edf3;
+  font: inherit;
+  font-weight: 700;
+}
+.layers-order-actions button:disabled,
+.layers-bulk-actions button:disabled {
+  opacity: 0.45;
+}
+.layers-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.layers-list li {
+  border: 1px solid rgb(159 219 218 / 18%);
+  border-radius: 0.65rem;
+  background: rgb(7 29 35 / 56%);
+}
+.layers-list li.is-selected {
+  border-color: #44a1a4;
+  box-shadow: 0 0 0 1px rgb(68 161 164 / 20%);
+}
+.layer-row-select {
+  display: grid;
+  grid-template-columns: 1.25rem 2.25rem minmax(0, 1fr);
+  width: 100%;
+  min-height: 4rem;
+  align-items: center;
+  gap: 0.55rem;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: #e6edf3;
+  text-align: left;
+}
+.layer-row-grip {
+  color: #77a2aa;
+  letter-spacing: -0.1rem;
+}
+.layer-row-icon {
+  display: grid;
+  width: 2.2rem;
+  height: 2.2rem;
+  place-items: center;
+  border-radius: 0.4rem;
+  background: rgb(50 94 106 / 48%);
+  font-size: 1rem;
+}
+.layer-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+.layer-row-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.layer-row-copy small {
+  color: rgb(230 237 243 / 65%);
+  font-size: 0.74rem;
+}
+.layers-actions-heading {
+  margin-top: 0.4rem !important;
+}
+.layers-bulk-actions {
+  grid-template-columns: 1fr 1fr;
+}
+.layers-help {
+  padding: 0.85rem;
+  border: 1px solid rgb(159 219 218 / 18%);
+  border-radius: 0.6rem;
+  background: rgb(7 29 35 / 44%);
+  font-size: 0.86rem;
+}
+
+/* The selected-element inspector uses stable tabs, properties, and layers regions. */
+.element-inspector:has(.layers-panel) {
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: 3.6rem minmax(15rem, 42%) minmax(0, 1fr);
+  align-items: stretch;
+  align-content: start;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.element-inspector__tabs-region {
+  min-width: 0;
+  border-bottom: 1px solid rgb(159 219 218 / 14%);
+}
+.element-inspector__tabs-region .text-inspector-tabs {
+  width: 100%;
+  margin: 0;
+}
+.element-inspector__properties-region,
+.element-inspector__layers-region {
+  min-width: 0;
+  min-height: 0;
+}
+.element-inspector__properties-region {
+  overflow: hidden;
+  border-bottom: 1px solid rgb(159 219 218 / 18%);
+}
+.element-inspector__properties-scroll,
+.element-inspector__layers-region {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.element-inspector__properties-scroll::-webkit-scrollbar,
+.element-inspector__layers-region::-webkit-scrollbar {
+  display: none;
+}
+.element-inspector__properties-scroll {
+  box-sizing: border-box;
+  height: 100%;
+  align-content: start;
+  overflow-y: auto;
+  padding: 1rem;
+}
+.element-inspector__properties-scroll .text-inspector,
+.element-inspector__properties-scroll .image-inspector {
+  margin: 0;
+}
+.element-inspector__layers-region {
+  overflow-y: auto;
+  padding: 0 1rem 1.15rem;
+}
+.element-inspector__layers-region .layers-panel {
+  margin: 0;
+  padding: 1.15rem 0 0;
+}
+@media (max-height: 760px) {
+  .element-inspector:has(.layers-panel) {
+    grid-template-rows: 3.6rem minmax(15rem, 38%) minmax(0, 1fr);
+  }
+}
+
+/* Keep primary element actions reachable within the independently scrolling properties region. */
+.element-inspector__properties-scroll .text-inspector-actions,
+.element-inspector__properties-scroll .image-inspector-actions {
+  position: sticky;
+  bottom: -1rem;
+  z-index: 1;
+  padding: 0.75rem 0 1rem;
+  background: linear-gradient(180deg, rgb(15 39 44 / 0%), #0f272c 34%);
 }

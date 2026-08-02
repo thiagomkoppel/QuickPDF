@@ -577,7 +577,7 @@ test("selects text with one click and edits text only through explicit edit acti
     .getByLabel("Text element content")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(resizedText.width).toBeGreaterThan(beforeResize.width + 20);
-  expect(resizedFontSize).toBeGreaterThan(beforeFontSize + 2);
+  expect(resizedFontSize).toBeCloseTo(beforeFontSize, 1);
 
   await page.getByRole("button", { name: "Undo" }).click();
   await expect

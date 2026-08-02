@@ -224,6 +224,19 @@ Unselected overlays have no decorative border.
 
 Selected overlays display editor-only selection UI that is never exported.
 
+## Layers
+
+The right inspector always includes a page-specific Layer section while a document is open, independent of element selection. When no overlay is selected, the properties region shows document metadata while the current page layer list remains available.
+
+For selected overlays, the inspector keeps tabs, element properties, and layers in separate fixed vertical regions. Property controls and layer rows scroll independently, so switching element types or tabs never shifts the Layers header.
+
+- The top row is frontmost; lower rows render behind it.
+
+- Bring to front, Move up, Move down, Send to back, and drag-and-drop use the same committed layer-order command.
+- Reordering updates the canvas immediately, is undoable and redoable, and exports in the identical back-to-front drawing order.
+- New, duplicated, and pasted overlays are inserted at the front of the current page stack.
+- Layer order is session-only and never persists outside the active browser session.
+
 ## Move and resize
 
 - pointer gestures preview live;
@@ -231,7 +244,7 @@ Selected overlays display editor-only selection UI that is never exported.
 - Escape or pointer cancellation restores the starting state;
 - no-op gestures create no history;
 - selection remains after move/resize;
-- text corner resize scales font size proportionally;
+- text corner resize changes only the user-controlled bounds; font size changes only through the Style tab;
 - images preserve aspect ratio during inspector and corner-handle resize;
 - signatures and initials keep their current resize behavior;
 - checkmarks and crosses preserve aspect ratio with corner handles;

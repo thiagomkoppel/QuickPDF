@@ -454,7 +454,8 @@ interface HistoryEntry {
     | "duplicate-element"
     | "paste-element"
     | "update-element"
-    | "update-text";
+    | "update-text"
+    | "reorder-layers";
   readonly before: HistoryState;
   readonly after: HistoryState;
   readonly beforeRevision: number;
@@ -1047,6 +1048,45 @@ export class PdfEditorApplication {
     });
   }
 
+  public reorderCurrentPageLayers(elementId: string, targetIndex: number): EditorSnapshot {
+    const session = this.#session;
+    const pageId = session?.currentPageId;
+    if (session === undefined || pageId === undefined || !Number.isInteger(targetIndex)) {
+      return this.#operationError("OperationRejected", "The layer order could not be updated.");
+    }
+    const frontToBack = session
+      .elements()
+      .filter((element) => element.pageId === pageId)
+      .reverse();
+    const currentIndex = frontToBack.findIndex((element) => element.id === elementId);
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= frontToBack.length) {
+      return this.#operationError("MissingElement", "The layer no longer exists on this page.");
+    }
+    const nextFrontToBack = [...frontToBack];
+    const [element] = nextFrontToBack.splice(currentIndex, 1);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The layer no longer exists on this page.");
+    }
+    nextFrontToBack.splice(targetIndex, 0, element);
+    if (nextFrontToBack.every((candidate, index) => candidate.id === frontToBack[index]?.id)) {
+      return this.snapshot();
+    }
+    const before = this.#currentHistoryState(session.selectedElementId);
+    const result = session.reorderPageElements(
+      pageId,
+      nextFrontToBack.map((candidate) => candidate.id).reverse(),
+    );
+    if (!result.ok) {
+      return this.#operationError("OperationRejected", "The layer order could not be updated.");
+    }
+    this.#recordHistory(
+      "reorder-layers",
+      before,
+      this.#currentHistoryState(session.selectedElementId),
+    );
+    this.#syncState();
+    return this.snapshot();
+  }
   public deleteElement(elementId: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
     if (element === undefined) {
@@ -1457,18 +1497,11 @@ export class PdfEditorApplication {
   }
 
   #orderedExportElements(): readonly ExportElement[] {
-    const elements = this.#session?.elements().map(toExportElement) ?? [];
-    return [
-      ...elements.filter((element) => element.type === "whiteout"),
-      ...elements.filter((element) => element.type === "signature" || element.type === "initials"),
-      ...elements.filter((element) => element.type === "image" && element.image !== undefined),
-      ...elements.filter((element) => element.type === "checkmark" || element.type === "cross"),
-      ...elements.filter(
-        (element) =>
-          (element.type === "text" || element.type === "date") &&
-          (element.text ?? "").trim().length > 0,
-      ),
-    ];
+    return (this.#session?.elements().map(toExportElement) ?? []).filter(
+      (element) =>
+        (element.type !== "text" && element.type !== "date") ||
+        (element.text ?? "").trim().length > 0,
+    );
   }
 
   #constrainBounds(bounds: Bounds): Bounds {

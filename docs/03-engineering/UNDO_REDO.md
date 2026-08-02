@@ -25,6 +25,7 @@ The initial implementation covers:
 | Paste overlay         | Yes  | Yes  |
 | Move an element       | Yes  | Yes  |
 | Resize an element     | Yes  | Yes  |
+| Reorder page layers   | Yes  | Yes  |
 | Duplicate an element  | Yes  | Yes  |
 | Delete an element     | Yes  | Yes  |
 

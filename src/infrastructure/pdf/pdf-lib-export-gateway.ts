@@ -42,8 +42,6 @@ const pageNumberFromPageId = (pageId: string): number | undefined => {
   return Number.parseInt(match[1] ?? "", 10);
 };
 
-const lineHeight = (fontSize: number): number => fontSize * 1.2;
-
 const dataUrlBytes = (dataUrl: string): Uint8Array => {
   const base64 = dataUrl.split(",")[1];
   if (base64 === undefined) {
@@ -203,15 +201,40 @@ export class PdfLibExportGateway implements PdfExportGateway {
       page: { width: page.getWidth(), height: page.getHeight() },
       fontSize,
     });
+    const appearance = element.textAppearance;
+    const characterSpacing = appearance?.letterSpacing ?? 0;
+    const resolvedLineHeight = fontSize * (appearance?.lineHeight ?? 1.2);
+    const alignment = appearance?.alignment ?? "left";
+    const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
     const lines = text.split(/\r?\n/);
     lines.forEach((line, index) => {
-      page.drawText(line, {
-        x: start.x,
-        y: start.y - lineHeight(fontSize) * index,
-        size: fontSize,
-        font: activeFont,
-        color: rgb(colorParts.red, colorParts.green, colorParts.blue),
-      });
+      const lineWidth =
+        activeFont.widthOfTextAtSize(line, fontSize) +
+        Math.max(0, line.length - 1) * characterSpacing;
+      const x =
+        alignment === "center"
+          ? start.x + (element.bounds.width - lineWidth) / 2
+          : alignment === "right"
+            ? start.x + element.bounds.width - lineWidth
+            : start.x;
+      const y = start.y - resolvedLineHeight * index;
+      if (characterSpacing === 0) {
+        page.drawText(line, { x, y, size: fontSize, font: activeFont, color });
+      } else {
+        let characterX = x;
+        for (const character of line) {
+          page.drawText(character, { x: characterX, y, size: fontSize, font: activeFont, color });
+          characterX += activeFont.widthOfTextAtSize(character, fontSize) + characterSpacing;
+        }
+      }
+      if (appearance?.underline && line.length > 0) {
+        page.drawLine({
+          start: { x, y: y - Math.max(1, fontSize * 0.12) },
+          end: { x: x + lineWidth, y: y - Math.max(1, fontSize * 0.12) },
+          color,
+          thickness: Math.max(0.75, fontSize * 0.055),
+        });
+      }
     });
   }
 }

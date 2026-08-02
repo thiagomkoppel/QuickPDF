@@ -177,6 +177,30 @@ describe("PdfEditorApplication export", () => {
       expect(app.redo().state.selectedElement?.color).toBe("#c62828");
     },
   );
+  it("resizes text bounds without changing the Style-tab font size", () => {
+    const added = app.addText({ x: 10, y: 20 }, "Fixed text");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) {
+      return;
+    }
+
+    app.updateTextFontSize(elementId, 24);
+    const resized = app.commitResizeElement(
+      elementId,
+      { x: 10, y: 20, width: 160, height: 40 },
+      { x: 10, y: 20, width: 240, height: 80 },
+    );
+    expect(resized.state.selectedElement).toMatchObject({
+      bounds: { x: 10, y: 20, width: 240, height: 80 },
+      textAppearance: { fontSize: 24 },
+    });
+
+    expect(app.undo().state.selectedElement).toMatchObject({
+      bounds: { x: 10, y: 20, width: 160, height: 40 },
+      textAppearance: { fontSize: 24 },
+    });
+  });
   it("keeps color history intact after coalesced text edits", () => {
     const added = app.addText({ x: 10, y: 20 }, "Original");
     const elementId = added.state.selectedElementId;
@@ -288,6 +312,42 @@ describe("PdfEditorApplication export", () => {
     expect(app.redo().state.selectedElement).toMatchObject({ color: "#c62828" });
   });
 
+  it("reorders current-page layers through history and exports the same back-to-front order", async () => {
+    const text = app.addText({ x: 10, y: 20 }, "Text").state.selectedElementId;
+    const whiteout = app.addWhiteout({ x: 30, y: 40, width: 80, height: 40 }).state
+      .selectedElementId;
+    const checkmark = app.addCheckmark({ x: 50, y: 60 }).state.selectedElementId;
+    expect(text).toBeDefined();
+    expect(whiteout).toBeDefined();
+    expect(checkmark).toBeDefined();
+    if (text === undefined || whiteout === undefined || checkmark === undefined) {
+      return;
+    }
+
+    const reordered = app.reorderCurrentPageLayers(text, 0);
+    expect(reordered.state.visibleElements.map((element) => element.id)).toEqual([
+      whiteout,
+      checkmark,
+      text,
+    ]);
+    expect(app.undo().state.visibleElements.map((element) => element.id)).toEqual([
+      text,
+      whiteout,
+      checkmark,
+    ]);
+    expect(app.redo().state.visibleElements.map((element) => element.id)).toEqual([
+      whiteout,
+      checkmark,
+      text,
+    ]);
+
+    await app.exportCurrentPdf();
+    expect(exportRequests.at(-1)?.elements.map((element) => element.id)).toEqual([
+      whiteout,
+      checkmark,
+      text,
+    ]);
+  });
   it("supports at least fifteen consecutive committed geometry changes with undo and redo", () => {
     const added = app.addCheckmark({ x: 10, y: 20 });
     const elementId = added.state.selectedElementId;
@@ -1166,9 +1226,9 @@ describe("PdfEditorApplication signature and initials overlays", () => {
     expect(exportRequests[0]?.elements.map((element) => element.type)).toEqual([
       "checkmark",
       "cross",
+      "date",
+      "date",
       "checkmark",
-      "date",
-      "date",
     ]);
     expect(exportRequests[0]?.elements.find((element) => element.type === "date")?.text).toBe(
       "07/31/2026",

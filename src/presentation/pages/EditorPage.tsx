@@ -316,8 +316,7 @@ const aspectRatioResizePreviewBounds = (
   };
 };
 
-const isTextResizeType = (type: ExportElement["type"]): boolean =>
-  type === "text" || type === "date";
+const isTextResizeType = (type: ExportElement["type"]): boolean => type === "date";
 
 const usesLocalVisualResizePreview = (type: ExportElement["type"]): boolean =>
   type === "image" || type === "checkmark" || type === "cross" || type === "date";
@@ -386,6 +385,129 @@ const elementLabel = (element: ExportElement): string => {
   }
 };
 
+interface LayersPanelProps {
+  readonly layers: readonly ExportElement[];
+  readonly selectedElementId?: string | undefined;
+  readonly onSelect: (elementId: string) => void;
+  readonly onReorder: (elementId: string, targetIndex: number) => void;
+}
+
+const LayersPanel = ({ layers, selectedElementId, onSelect, onReorder }: LayersPanelProps) => {
+  const [draggedLayerId, setDraggedLayerId] = useState<string | undefined>();
+  const selectedIndex = layers.findIndex((element) => element.id === selectedElementId);
+
+  return (
+    <div className="element-inspector__layers-region" data-testid="inspector-layers-region">
+      <section className="layers-panel" aria-label="Layers">
+        <h2>Layer</h2>
+        <div className="layers-panel-header">
+          <div>
+            <h3>Order</h3>
+            <p>Top items appear in front of bottom items.</p>
+          </div>
+          <div className="layers-order-actions" aria-label="Layer order controls">
+            {[
+              ["Bring to front", 0],
+              ["Move up", -1],
+              ["Move down", 1],
+              ["Send to back", layers.length - 1],
+            ].map(([label, value]) => {
+              const targetIndex =
+                typeof value === "number" && value >= 0
+                  ? value
+                  : Math.min(layers.length - 1, Math.max(0, selectedIndex + Number(value)));
+              return (
+                <button
+                  key={String(label)}
+                  type="button"
+                  aria-label={String(label)}
+                  disabled={selectedIndex < 0 || selectedIndex === targetIndex}
+                  onClick={() => {
+                    if (selectedElementId !== undefined) {
+                      onReorder(selectedElementId, targetIndex);
+                    }
+                  }}
+                >
+                  {label === "Bring to front"
+                    ? "\u21c8"
+                    : label === "Move up"
+                      ? "\u2303"
+                      : label === "Move down"
+                        ? "\u2304"
+                        : "\u21ca"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <ol className="layers-list">
+          {layers.map((element, index) => (
+            <li
+              key={element.id}
+              className={element.id === selectedElementId ? "is-selected" : undefined}
+              draggable
+              onDragStart={() => {
+                setDraggedLayerId(element.id);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (draggedLayerId !== undefined) {
+                  onReorder(draggedLayerId, index);
+                }
+                setDraggedLayerId(undefined);
+              }}
+              onDragEnd={() => {
+                setDraggedLayerId(undefined);
+              }}
+            >
+              <button
+                type="button"
+                className="layer-row-select"
+                aria-label={`${elementLabel(element)} layer`}
+                onClick={() => {
+                  onSelect(element.id);
+                }}
+              >
+                <span className="layer-row-grip" aria-hidden="true">
+                  {"\u22ee\u22ee"}
+                </span>
+                <span className="layer-row-icon" aria-hidden="true">
+                  {element.type === "text" || element.type === "date"
+                    ? "T"
+                    : element.type === "checkmark"
+                      ? "\u2713"
+                      : element.type === "cross"
+                        ? "\u00d7"
+                        : "\u25eb"}
+                </span>
+                <span className="layer-row-copy">
+                  <strong>{element.text?.split(/\r?\n/)[0] ?? elementLabel(element)}</strong>
+                  <small>{elementLabel(element)}</small>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        <h3 className="layers-actions-heading">Layer Actions</h3>
+        <div className="layers-bulk-actions">
+          <button type="button" disabled>
+            Hide All
+          </button>
+          <button type="button" disabled>
+            Lock All
+          </button>
+        </div>
+        <div className="layers-help">
+          <strong>How layers work</strong>
+          <p>Items higher in the list appear in front. Drag and drop to reorder layers.</p>
+        </div>
+      </section>
+    </div>
+  );
+};
 interface OptionalPointerCaptureTarget {
   readonly hasPointerCapture?: (pointerId: number) => boolean;
   readonly setPointerCapture?: (pointerId: number) => void;
@@ -543,6 +665,7 @@ export const EditorPage = ({
   const currentPageWidth = currentPage?.width;
   const currentPageHeight = currentPage?.height;
   const currentPageRotation = currentPage?.rotation;
+  const currentPageLayers = [...state.visibleElements].reverse();
   const editorViewportRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -958,7 +1081,8 @@ export const EditorPage = ({
       if (
         state.selectedElementId !== undefined &&
         event.key === "Enter" &&
-        state.selectedElement?.type === "text"
+        !isEditingKeyboardTarget(event.target) &&
+        (state.selectedElement?.type === "text" || state.selectedElement?.type === "date")
       ) {
         event.preventDefault();
         setEditingTextElementId(state.selectedElementId);
@@ -2006,9 +2130,11 @@ export const EditorPage = ({
                       role="group"
                       aria-label={`${element.type} element`}
                       aria-description={
-                        element.type === "text" ? "Press Enter to edit selected text." : undefined
+                        element.type === "text" || element.type === "date"
+                          ? "Press Enter to edit selected text."
+                          : undefined
                       }
-                      tabIndex={element.type === "text" ? 0 : undefined}
+                      tabIndex={element.type === "text" || element.type === "date" ? 0 : undefined}
                       onPointerDown={(event) => {
                         startElementMove(element, event);
                       }}
@@ -2018,8 +2144,9 @@ export const EditorPage = ({
                         }
                       }}
                     >
+                      {" "}
                       {element.type === "text" || element.type === "date" ? (
-                        element.type === "text" && editingTextElementId === element.id ? (
+                        editingTextElementId === element.id ? (
                           <textarea
                             ref={setEditingTextArea}
                             aria-label="Edit text element"
@@ -2057,6 +2184,7 @@ export const EditorPage = ({
                           <div
                             className="text-element-display"
                             aria-label="Text element content"
+
                             style={{
                               color:
                                 colorPreviewByElementId.get(element.id) ??
@@ -2158,29 +2286,44 @@ export const EditorPage = ({
 
         <aside className="element-inspector" aria-label="Selected element actions">
           {selectedElement === undefined ? (
-            <div className="document-inspector">
-              <strong>Document</strong>
-              <p>{state.fileName ?? "Local PDF"}</p>
-              <dl>
-                <div>
-                  <dt>Pages</dt>
-                  <dd>{String(state.pageCount)}</dd>
+            <>
+              <div
+                className="element-inspector__tabs-region"
+                data-testid="inspector-tabs-region"
+                aria-hidden="true"
+              />
+              <div
+                className="element-inspector__properties-region"
+                data-testid="inspector-properties-region"
+              >
+                <div className="element-inspector__properties-scroll">
+                  <div className="document-inspector">
+                    <p>{state.fileName ?? "Local PDF"}</p>
+                    <dl>
+                      <div>
+                        <dt>Pages</dt>
+                        <dd>{String(state.pageCount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Current page</dt>
+                        <dd>{String(state.currentPageNumber)}</dd>
+                      </div>
+                      <div>
+                        <dt>Zoom</dt>
+                        <dd>{`${String(Math.round(zoom * 100))}%`}</dd>
+                      </div>
+                    </dl>
+                    <p className="document-inspector-hint">
+                      Select an element to edit its properties.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <dt>Current page</dt>
-                  <dd>{String(state.currentPageNumber)}</dd>
-                </div>
-                <div>
-                  <dt>Zoom</dt>
-                  <dd>{`${String(Math.round(zoom * 100))}%`}</dd>
-                </div>
-              </dl>
-              <p className="document-inspector-hint">Select an element to edit its properties.</p>
-            </div>
+              </div>
+            </>
           ) : (
             <>
-              {selectedElement.type === "text" || selectedElement.type === "date" ? (
-                <section className="text-inspector" aria-label="Text properties">
+              <div className="element-inspector__tabs-region" data-testid="inspector-tabs-region">
+                {selectedElement.type === "text" || selectedElement.type === "date" ? (
                   <div
                     className="text-inspector-tabs"
                     role="tablist"
@@ -2200,245 +2343,10 @@ export const EditorPage = ({
                       </button>
                     ))}
                   </div>
-
-                  {textInspectorTab === "text" ? (
-                    <>
-                      <label className="text-inspector-content">
-                        Content
-                        <textarea
-                          aria-label="Text content"
-                          value={selectedElement.text ?? ""}
-                          onChange={(event) => {
-                            applySnapshot(
-                              editor.updateText(selectedElement.id, event.currentTarget.value),
-                            );
-                          }}
-                        />
-                      </label>{" "}
-                      <div className="text-inspector-actions">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            applySnapshot(editor.duplicateElement(selectedElement.id));
-                          }}
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          type="button"
-                          className="text-inspector-delete"
-                          onClick={() => {
-                            applySnapshot(editor.deleteElement(selectedElement.id));
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </>
-                  ) : null}
-
-                  {textInspectorTab === "style" ? (
-                    <>
-                      <label>
-                        Font
-                        <select
-                          aria-label="Text font"
-                          value={selectedElement.textAppearance?.fontFamily ?? "Helvetica"}
-                          onChange={(event) => {
-                            applySnapshot(
-                              editor.updateTextAppearance(selectedElement.id, {
-                                fontFamily: event.currentTarget.value,
-                              }),
-                            );
-                          }}
-                        >
-                          <option>Helvetica</option>
-                          <option>Times Roman</option>
-                          <option>Arial</option>
-                          <option>Georgia</option>
-                          <option>Courier</option>
-                        </select>
-                      </label>
-
-                      <div className="text-inspector-size-row">
-                        <label>
-                          Size
-                          <select
-                            aria-label="Text font size"
-                            value={selectedElement.textAppearance?.fontSize ?? 16}
-                            onChange={(event) => {
-                              const fontSize = Number(event.currentTarget.value);
-                              if (!Number.isFinite(fontSize) || fontSize <= 0) {
-                                return;
-                              }
-                              applySnapshot(
-                                editor.updateTextFontSize(selectedElement.id, fontSize),
-                              );
-                            }}
-                          >
-                            {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].map(
-                              (size) => (
-                                <option key={size} value={size}>
-                                  {size}
-                                </option>
-                              ),
-                            )}
-                          </select>
-                        </label>
-                        <div className="text-inspector-toggle-group" aria-label="Text emphasis">
-                          <button
-                            type="button"
-                            aria-label="Bold"
-                            aria-pressed={selectedElement.textAppearance?.bold ?? false}
-                            onClick={() => {
-                              applySnapshot(
-                                editor.updateTextAppearance(selectedElement.id, {
-                                  bold: !(selectedElement.textAppearance?.bold ?? false),
-                                }),
-                              );
-                            }}
-                          >
-                            B
-                          </button>
-                          <button
-                            type="button"
-                            className="text-inspector-italic"
-                            aria-label="Italic"
-                            aria-pressed={selectedElement.textAppearance?.italic ?? false}
-                            onClick={() => {
-                              applySnapshot(
-                                editor.updateTextAppearance(selectedElement.id, {
-                                  italic: !(selectedElement.textAppearance?.italic ?? false),
-                                }),
-                              );
-                            }}
-                          >
-                            I
-                          </button>
-                          <button
-                            type="button"
-                            className="text-inspector-underline"
-                            aria-label="Underline"
-                            aria-pressed={selectedElement.textAppearance?.underline ?? false}
-                            onClick={() => {
-                              applySnapshot(
-                                editor.updateTextAppearance(selectedElement.id, {
-                                  underline: !(selectedElement.textAppearance?.underline ?? false),
-                                }),
-                              );
-                            }}
-                          >
-                            U
-                          </button>
-                        </div>
-                      </div>
-
-                      <label className="text-inspector-color">
-                        Color
-                        <ReleaseColorInput
-                          ariaLabel="Text color"
-                          value={
-                            colorPreviewByElementId.get(selectedElement.id) ??
-                            selectedElement.color ??
-                            "#000000"
-                          }
-                          onPreview={(color) => {
-                            handleColorPreview(selectedElement.id, color);
-                          }}
-                          onCommit={(color) => {
-                            handleColorCommit(selectedElement.id, color);
-                          }}
-                        />
-                      </label>
-
-                      <div className="text-inspector-alignment">
-                        <span>Alignment</span>
-                        <div className="text-inspector-toggle-group" aria-label="Text alignment">
-                          {(
-                            [
-                              ["left", "Align left", "\u2261"],
-                              ["center", "Align center", "\u2261"],
-                              ["right", "Align right", "\u2261"],
-                            ] as const
-                          ).map(([alignment, label, icon]) => (
-                            <button
-                              key={alignment}
-                              type="button"
-                              className={`text-inspector-align-${alignment}`}
-                              aria-label={label}
-                              aria-pressed={
-                                (selectedElement.textAppearance?.alignment ?? "left") === alignment
-                              }
-                              onClick={() => {
-                                applySnapshot(
-                                  editor.updateTextAppearance(selectedElement.id, { alignment }),
-                                );
-                              }}
-                            >
-                              {icon}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <label className="text-inspector-inline-field">
-                        Line Height
-                        <select
-                          aria-label="Line height"
-                          value={selectedElement.textAppearance?.lineHeight ?? 1.2}
-                          onChange={(event) => {
-                            applySnapshot(
-                              editor.updateTextAppearance(selectedElement.id, {
-                                lineHeight: Number(event.currentTarget.value),
-                              }),
-                            );
-                          }}
-                        >
-                          <option value="1">1.00</option>
-                          <option value="1.2">1.20</option>
-                          <option value="1.5">1.50</option>
-                          <option value="2">2.00</option>
-                        </select>
-                      </label>
-
-                      <label className="text-inspector-inline-field">
-                        Letter Spacing
-                        <select
-                          aria-label="Letter spacing"
-                          value={selectedElement.textAppearance?.letterSpacing ?? 0}
-                          onChange={(event) => {
-                            applySnapshot(
-                              editor.updateTextAppearance(selectedElement.id, {
-                                letterSpacing: Number(event.currentTarget.value),
-                              }),
-                            );
-                          }}
-                        >
-                          <option value="-0.5">-0.5</option>
-                          <option value="0">0</option>
-                          <option value="0.5">0.5</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                        </select>
-                      </label>
-                    </>
-                  ) : null}
-
-                  {textInspectorTab === "page" ? (
-                    <p className="text-inspector-page">
-                      This text belongs to page{" "}
-                      {String(
-                        state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
-                      )}
-                      .
-                    </p>
-                  ) : null}
-                </section>
-              ) : null}
-              {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
-                selectedElement.type,
-              ) ? (
-                <section className="image-inspector" aria-label="Image properties">
+                ) : null}
+                {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
+                  selectedElement.type,
+                ) ? (
                   <div
                     className="text-inspector-tabs"
                     role="tablist"
@@ -2465,149 +2373,421 @@ export const EditorPage = ({
                       </button>
                     ))}
                   </div>
-                  {imageInspectorTab === "text" ? (
-                    <>
-                      <div className="image-inspector-preview">
-                        {selectedElement.image !== undefined ? (
-                          <img src={selectedElement.image.dataUrl} alt="Selected element preview" />
-                        ) : (
-                          <span
-                            className={`element-inspector-symbol element-inspector-symbol-${selectedElement.type}`}
-                          >
-                            {selectedElement.type === "checkmark"
-                              ? "✓"
-                              : selectedElement.type === "cross"
-                                ? "×"
-                                : selectedElement.type === "whiteout"
-                                  ? "Whiteout"
-                                  : (selectedElement.text ?? elementLabel(selectedElement))}
-                          </span>
-                        )}
-                      </div>
-                      <dl className="image-inspector-metadata">
-                        <div>
-                          <dt>Format</dt>
-                          <dd>
-                            {selectedElement.image === undefined
-                              ? "Overlay"
-                              : selectedElement.image.mimeType === "image/png"
-                                ? "PNG"
-                                : "JPG"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Original size</dt>
-                          <dd>{`${String(Math.round(selectedElement.bounds.width))} × ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
-                        </div>
-                        <div>
-                          <dt>Page</dt>
-                          <dd>
-                            {String(
-                              state.pages.findIndex((page) => page.id === selectedElement.pageId) +
-                                1,
-                            )}
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  ) : null}
-                  {imageInspectorTab === "style" ? (
-                    <>
-                      <div className="image-inspector-size">
-                        <label>
-                          Width
-                          <input
-                            aria-label="Image width"
-                            type="number"
-                            min="16"
-                            value={Math.round(selectedElement.bounds.width)}
-                            onChange={(event) => {
-                              const width = event.currentTarget.valueAsNumber;
-                              if (Number.isFinite(width))
+                ) : null}
+              </div>
+              <div
+                className="element-inspector__properties-region"
+                data-testid="inspector-properties-region"
+              >
+                <div className="element-inspector__properties-scroll">
+                  {selectedElement.type === "text" || selectedElement.type === "date" ? (
+                    <section className="text-inspector" aria-label="Text properties">
+                      {textInspectorTab === "text" ? (
+                        <>
+                          <label className="text-inspector-content">
+                            Content
+                            <textarea
+                              aria-label="Text content"
+                              value={selectedElement.text ?? ""}
+                              onChange={(event) => {
                                 applySnapshot(
-                                  editor.resizeElement(selectedElement.id, {
-                                    width,
-                                    height: selectedElement.bounds.height,
-                                  }),
+                                  editor.updateText(selectedElement.id, event.currentTarget.value),
                                 );
-                            }}
-                          />
-                        </label>
-                        <label>
-                          Height
-                          <input
-                            aria-label="Image height"
-                            type="number"
-                            min="16"
-                            value={Math.round(selectedElement.bounds.height)}
-                            onChange={(event) => {
-                              const height = event.currentTarget.valueAsNumber;
-                              if (Number.isFinite(height))
-                                applySnapshot(
-                                  editor.resizeElement(selectedElement.id, {
-                                    width: selectedElement.bounds.width,
-                                    height,
-                                  }),
-                                );
-                            }}
-                          />
-                        </label>
-                      </div>
-                      {selectedElement.type === "checkmark" || selectedElement.type === "cross" ? (
-                        <label className="text-inspector-color">
-                          Color
-                          <ReleaseColorInput
-                            ariaLabel={`${elementLabel(selectedElement)} color`}
-                            value={
-                              colorPreviewByElementId.get(selectedElement.id) ??
-                              selectedElement.color ??
-                              "#000000"
-                            }
-                            onPreview={(color) => {
-                              handleColorPreview(selectedElement.id, color);
-                            }}
-                            onCommit={(color) => {
-                              handleColorCommit(selectedElement.id, color);
-                            }}
-                          />
-                        </label>
+                              }}
+                            />
+                          </label>{" "}
+                          <div className="text-inspector-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                applySnapshot(editor.duplicateElement(selectedElement.id));
+                              }}
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              type="button"
+                              className="text-inspector-delete"
+                              onClick={() => {
+                                applySnapshot(editor.deleteElement(selectedElement.id));
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </>
                       ) : null}
-                    </>
+
+                      {textInspectorTab === "style" ? (
+                        <>
+                          <label>
+                            Font
+                            <select
+                              aria-label="Text font"
+                              value={selectedElement.textAppearance?.fontFamily ?? "Helvetica"}
+                              onChange={(event) => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    fontFamily: event.currentTarget.value,
+                                  }),
+                                );
+                              }}
+                            >
+                              <option>Helvetica</option>
+                              <option>Times Roman</option>
+                              <option>Arial</option>
+                              <option>Georgia</option>
+                              <option>Courier</option>
+                            </select>
+                          </label>
+
+                          <div className="text-inspector-size-row">
+                            <label>
+                              Size
+                              <select
+                                aria-label="Text font size"
+                                value={selectedElement.textAppearance?.fontSize ?? 16}
+                                onChange={(event) => {
+                                  const fontSize = Number(event.currentTarget.value);
+                                  if (!Number.isFinite(fontSize) || fontSize <= 0) {
+                                    return;
+                                  }
+                                  applySnapshot(
+                                    editor.updateTextFontSize(selectedElement.id, fontSize),
+                                  );
+                                }}
+                              >
+                                {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].map(
+                                  (size) => (
+                                    <option key={size} value={size}>
+                                      {size}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
+                            <div className="text-inspector-toggle-group" aria-label="Text emphasis">
+                              <button
+                                type="button"
+                                aria-label="Bold"
+                                aria-pressed={selectedElement.textAppearance?.bold ?? false}
+                                onClick={() => {
+                                  applySnapshot(
+                                    editor.updateTextAppearance(selectedElement.id, {
+                                      bold: !(selectedElement.textAppearance?.bold ?? false),
+                                    }),
+                                  );
+                                }}
+                              >
+                                B
+                              </button>
+                              <button
+                                type="button"
+                                className="text-inspector-italic"
+                                aria-label="Italic"
+                                aria-pressed={selectedElement.textAppearance?.italic ?? false}
+                                onClick={() => {
+                                  applySnapshot(
+                                    editor.updateTextAppearance(selectedElement.id, {
+                                      italic: !(selectedElement.textAppearance?.italic ?? false),
+                                    }),
+                                  );
+                                }}
+                              >
+                                I
+                              </button>
+                              <button
+                                type="button"
+                                className="text-inspector-underline"
+                                aria-label="Underline"
+                                aria-pressed={selectedElement.textAppearance?.underline ?? false}
+                                onClick={() => {
+                                  applySnapshot(
+                                    editor.updateTextAppearance(selectedElement.id, {
+                                      underline: !(
+                                        selectedElement.textAppearance?.underline ?? false
+                                      ),
+                                    }),
+                                  );
+                                }}
+                              >
+                                U
+                              </button>
+                            </div>
+                          </div>
+
+                          <label className="text-inspector-color">
+                            Color
+                            <ReleaseColorInput
+                              ariaLabel="Text color"
+                              value={
+                                colorPreviewByElementId.get(selectedElement.id) ??
+                                selectedElement.color ??
+                                "#000000"
+                              }
+                              onPreview={(color) => {
+                                handleColorPreview(selectedElement.id, color);
+                              }}
+                              onCommit={(color) => {
+                                handleColorCommit(selectedElement.id, color);
+                              }}
+                            />
+                          </label>
+
+                          <div className="text-inspector-alignment">
+                            <span>Alignment</span>
+                            <div
+                              className="text-inspector-toggle-group"
+                              aria-label="Text alignment"
+                            >
+                              {(
+                                [
+                                  ["left", "Align left", "\u2261"],
+                                  ["center", "Align center", "\u2261"],
+                                  ["right", "Align right", "\u2261"],
+                                ] as const
+                              ).map(([alignment, label, icon]) => (
+                                <button
+                                  key={alignment}
+                                  type="button"
+                                  className={`text-inspector-align-${alignment}`}
+                                  aria-label={label}
+                                  aria-pressed={
+                                    (selectedElement.textAppearance?.alignment ?? "left") ===
+                                    alignment
+                                  }
+                                  onClick={() => {
+                                    applySnapshot(
+                                      editor.updateTextAppearance(selectedElement.id, {
+                                        alignment,
+                                      }),
+                                    );
+                                  }}
+                                >
+                                  {icon}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <label className="text-inspector-inline-field">
+                            Line Height
+                            <select
+                              aria-label="Line height"
+                              value={selectedElement.textAppearance?.lineHeight ?? 1.2}
+                              onChange={(event) => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    lineHeight: Number(event.currentTarget.value),
+                                  }),
+                                );
+                              }}
+                            >
+                              <option value="1">1.00</option>
+                              <option value="1.2">1.20</option>
+                              <option value="1.5">1.50</option>
+                              <option value="2">2.00</option>
+                            </select>
+                          </label>
+
+                          <label className="text-inspector-inline-field">
+                            Letter Spacing
+                            <select
+                              aria-label="Letter spacing"
+                              value={selectedElement.textAppearance?.letterSpacing ?? 0}
+                              onChange={(event) => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    letterSpacing: Number(event.currentTarget.value),
+                                  }),
+                                );
+                              }}
+                            >
+                              <option value="-0.5">-0.5</option>
+                              <option value="0">0</option>
+                              <option value="0.5">0.5</option>
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                            </select>
+                          </label>
+                        </>
+                      ) : null}
+
+                      {textInspectorTab === "page" ? (
+                        <p className="text-inspector-page">
+                          This text belongs to page{" "}
+                          {String(
+                            state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
+                          )}
+                          .
+                        </p>
+                      ) : null}
+                    </section>
                   ) : null}
-                  {imageInspectorTab === "page" ? (
-                    <p className="image-inspector-page">
-                      This image belongs to page{" "}
-                      {String(
-                        state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
-                      )}
-                      .
-                    </p>
+                  {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
+                    selectedElement.type,
+                  ) ? (
+                    <section className="image-inspector" aria-label="Image properties">
+                      {imageInspectorTab === "text" ? (
+                        <>
+                          <div className="image-inspector-preview">
+                            {selectedElement.image !== undefined ? (
+                              <img
+                                src={selectedElement.image.dataUrl}
+                                alt="Selected element preview"
+                              />
+                            ) : (
+                              <span
+                                className={`element-inspector-symbol element-inspector-symbol-${selectedElement.type}`}
+                              >
+                                {selectedElement.type === "checkmark"
+                                  ? "✓"
+                                  : selectedElement.type === "cross"
+                                    ? "×"
+                                    : selectedElement.type === "whiteout"
+                                      ? "Whiteout"
+                                      : (selectedElement.text ?? elementLabel(selectedElement))}
+                              </span>
+                            )}
+                          </div>
+                          <dl className="image-inspector-metadata">
+                            <div>
+                              <dt>Format</dt>
+                              <dd>
+                                {selectedElement.image === undefined
+                                  ? "Overlay"
+                                  : selectedElement.image.mimeType === "image/png"
+                                    ? "PNG"
+                                    : "JPG"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Original size</dt>
+                              <dd>{`${String(Math.round(selectedElement.bounds.width))} × ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
+                            </div>
+                            <div>
+                              <dt>Page</dt>
+                              <dd>
+                                {String(
+                                  state.pages.findIndex(
+                                    (page) => page.id === selectedElement.pageId,
+                                  ) + 1,
+                                )}
+                              </dd>
+                            </div>
+                          </dl>
+                        </>
+                      ) : null}
+                      {imageInspectorTab === "style" ? (
+                        <>
+                          <div className="image-inspector-size">
+                            <label>
+                              Width
+                              <input
+                                aria-label="Image width"
+                                type="number"
+                                min="16"
+                                value={Math.round(selectedElement.bounds.width)}
+                                onChange={(event) => {
+                                  const width = event.currentTarget.valueAsNumber;
+                                  if (Number.isFinite(width))
+                                    applySnapshot(
+                                      editor.resizeElement(selectedElement.id, {
+                                        width,
+                                        height: selectedElement.bounds.height,
+                                      }),
+                                    );
+                                }}
+                              />
+                            </label>
+                            <label>
+                              Height
+                              <input
+                                aria-label="Image height"
+                                type="number"
+                                min="16"
+                                value={Math.round(selectedElement.bounds.height)}
+                                onChange={(event) => {
+                                  const height = event.currentTarget.valueAsNumber;
+                                  if (Number.isFinite(height))
+                                    applySnapshot(
+                                      editor.resizeElement(selectedElement.id, {
+                                        width: selectedElement.bounds.width,
+                                        height,
+                                      }),
+                                    );
+                                }}
+                              />
+                            </label>
+                          </div>
+                          {selectedElement.type === "checkmark" ||
+                          selectedElement.type === "cross" ? (
+                            <label className="text-inspector-color">
+                              Color
+                              <ReleaseColorInput
+                                ariaLabel={`${elementLabel(selectedElement)} color`}
+                                value={
+                                  colorPreviewByElementId.get(selectedElement.id) ??
+                                  selectedElement.color ??
+                                  "#000000"
+                                }
+                                onPreview={(color) => {
+                                  handleColorPreview(selectedElement.id, color);
+                                }}
+                                onCommit={(color) => {
+                                  handleColorCommit(selectedElement.id, color);
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {imageInspectorTab === "page" ? (
+                        <p className="image-inspector-page">
+                          This image belongs to page{" "}
+                          {String(
+                            state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
+                          )}
+                          .
+                        </p>
+                      ) : null}
+                      {imageInspectorTab === "text" ? (
+                        <div className="image-inspector-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              applySnapshot(editor.duplicateElement(selectedElement.id));
+                            }}
+                          >
+                            Duplicate
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="text-inspector-delete"
+                            onClick={() => {
+                              applySnapshot(editor.deleteElement(selectedElement.id));
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : null}
+                    </section>
                   ) : null}
-                  {imageInspectorTab === "text" ? (
-                    <div className="image-inspector-actions">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          applySnapshot(editor.duplicateElement(selectedElement.id));
-                        }}
-                      >
-                        Duplicate
-                      </button>{" "}
-                      <button
-                        type="button"
-                        className="text-inspector-delete"
-                        onClick={() => {
-                          applySnapshot(editor.deleteElement(selectedElement.id));
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}{" "}
+                </div>
+              </div>
             </>
           )}
+          <LayersPanel
+            layers={currentPageLayers}
+            selectedElementId={selectedElement?.id}
+            onSelect={(elementId) => {
+              applySnapshot(editor.selectElement(elementId));
+            }}
+            onReorder={(elementId, targetIndex) => {
+              applySnapshot(editor.reorderCurrentPageLayers(elementId, targetIndex));
+            }}
+          />
         </aside>
       </div>
 
