@@ -96,6 +96,10 @@ Defines user-facing Undo/Redo behavior, shortcuts, toolbar states, supported ope
 
 Defines the local-only privacy promise and prohibited transmission or persistence of document data.
 
+### `PRIVACY_POLICY.md`
+
+Defines the public policy language for the browser-local implementation, session lifetime, local exports, hosting metadata, and whiteout limitation.
+
 ### `04-security/FILE_SECURITY.md`
 
 Defines safe file validation, browser-memory handling, download behavior, and resource cleanup.

@@ -1,4 +1,7 @@
+import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+
+import patrickHandFontDataUrl from "../../presentation/assets/fonts/PatrickHand-Regular.ttf?inline";
 
 import type {
   ExportElement,
@@ -26,7 +29,7 @@ const openFailure = (message: string): PdfOpenResult => ({
 const parseHexColor = (
   value: string | undefined,
 ): { readonly red: number; readonly green: number; readonly blue: number } => {
-  const normalized = value?.match(/^#?([0-9a-fA-F]{6})$/)?.[1] ?? "111111";
+  const normalized = value?.match(/^#?([0-9a-fA-F]{6})$/)?.[1] ?? "000000";
   return {
     red: Number.parseInt(normalized.slice(0, 2), 16) / 255,
     green: Number.parseInt(normalized.slice(2, 4), 16) / 255,
@@ -42,8 +45,6 @@ const pageNumberFromPageId = (pageId: string): number | undefined => {
   return Number.parseInt(match[1] ?? "", 10);
 };
 
-const lineHeight = (fontSize: number): number => fontSize * 1.2;
-
 const dataUrlBytes = (dataUrl: string): Uint8Array => {
   const base64 = dataUrl.split(",")[1];
   if (base64 === undefined) {
@@ -53,14 +54,32 @@ const dataUrlBytes = (dataUrl: string): Uint8Array => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFFont): PDFFont =>
-  element.type === "signature" || element.type === "initials" ? cursive : fallback;
+const PATRICK_HAND_FONT_FAMILY = "Patrick Hand";
+
+const patrickHandFontBytes = (): Uint8Array => dataUrlBytes(patrickHandFontDataUrl);
+
+const fontForElement = (
+  element: ExportElement,
+  fallback: PDFFont,
+  cursive: PDFFont,
+  patrickHand: PDFFont | undefined,
+): PDFFont => {
+  if (element.type === "signature" || element.type === "initials") {
+    return cursive;
+  }
+  return element.textAppearance?.fontFamily === PATRICK_HAND_FONT_FAMILY &&
+    patrickHand !== undefined
+    ? patrickHand
+    : fallback;
+};
 const drawCheckmark = (
   page: PDFPage,
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  _hex = "#000000",
 ): void => {
   const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
-  const color = rgb(0.05, 0.42, 0.18);
+  const colorParts = parseHexColor(_hex);
+  const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
   page.drawLine({
     start: { x: rect.x + rect.width * 0.16, y: rect.y + rect.height * 0.46 },
     end: { x: rect.x + rect.width * 0.4, y: rect.y + rect.height * 0.2 },
@@ -78,9 +97,11 @@ const drawCheckmark = (
 const drawCross = (
   page: PDFPage,
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  _hex = "#000000",
 ): void => {
   const thickness = Math.max(2, Math.min(rect.width, rect.height) * 0.12);
-  const color = rgb(0.72, 0.08, 0.08);
+  const colorParts = parseHexColor(_hex);
+  const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
   page.drawLine({
     start: { x: rect.x + rect.width * 0.18, y: rect.y + rect.height * 0.18 },
     end: { x: rect.x + rect.width * 0.82, y: rect.y + rect.height * 0.82 },
@@ -116,8 +137,17 @@ export class PdfLibExportGateway implements PdfExportGateway {
       const document = await PDFDocument.load(request.originalBytes, { ignoreEncryption: false });
       const font = await document.embedFont(StandardFonts.Helvetica);
       const signatureFont = await document.embedFont(StandardFonts.TimesRomanItalic);
+      const usesPatrickHand = request.elements.some(
+        (element) => element.textAppearance?.fontFamily === PATRICK_HAND_FONT_FAMILY,
+      );
+      const patrickHand = usesPatrickHand
+        ? await (async (): Promise<PDFFont> => {
+            document.registerFontkit(fontkit);
+            return document.embedFont(patrickHandFontBytes());
+          })()
+        : undefined;
       for (const element of request.elements) {
-        await this.#drawElement(document, element, font, signatureFont);
+        await this.#drawElement(document, element, font, signatureFont, patrickHand);
       }
       const bytes = await document.save();
       return { ok: true, bytes };
@@ -131,6 +161,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     element: ExportElement,
     font: PDFFont,
     signatureFont: PDFFont,
+    patrickHand: PDFFont | undefined,
   ): Promise<void> {
     const pageNumber = pageNumberFromPageId(element.pageId);
     if (pageNumber === undefined) {
@@ -162,9 +193,9 @@ export class PdfLibExportGateway implements PdfExportGateway {
         height: page.getHeight(),
       });
       if (element.type === "checkmark") {
-        drawCheckmark(page, rect);
+        drawCheckmark(page, rect, element.color);
       } else {
-        drawCross(page, rect);
+        drawCross(page, rect, element.color);
       }
       return;
     }
@@ -193,21 +224,46 @@ export class PdfLibExportGateway implements PdfExportGateway {
     }
     const fontSize = element.textAppearance?.fontSize ?? 16;
     const colorParts = parseHexColor(element.textAppearance?.color);
-    const activeFont = fontForElement(element, font, signatureFont);
+    const activeFont = fontForElement(element, font, signatureFont, patrickHand);
     const start = pageTopLeftTextToPdfPoint({
       bounds: element.bounds,
       page: { width: page.getWidth(), height: page.getHeight() },
       fontSize,
     });
+    const appearance = element.textAppearance;
+    const characterSpacing = appearance?.letterSpacing ?? 0;
+    const resolvedLineHeight = fontSize * (appearance?.lineHeight ?? 1.2);
+    const alignment = appearance?.alignment ?? "left";
+    const color = rgb(colorParts.red, colorParts.green, colorParts.blue);
     const lines = text.split(/\r?\n/);
     lines.forEach((line, index) => {
-      page.drawText(line, {
-        x: start.x,
-        y: start.y - lineHeight(fontSize) * index,
-        size: fontSize,
-        font: activeFont,
-        color: rgb(colorParts.red, colorParts.green, colorParts.blue),
-      });
+      const lineWidth =
+        activeFont.widthOfTextAtSize(line, fontSize) +
+        Math.max(0, line.length - 1) * characterSpacing;
+      const x =
+        alignment === "center"
+          ? start.x + (element.bounds.width - lineWidth) / 2
+          : alignment === "right"
+            ? start.x + element.bounds.width - lineWidth
+            : start.x;
+      const y = start.y - resolvedLineHeight * index;
+      if (characterSpacing === 0) {
+        page.drawText(line, { x, y, size: fontSize, font: activeFont, color });
+      } else {
+        let characterX = x;
+        for (const character of line) {
+          page.drawText(character, { x: characterX, y, size: fontSize, font: activeFont, color });
+          characterX += activeFont.widthOfTextAtSize(character, fontSize) + characterSpacing;
+        }
+      }
+      if (appearance?.underline && line.length > 0) {
+        page.drawLine({
+          start: { x, y: y - Math.max(1, fontSize * 0.12) },
+          end: { x: x + lineWidth, y: y - Math.max(1, fontSize * 0.12) },
+          color,
+          thickness: Math.max(0.75, fontSize * 0.055),
+        });
+      }
     });
   }
 }

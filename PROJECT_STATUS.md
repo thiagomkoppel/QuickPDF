@@ -16,13 +16,14 @@ Implemented proof-of-concept behavior:
 - render the active PDF page with PDF.js on a real canvas;
 - size the canvas backing store with device pixel ratio while keeping CSS dimensions in page-space scale;
 - keep text and whiteout overlays aligned over the rendered canvas during zoom;
-- add temporary text overlay elements as one-shot placements, including bounded font-size changes and proportional text resize;
+- add temporary text overlay elements as one-shot placements, with bounded font-size changes in the Style tab, user-controlled canvas bounds, and bundled Patrick Hand handwriting-font support in the editor and exported PDFs;
 - add temporary whiteout visual cover rectangles by click-drag creation;
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
 - add drawn and typed initials overlays as one-shot placements;
 - add PNG, JPG, and JPEG image overlays through a browser-local file picker and click-to-place workflow;
 - add checkmark, cross, and captured-date annotation overlays as one-shot placements;
 - select, move, resize, duplicate, delete, and session-local copy/paste text, whiteout, signature, initials, image, checkmark, cross, and date overlays;
+- reorder current-page overlay layers through the inspector with canvas/export synchronization and Undo/Redo;
 - undo and redo overlay add, paste, duplicate, delete, move, resize, text/date font-size, text/date resize, and image/annotation lifecycle commands with revision-based dirty state;
 - export the current PDF with text, whiteout, signature, initials, image, checkmark, cross, and date overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;
@@ -32,6 +33,8 @@ Implemented proof-of-concept behavior:
 - preserve the current session when export fails.
 
 Not implemented: form filling, page organization, OCR, secure redaction, native editing of existing PDF text, arbitrary symbol picker, stickers, emojis, date picker, time/timestamps, custom annotation colors, annotation rotation, image cropping, image rotation, image filters, image opacity, persistence, backend services.
+
+UI redesign progress: the shared presentation tokens and branded, browser-local landing experience are complete. A public `/privacy` route now documents the local-only processing model, session-only lifetime, hosting-metadata caveat, and whiteout limitation. The landing page now provides accessible click-to-browse and drag-and-drop opening states, local processing messaging, reduced-motion support, recoverable opening errors, and a phone-only native-app landing layout with a compact menu and picker-first upload card. Part 2 of the UI redesign now provides the full-viewport Compact Professional desktop editor shell: a compact application header, grouped command toolbar, collapsible rail with browser-local PDF.js page thumbnails, dominant central PDF viewport, contextual right inspector, and compact status/navigation bar. Page selection uses stable page IDs, and Previous, Next, direct thumbnail selection, Fit Page, Fit Width, and 100% manual view synchronize the rendered page and visible indicators without entering history or changing dirty state. Signature and Initials dialogs now use the same dark compact design language. New text, date, typed/drawn signature or initials, checkmark, and cross overlays render and export black by default. Editor routes without an active in-memory document now redirect directly to the landing page, preserving the session-only privacy model.
 
 ## Current objective
 

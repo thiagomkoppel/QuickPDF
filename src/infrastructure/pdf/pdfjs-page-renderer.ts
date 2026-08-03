@@ -39,6 +39,14 @@ export interface PdfPageRenderHandle {
   cancel(): void;
 }
 
+export interface PdfPageThumbnailRequest {
+  readonly documentId: string;
+  readonly pageNumber: number;
+  readonly maxWidth: number;
+  readonly devicePixelRatio: number;
+  readonly canvas: HTMLCanvasElement;
+}
+
 interface LoadedRenderDocument {
   readonly task: PDFDocumentLoadingTask;
   readonly document: PDFDocumentProxy;
@@ -67,6 +75,29 @@ const clearCanvas = (canvas: HTMLCanvasElement): void => {
   canvas.style.width = "0px";
   canvas.style.height = "0px";
 };
+
+const copyCompletedRender = (
+  source: HTMLCanvasElement,
+  target: HTMLCanvasElement,
+  cssWidth: number,
+  cssHeight: number,
+  backingWidth: number,
+  backingHeight: number,
+): boolean => {
+  const targetContext = target.getContext("2d");
+  if (targetContext === null) {
+    return false;
+  }
+  target.width = backingWidth;
+  target.height = backingHeight;
+  target.style.width = `${String(cssWidth)}px`;
+  target.style.height = `${String(cssHeight)}px`;
+  targetContext.clearRect(0, 0, backingWidth, backingHeight);
+  targetContext.drawImage(source, 0, 0);
+  return true;
+};
+
+const isRenderCancelled = (state: { readonly cancelled: boolean }): boolean => state.cancelled;
 
 const positiveScale = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 1);
 
@@ -124,7 +155,7 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
 
       try {
         const page = await loaded.document.getPage(request.pageNumber);
-        if (renderState.cancelled) {
+        if (isRenderCancelled(renderState)) {
           page.cleanup();
           return renderFailure("The PDF page render was cancelled.", true);
         }
@@ -136,25 +167,39 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
         const cssHeight = viewport.height;
         const backingWidth = Math.max(1, Math.floor(cssWidth * pixelRatio));
         const backingHeight = Math.max(1, Math.floor(cssHeight * pixelRatio));
-        const context = request.canvas.getContext("2d");
+        const renderCanvas = document.createElement("canvas");
+        const context = renderCanvas.getContext("2d");
         if (context === null) {
           page.cleanup();
           return renderFailure("The browser could not prepare a PDF canvas.");
         }
 
-        request.canvas.width = backingWidth;
-        request.canvas.height = backingHeight;
-        request.canvas.style.width = `${String(cssWidth)}px`;
-        request.canvas.style.height = `${String(cssHeight)}px`;
+        renderCanvas.width = backingWidth;
+        renderCanvas.height = backingHeight;
         context.clearRect(0, 0, backingWidth, backingHeight);
         renderTask = page.render({
-          canvas: request.canvas,
+          canvas: renderCanvas,
           canvasContext: context,
           viewport,
           transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
         });
         await renderTask.promise;
         page.cleanup();
+        if (isRenderCancelled(renderState)) {
+          return renderFailure("The PDF page render was cancelled.", true);
+        }
+        if (
+          !copyCompletedRender(
+            renderCanvas,
+            request.canvas,
+            cssWidth,
+            cssHeight,
+            backingWidth,
+            backingHeight,
+          )
+        ) {
+          return renderFailure("The browser could not display the rendered PDF page.");
+        }
         return { ok: true, cssWidth, cssHeight, backingWidth, backingHeight };
       } catch (error) {
         if (renderState.cancelled || isCancellation(error)) {
@@ -175,6 +220,70 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
     };
   }
 
+  /** Renders a compact page preview using the same document lifecycle as the main canvas. */
+  public startRenderThumbnail(request: PdfPageThumbnailRequest): PdfPageRenderHandle {
+    const renderState = { cancelled: false };
+    let renderTask: RenderTask | undefined;
+    const promise = (async (): Promise<PdfPageRenderResult> => {
+      const loaded = this.#documents.get(request.documentId);
+      if (loaded === undefined) {
+        clearCanvas(request.canvas);
+        return renderFailure("The PDF thumbnail is no longer available.");
+      }
+      try {
+        const page = await loaded.document.getPage(request.pageNumber);
+        if (isRenderCancelled(renderState)) {
+          page.cleanup();
+          return renderFailure("The PDF thumbnail render was cancelled.", true);
+        }
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = positiveScale(request.maxWidth / baseViewport.width);
+        const viewport = page.getViewport({ scale });
+        const pixelRatio = positivePixelRatio(request.devicePixelRatio);
+        const context = request.canvas.getContext("2d");
+        if (context === null) {
+          page.cleanup();
+          return renderFailure("The browser could not prepare a PDF thumbnail.");
+        }
+        const backingWidth = Math.max(1, Math.floor(viewport.width * pixelRatio));
+        const backingHeight = Math.max(1, Math.floor(viewport.height * pixelRatio));
+        request.canvas.width = backingWidth;
+        request.canvas.height = backingHeight;
+        request.canvas.style.width = `${String(viewport.width)}px`;
+        request.canvas.style.height = `${String(viewport.height)}px`;
+        context.clearRect(0, 0, backingWidth, backingHeight);
+        renderTask = page.render({
+          canvas: request.canvas,
+          canvasContext: context,
+          viewport,
+          transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
+        });
+        await renderTask.promise;
+        page.cleanup();
+        return {
+          ok: true,
+          cssWidth: viewport.width,
+          cssHeight: viewport.height,
+          backingWidth,
+          backingHeight,
+        };
+      } catch (error) {
+        if (renderState.cancelled || isCancellation(error)) {
+          return renderFailure("The PDF thumbnail render was cancelled.", true);
+        }
+        logRenderDiagnostic("thumbnail", error);
+        clearCanvas(request.canvas);
+        return renderFailure("The PDF thumbnail could not be rendered.");
+      }
+    })();
+    return {
+      promise,
+      cancel: () => {
+        renderState.cancelled = true;
+        renderTask?.cancel();
+      },
+    };
+  }
   public clearCanvas(canvas: HTMLCanvasElement): void {
     clearCanvas(canvas);
   }

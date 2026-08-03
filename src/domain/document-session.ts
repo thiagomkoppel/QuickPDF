@@ -19,6 +19,13 @@ export interface Bounds {
 export interface TextElementContent {
   readonly text: string;
   readonly fontSize?: number;
+  readonly fontFamily?: string;
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly underline?: boolean;
+  readonly alignment?: "left" | "center" | "right";
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
 }
 
 export interface TypedSignatureContent {
@@ -59,6 +66,7 @@ export interface EditorElement {
   readonly pageId: string;
   readonly type: EditorElementType;
   readonly bounds: Bounds;
+  readonly color?: string;
   readonly content?: EditorElementContent;
 }
 
@@ -149,6 +157,7 @@ const clonePage = (page: DocumentPage): DocumentPage => ({ ...page });
 const cloneElement = (element: EditorElement): EditorElement => ({
   ...element,
   bounds: { ...element.bounds },
+  ...(element.color === undefined ? {} : { color: element.color }),
   ...(element.content === undefined ? {} : { content: { ...element.content } }),
 });
 
@@ -419,6 +428,50 @@ export class DocumentSession {
     }
   }
 
+  public reorderPageElements(pageId: string, nextElementOrder: readonly string[]): DomainResult {
+    const disposed = this.#rejectDisposed();
+    if (disposed !== undefined) {
+      return disposed;
+    }
+    const pageElements = Array.from(this.#elementsById.values()).filter(
+      (element) => element.pageId === pageId,
+    );
+    if (
+      !this.#pagesById.has(pageId) ||
+      nextElementOrder.length !== pageElements.length ||
+      new Set(nextElementOrder).size !== nextElementOrder.length ||
+      nextElementOrder.some(
+        (elementId) => !pageElements.some((element) => element.id === elementId),
+      )
+    ) {
+      return fail("ElementNotFound", "Layer order must contain every element on the current page.");
+    }
+    const byId = new Map(pageElements.map((element) => [element.id, element]));
+    const orderedPageElements: EditorElement[] = [];
+    for (const elementId of nextElementOrder) {
+      const element = byId.get(elementId);
+      if (element === undefined) {
+        return fail(
+          "ElementNotFound",
+          "Layer order must contain every element on the current page.",
+        );
+      }
+      orderedPageElements.push(element);
+    }
+    const nextElements: EditorElement[] = [];
+    let inserted = false;
+    for (const element of this.#elementsById.values()) {
+      if (element.pageId !== pageId) {
+        nextElements.push(element);
+      } else if (!inserted) {
+        nextElements.push(...orderedPageElements);
+        inserted = true;
+      }
+    }
+    this.#elementsById = new Map(nextElements.map((element) => [element.id, element]));
+    this.#isDirty = true;
+    return success;
+  }
   public deleteElement(elementId: string): DomainResult {
     const disposed = this.#rejectDisposed();
     if (disposed !== undefined) {

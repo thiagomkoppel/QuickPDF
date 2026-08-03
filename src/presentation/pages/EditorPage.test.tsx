@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, type Mock } from "vitest";
 
 import type {
   EditorSnapshot,
+  EditorState,
   EditorTool,
   ExportElement,
   PdfEditorApplication,
@@ -41,6 +42,8 @@ interface TestEditor extends PdfEditorApplication {
   readonly deleteElement: Mock;
   readonly updateText: Mock;
   readonly updateTextFontSize: Mock;
+  readonly updateTextAppearance: Mock;
+  readonly updateElementColor: Mock;
   readonly resizeElement: Mock;
   readonly commitResizeElement: Mock;
   readonly previewResizeElement: Mock;
@@ -52,28 +55,40 @@ interface TestEditor extends PdfEditorApplication {
   readonly addTypedInitials: Mock;
   readonly addUploadedSignature: Mock;
   readonly addDrawnSignature: Mock;
+  readonly selectPage: Mock;
+  readonly previousPage: Mock;
+  readonly nextPage: Mock;
+  readonly reorderCurrentPageLayers: Mock;
 }
 
-const baseSnapshot = (overrides: Partial<EditorSnapshot["state"]> = {}): EditorSnapshot => ({
-  canExport: true,
-  canUndo: false,
-  canRedo: false,
-  canPaste: false,
-  state: {
+const documentPages = [
+  { id: "page-1", width: 300, height: 400, rotation: 0 },
+  { id: "page-2", width: 300, height: 400, rotation: 0 },
+] as const;
+
+const baseSnapshot = (overrides: Partial<EditorState> = {}): EditorSnapshot => {
+  const baseState: EditorState = {
     status: "ready",
     fileName: "visible.pdf",
-    pageCount: 2,
+    pageCount: documentPages.length,
+    pages: documentPages,
     currentPageNumber: 1,
-    currentPage: { id: "page-1", width: 300, height: 400, rotation: 0 },
+    currentPage: documentPages[0],
     renderDocumentId: "render-1",
     tool: "select",
     isDirty: false,
     elements: [],
     visibleElements: [],
+  };
+  const state: EditorState = {
+    ...baseState,
     ...overrides,
-  },
-});
+    pages: overrides.pages ?? baseState.pages,
+    pageCount: overrides.pages?.length ?? overrides.pageCount ?? baseState.pageCount,
+  };
 
+  return { canExport: true, canUndo: false, canRedo: false, canPaste: false, state };
+};
 const createEditor = (): TestEditor =>
   ({
     setTool: vi.fn((tool: EditorTool) => baseSnapshot({ tool })),
@@ -180,6 +195,10 @@ const createEditor = (): TestEditor =>
       }),
     ),
     addDrawnSignature: vi.fn(() => baseSnapshot()),
+    selectPage: vi.fn(() => baseSnapshot()),
+    previousPage: vi.fn(() => baseSnapshot()),
+    nextPage: vi.fn(() => baseSnapshot()),
+    reorderCurrentPageLayers: vi.fn(() => baseSnapshot()),
     addUploadedSignature: vi.fn(() => baseSnapshot()),
     addTypedInitials: vi.fn(() => baseSnapshot()),
     addDrawnInitials: vi.fn(() => baseSnapshot()),
@@ -199,6 +218,8 @@ const createEditor = (): TestEditor =>
     deleteElement: vi.fn(() => baseSnapshot()),
     updateText: vi.fn(() => baseSnapshot()),
     updateTextFontSize: vi.fn(() => baseSnapshot()),
+    updateTextAppearance: vi.fn(() => baseSnapshot()),
+    updateElementColor: vi.fn(() => baseSnapshot()),
     undo: vi.fn(() => baseSnapshot()),
     redo: vi.fn(() => baseSnapshot()),
     exportCurrentPdf: vi.fn(() => Promise.resolve(baseSnapshot())),
@@ -366,6 +387,57 @@ const getEditorViewport = (): HTMLElement => {
 };
 
 describe("EditorPage PDF rendering", () => {
+  it("commits a pending text color before selecting an overlay", async () => {
+    const user = userEvent.setup();
+    const originalElement = selectedElementForType("text");
+    if (originalElement.type !== "text") {
+      throw new Error("Expected a text element fixture.");
+    }
+    const committedColor = "#c62828";
+    const committedElement: ExportElement = {
+      ...originalElement,
+      color: committedColor,
+      textAppearance: { fontSize: 16, color: committedColor },
+    };
+    const committedSnapshot = baseSnapshot({
+      selectedElementId: committedElement.id,
+      selectedElement: committedElement,
+      elements: [committedElement],
+      visibleElements: [committedElement],
+      isDirty: true,
+    });
+    const editor = createEditor();
+    const updateElementColor = editor.updateElementColor;
+    const selectElement = editor.selectElement;
+    updateElementColor.mockReturnValue(committedSnapshot);
+    selectElement.mockReturnValue(committedSnapshot);
+
+    renderStatefulEditor(
+      editor,
+      baseSnapshot({
+        selectedElementId: originalElement.id,
+        selectedElement: originalElement,
+        elements: [originalElement],
+        visibleElements: [originalElement],
+      }),
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Style" }));
+    fireEvent.input(screen.getByLabelText("Text color"), {
+      target: { value: committedColor },
+    });
+
+    expect(updateElementColor).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(screen.getByRole("group", { name: "text element" }), {
+      clientX: 80,
+      clientY: 90,
+      pointerId: 71,
+    });
+
+    expect(updateElementColor).toHaveBeenCalledWith(originalElement.id, committedColor);
+    expect(screen.getByLabelText("Text element content")).toHaveStyle({ color: committedColor });
+  });
   it("renders the active PDF page into a canvas and removes the placeholder path", async () => {
     const renderer = createRenderer();
     const { container } = render(
@@ -786,6 +858,116 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
   });
 
+  it("pans the empty Select workspace without changing editor state", () => {
+    const onSnapshotChange = vi.fn();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({ selectedElementId: "text-1" })}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+    });
+
+    fireEvent(
+      workspace,
+      Object.assign(new Event("pointerdown", { bubbles: true }), {
+        button: 0,
+        pointerId: 9,
+        clientX: 200,
+        clientY: 180,
+      }),
+    );
+    fireEvent(
+      workspace,
+      Object.assign(new Event("pointermove", { bubbles: true }), {
+        pointerId: 9,
+        clientX: 150,
+        clientY: 140,
+      }),
+    );
+    fireEvent(
+      workspace,
+      Object.assign(new Event("pointerup", { bubbles: true }), {
+        pointerId: 9,
+        clientX: 150,
+        clientY: 140,
+      }),
+    );
+
+    expect(workspace.scrollLeft).toBe(170);
+    expect(workspace.scrollTop).toBe(120);
+    expect(onSnapshotChange).not.toHaveBeenCalled();
+  });
+  it("renders the compact toolbar with labeled icon-first controls", async () => {
+    const user = userEvent.setup();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={{ ...baseSnapshot(), canUndo: true, canRedo: true }}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    for (const name of [
+      "Open",
+      "Download",
+      "Undo",
+      "Redo",
+      "Select",
+      "Text",
+      "Whiteout",
+      "Image",
+      "Signature",
+      "Initials",
+      "Checkmark",
+      "Cross",
+      "Date",
+      "Zoom out",
+      "Zoom in",
+      "Fit page",
+      "Fit width",
+      "Previous page",
+      "Next page",
+    ]) {
+      expect(screen.getByRole("button", { name }).querySelector("svg.toolbar-icon")).not.toBeNull();
+    }
+    expect(screen.queryByText("ACTIVE")).not.toBeInTheDocument();
+    expect(screen.queryByText("SELECTED")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "More editor options" })).toBeNull();
+    const workspace = screen.getByLabelText("PDF workspace");
+    Object.defineProperties(workspace, {
+      clientWidth: { value: 900 },
+      clientHeight: { value: 700 },
+    });
+    await user.click(screen.getByRole("button", { name: "Fit width" }));
+    expect(screen.getByRole("button", { name: "Fit width" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Fit page" }));
+    expect(screen.getByRole("button", { name: "Fit page" })).toBeEnabled();
+  });
+  it("routes the toolbar Open action through the supplied navigation boundary", async () => {
+    const user = userEvent.setup();
+    const onOpenRequest = vi.fn();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        onOpenRequest={onOpenRequest}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(onOpenRequest).toHaveBeenCalledTimes(1);
+  });
   it("routes Undo and Redo toolbar actions through the application API", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -896,6 +1078,7 @@ describe("EditorPage PDF rendering", () => {
           state: {
             status: "empty",
             pageCount: 0,
+            pages: [],
             currentPageNumber: 0,
             tool: "select",
             isDirty: false,
@@ -937,6 +1120,38 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
   });
 
+  it("keeps Enter as a newline inside the text inspector content field", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText("Text content"));
+    await user.keyboard("{End}{Enter}");
+
+    expect(editor.updateText).toHaveBeenCalledWith("text-1", "Editable text\n");
+  });
+
+  it("enters date editing on double-click", async () => {
+    const user = userEvent.setup();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("date")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.dblClick(screen.getByLabelText("Text element content"));
+    expect(screen.getByLabelText("Edit text element")).toHaveFocus();
+  });
   it("enters text editing on double-click and keeps normal typing inside the text input", async () => {
     const user = userEvent.setup();
     const editor = createEditor();
@@ -1320,37 +1535,8 @@ describe("EditorPage PDF rendering", () => {
     });
   });
 
-  it("resizes text proportionally and commits one text resize command", () => {
+  it("resizes text bounds without changing the font size", () => {
     const editor = createEditor();
-    editor.previewTextResizeElement.mockImplementation(
-      (elementId: string, _bounds: ExportElement["bounds"], fontSize: number) =>
-        textSnapshot("Editable text", fontSize).state.selectedElement?.id === elementId
-          ? textSnapshot("Editable text", fontSize)
-          : baseSnapshot(),
-    );
-    editor.commitTextResizeElement.mockImplementation(
-      (
-        _elementId: string,
-        _start: unknown,
-        end: { readonly bounds: ExportElement["bounds"]; readonly fontSize: number },
-      ) =>
-        baseSnapshot({
-          selectedElementId: "text-1",
-          selectedElement: {
-            ...selectedElementForType("text"),
-            bounds: end.bounds,
-            textAppearance: { fontSize: end.fontSize, color: "#111111" },
-          },
-          visibleElements: [
-            {
-              ...selectedElementForType("text"),
-              bounds: end.bounds,
-              textAppearance: { fontSize: end.fontSize, color: "#111111" },
-            },
-          ],
-          isDirty: true,
-        }),
-    );
     render(
       <EditorPage
         editor={editor}
@@ -1372,20 +1558,22 @@ describe("EditorPage PDF rendering", () => {
     dispatchPointerEvent(window, "pointermove", { clientX: 280, clientY: 122, pointerId: 9 });
     dispatchPointerEvent(window, "pointerup", { clientX: 280, clientY: 122, pointerId: 9 });
 
-    expect(editor.previewTextResizeElement).toHaveBeenCalledWith(
+    expect(editor.previewResizeElement).toHaveBeenCalledWith("text-1", {
+      x: 40,
+      y: 50,
+      width: 240,
+      height: 72,
+    });
+    expect(editor.commitResizeElement).toHaveBeenCalledWith(
       "text-1",
-      { x: 40, y: 50, width: 240, height: 96 },
-      32,
+      { x: 40, y: 50, width: 120, height: 48 },
+      { x: 40, y: 50, width: 240, height: 72 },
     );
-    expect(editor.commitTextResizeElement).toHaveBeenCalledTimes(1);
-    expect(editor.commitTextResizeElement).toHaveBeenCalledWith(
-      "text-1",
-      { bounds: { x: 40, y: 50, width: 120, height: 48 }, fontSize: 16 },
-      { bounds: { x: 40, y: 50, width: 240, height: 96 }, fontSize: 32 },
-    );
+    expect(editor.previewTextResizeElement).not.toHaveBeenCalled();
+    expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
   });
 
-  it("cancels text resize with Escape by restoring the starting geometry without a commit", () => {
+  it("cancels text bounds resize with Escape without a commit", () => {
     const editor = createEditor();
     render(
       <EditorPage
@@ -1412,14 +1600,104 @@ describe("EditorPage PDF rendering", () => {
     });
 
     expect(escape.defaultPrevented).toBe(true);
-    expect(editor.previewTextResizeElement).toHaveBeenLastCalledWith(
-      "text-1",
-      { x: 40, y: 50, width: 120, height: 48 },
-      16,
-    );
+    expect(editor.previewResizeElement).toHaveBeenLastCalledWith("text-1", {
+      x: 40,
+      y: 50,
+      width: 120,
+      height: 48,
+    });
+    expect(editor.commitResizeElement).not.toHaveBeenCalled();
+    expect(editor.previewTextResizeElement).not.toHaveBeenCalled();
     expect(editor.commitTextResizeElement).not.toHaveBeenCalled();
   });
-  it("shows a text-only font-size control and updates text appearance through the editor use case", () => {
+  it("shows current-page layers front to back and reorders through the application use case", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const text = selectedElementForType("text");
+    const checkmark = selectedElementForType("checkmark");
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: text.id,
+          selectedElement: text,
+          elements: [text, checkmark],
+          visibleElements: [text, checkmark],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Layers")).toHaveTextContent("Checkmark");
+    await user.click(screen.getByRole("button", { name: "Move up" }));
+    expect(editor.reorderCurrentPageLayers).toHaveBeenCalledWith("text-1", 0);
+  });
+  it("keeps inspector tabs, properties, and layers in stable sibling regions", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const text = selectedElementForType("text");
+    const checkmark = selectedElementForType("checkmark");
+    const { rerender } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: text.id,
+          selectedElement: { ...text, text: "A deliberately long text value\n".repeat(80) },
+          elements: [text, checkmark],
+          visibleElements: [text, checkmark],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const tabsRegion = screen.getByTestId("inspector-tabs-region");
+    const propertiesRegion = screen.getByTestId("inspector-properties-region");
+    const layersRegion = screen.getByTestId("inspector-layers-region");
+    const propertiesScroll = propertiesRegion.querySelector(
+      ".element-inspector__properties-scroll",
+    );
+
+    expect(tabsRegion).toContainElement(
+      screen.getByRole("tablist", { name: "Text inspector sections" }),
+    );
+    expect(propertiesScroll).toContainElement(screen.getByLabelText("Text content"));
+    expect(propertiesRegion).toContainElement(screen.getByRole("button", { name: "Duplicate" }));
+    expect(layersRegion).toContainElement(screen.getByLabelText("Layers"));
+    expect(propertiesRegion.compareDocumentPosition(layersRegion)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Style" }));
+    expect(propertiesScroll).toContainElement(screen.getByLabelText("Text font"));
+    expect(screen.getByTestId("inspector-layers-region")).toBe(layersRegion);
+
+    await user.click(screen.getByRole("tab", { name: "Page" }));
+    expect(propertiesScroll).toHaveTextContent("This text belongs to page 1.");
+    expect(screen.getByTestId("inspector-layers-region")).toBe(layersRegion);
+
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: checkmark.id,
+          selectedElement: checkmark,
+          elements: [text, checkmark],
+          visibleElements: [text, checkmark],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByTestId("inspector-tabs-region")).toContainElement(
+      screen.getByRole("tablist", { name: "Image inspector sections" }),
+    );
+    expect(screen.getByTestId("inspector-layers-region")).toBe(layersRegion);
+  });
+  it("shows a text-only font-size control and updates text appearance through the editor use case", async () => {
+    const user = userEvent.setup();
     const editor = createEditor();
     render(
       <EditorPage
@@ -1429,14 +1707,49 @@ describe("EditorPage PDF rendering", () => {
         pdfRenderer={createRenderer()}
       />,
     );
-
+    await user.click(screen.getByRole("tab", { name: "Style" }));
     const fontSize = screen.getByLabelText("Text font size");
-    expect(fontSize).toHaveValue(16);
+    expect(fontSize).toHaveValue("16");
     fireEvent.change(fontSize, { target: { value: "24" } });
-
     expect(editor.updateTextFontSize).toHaveBeenCalledWith("text-1", 24);
   });
 
+  it("offers Patrick Hand and applies it to the selected text overlay", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const original = selectedElementForType("text");
+    if (original.type !== "text") throw new Error("Expected text fixture.");
+    const updated: ExportElement = {
+      ...original,
+      textAppearance: {
+        fontSize: original.textAppearance?.fontSize ?? 16,
+        color: original.textAppearance?.color ?? "#000000",
+        fontFamily: "Patrick Hand",
+      },
+    };
+    editor.updateTextAppearance.mockReturnValue(
+      baseSnapshot({
+        selectedElementId: updated.id,
+        selectedElement: updated,
+        elements: [updated],
+        visibleElements: [updated],
+        isDirty: true,
+      }),
+    );
+    renderStatefulEditor(editor, selectedSnapshot("text"));
+
+    await user.click(screen.getByRole("tab", { name: "Style" }));
+    const font = screen.getByLabelText("Text font");
+    expect(within(font).getByRole("option", { name: "Patrick Hand" })).toBeInTheDocument();
+    await user.selectOptions(font, "Patrick Hand");
+
+    expect(editor.updateTextAppearance).toHaveBeenCalledWith("text-1", {
+      fontFamily: "Patrick Hand",
+    });
+    expect(screen.getByLabelText("Text element content")).toHaveStyle({
+      fontFamily: "Patrick Hand",
+    });
+  });
   it.each(["whiteout", "signature", "initials", "image"] as const)(
     "hides the font-size control for selected %s overlays",
     (type) => {
@@ -1453,7 +1766,8 @@ describe("EditorPage PDF rendering", () => {
     },
   );
 
-  it("ignores empty or non-finite font-size input safely", () => {
+  it("ignores empty or non-finite font-size input safely", async () => {
+    const user = userEvent.setup();
     const editor = createEditor();
     render(
       <EditorPage
@@ -1463,10 +1777,10 @@ describe("EditorPage PDF rendering", () => {
         pdfRenderer={createRenderer()}
       />,
     );
-
+    await user.click(screen.getByRole("tab", { name: "Style" }));
     const fontSize = screen.getByLabelText("Text font size");
     fireEvent.change(fontSize, { target: { value: "" } });
-
+    fireEvent.change(fontSize, { target: { value: "not-a-number" } });
     expect(editor.updateTextFontSize).not.toHaveBeenCalled();
   });
 
@@ -2385,120 +2699,7 @@ describe("EditorPage PDF rendering", () => {
       expect(editor.setTool).toHaveBeenCalledWith(tool);
     },
   );
-  it.each(["whiteout", "signature", "initials", "image"] as const)(
-    "keeps %s selection behavior unchanged",
-    async (type) => {
-      const user = userEvent.setup();
-      const editor = createEditor();
-      const element = selectedElementForType(type);
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={baseSnapshot({ visibleElements: [element] })}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      await user.click(screen.getByRole("group", { name: `${type} element` }));
-
-      expect(editor.selectElement).toHaveBeenCalledWith(`${type}-1`);
-      expect(screen.queryByLabelText("Edit text element")).toBeNull();
-    },
-  );
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "shows shared delete and duplicate actions for selected %s overlays",
-    (type) => {
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      expect(screen.getByRole("complementary", { name: "Selected element actions" })).toBeVisible();
-      expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
-      expect(screen.getByRole("button", { name: "Duplicate" })).toBeVisible();
-      expect(screen.getByLabelText(`Resize ${type} element`)).toBeVisible();
-    },
-  );
-
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "routes shared delete and duplicate controls for selected %s overlays through application use cases",
-    async (type) => {
-      const user = userEvent.setup();
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      await user.click(screen.getByRole("button", { name: "Duplicate" }));
-      expect(editor.duplicateElement).toHaveBeenCalledWith(`${type}-1`);
-      await user.click(screen.getByRole("button", { name: "Delete" }));
-      expect(editor.deleteElement).toHaveBeenCalledWith(`${type}-1`);
-    },
-  );
-
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "deletes selected %s overlays with the keyboard",
-    (type) => {
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-      const event = new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "Delete",
-      });
-
-      act(() => {
-        window.dispatchEvent(event);
-      });
-
-      expect(event.defaultPrevented).toBe(true);
-      expect(editor.deleteElement).toHaveBeenCalledWith(`${type}-1`);
-    },
-  );
-
-  it("deletes selected overlays with Backspace", () => {
-    const editor = createEditor();
-    render(
-      <EditorPage
-        editor={editor}
-        snapshot={selectedSnapshot("text")}
-        onSnapshotChange={vi.fn()}
-        pdfRenderer={createRenderer()}
-      />,
-    );
-    const event = new KeyboardEvent("keydown", {
-      bubbles: true,
-      cancelable: true,
-      key: "Backspace",
-    });
-
-    act(() => {
-      window.dispatchEvent(event);
-    });
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(editor.deleteElement).toHaveBeenCalledWith("text-1");
-  });
-
-  it("does not show selected element actions when nothing is selected", () => {
+  it("shows the document inspector when nothing is selected", () => {
     render(
       <EditorPage
         editor={createEditor()}
@@ -2508,10 +2709,54 @@ describe("EditorPage PDF rendering", () => {
       />,
     );
 
-    expect(screen.queryByRole("complementary", { name: "Selected element actions" })).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Selected element actions" }),
+    ).toHaveTextContent("visible.pdf");
+    expect(screen.getByText("Select an element to edit its properties.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Layers")).toBeInTheDocument();
   });
 
-  it("renders selected-element actions before the PDF viewport so they stay outside document flow", () => {
+  it("keeps current-page layers mounted and selectable when no element is selected", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const text = selectedElementForType("text");
+    const checkmark = selectedElementForType("checkmark");
+    const { rerender } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          elements: [text, checkmark],
+          visibleElements: [text, checkmark],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const layersRegion = screen.getByTestId("inspector-layers-region");
+    expect(layersRegion).toContainElement(screen.getByLabelText("Layers"));
+    expect(screen.getByRole("button", { name: "Bring to front" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Checkmark layer" }));
+    expect(editor.selectElement).toHaveBeenCalledWith("checkmark-1");
+
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          elements: [text],
+          visibleElements: [text],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByTestId("inspector-layers-region")).toBe(layersRegion);
+    expect(screen.getByRole("button", { name: "Text layer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Checkmark layer" })).toBeNull();
+  });
+  it("renders selected-element actions as a stable workspace sibling beside the PDF viewport", () => {
     const { container } = render(
       <EditorPage
         editor={createEditor()}
@@ -2521,14 +2766,20 @@ describe("EditorPage PDF rendering", () => {
       />,
     );
 
-    const controls = container.querySelector(".editor-controls");
+    const workspace = container.querySelector(".editor-workspace-shell");
+    const pageRail = container.querySelector(".page-rail");
     const inspector = container.querySelector(".element-inspector");
     const viewport = container.querySelector(".editor-viewport");
-    expect(controls).toBeInstanceOf(HTMLElement);
+    const statusBar = container.querySelector(".editor-status-bar");
+    expect(workspace).toBeInstanceOf(HTMLElement);
+    expect(pageRail).toBeInstanceOf(HTMLElement);
     expect(inspector).toBeInstanceOf(HTMLElement);
     expect(viewport).toBeInstanceOf(HTMLElement);
-    expect(controls?.contains(inspector)).toBe(true);
-    expect(controls?.compareDocumentPosition(viewport as Node)).toBe(
+    expect(statusBar).toBeInstanceOf(HTMLElement);
+    expect(workspace?.contains(pageRail)).toBe(true);
+    expect(workspace?.contains(viewport)).toBe(true);
+    expect(workspace?.contains(inspector)).toBe(true);
+    expect(workspace?.compareDocumentPosition(statusBar as Node)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
@@ -2558,7 +2809,7 @@ describe("EditorPage PDF rendering", () => {
     });
     expect(editor.deleteElement).not.toHaveBeenCalled();
 
-    const widthInput = screen.getByLabelText("Selected element width");
+    const widthInput = screen.getByLabelText("Text content");
     await user.click(widthInput);
     const inputDelete = new KeyboardEvent("keydown", {
       bubbles: true,
@@ -2761,5 +3012,276 @@ describe("EditorPage PDF rendering", () => {
     );
     getContext.mockRestore();
     toDataUrl.mockRestore();
+  });
+
+  it("uses larger initial geometry for phone text, date, and symbol placement", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+
+    const scenarios: readonly {
+      readonly tool: EditorTool;
+      readonly assertCall: (editor: TestEditor) => void;
+    }[] = [
+      {
+        tool: "text",
+        assertCall: (editor) => {
+          expect(editor.addText).toHaveBeenCalledWith({ x: 50, y: 70 }, "Text", {
+            width: 200,
+            height: 52,
+          });
+        },
+      },
+      {
+        tool: "checkmark",
+        assertCall: (editor) => {
+          expect(editor.addCheckmark).toHaveBeenCalledWith({ x: 50, y: 70 }, 44);
+        },
+      },
+      {
+        tool: "cross",
+        assertCall: (editor) => {
+          expect(editor.addCross).toHaveBeenCalledWith({ x: 50, y: 70 }, 44);
+        },
+      },
+      {
+        tool: "date",
+        assertCall: (editor) => {
+          expect(editor.addDate).toHaveBeenCalledWith({ x: 50, y: 70 }, { width: 144, height: 40 });
+        },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const editor = createEditor();
+      const view = render(
+        <EditorPage
+          editor={editor}
+          snapshot={baseSnapshot({ tool: scenario.tool })}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const overlay = within(view.container).getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+      fireEvent.click(overlay, { clientX: 50, clientY: 70 });
+      scenario.assertCall(editor);
+      view.unmount();
+    }
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps mobile overlay touch gestures out of workspace pinch handling", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const textElement = selectedElementForType("text");
+    const dateElement = selectedElementForType("date");
+    const editor = createEditor();
+    const { container } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: textElement.id,
+          selectedElement: textElement,
+          elements: [textElement, dateElement],
+          visibleElements: [textElement, dateElement],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const workspace = screen.getByLabelText("PDF workspace");
+    const textOverlay = screen.getByRole("group", { name: "text element" });
+    const dateOverlay = screen.getByRole("group", { name: "date element" });
+    const workspaceCapture = vi.fn();
+    Object.defineProperty(workspace, "setPointerCapture", {
+      configurable: true,
+      value: workspaceCapture,
+    });
+
+    const dispatchTouch = (
+      target: HTMLElement,
+      type: string,
+      pointerId: number,
+      clientX: number,
+      clientY: number,
+    ): void => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: "touch" },
+        clientX: { value: clientX },
+        clientY: { value: clientY },
+      });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+    };
+
+    dispatchTouch(textOverlay, "pointerdown", 41, 55, 65);
+    dispatchTouch(textOverlay, "pointermove", 41, 75, 85);
+    dispatchTouch(textOverlay, "pointerup", 41, 75, 85);
+
+    expect(workspaceCapture).not.toHaveBeenCalled();
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      textElement.id,
+      textElement.bounds,
+      expect.objectContaining({ x: 60, y: 70 }),
+    );
+
+    dispatchTouch(dateOverlay, "pointerdown", 42, 110, 130);
+    expect(editor.selectElement).toHaveBeenLastCalledWith(dateElement.id);
+    expect(container.querySelector(".overlay-element")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+  it("provides stateful mobile drawer, inspector sheet, and More controls without changing editor APIs", async () => {
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const user = userEvent.setup();
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const workspace = container.querySelector(".editor-workspace-shell");
+    const pageRail = container.querySelector(".page-rail");
+    const inspector = container.querySelector(".element-inspector");
+    expect(workspace).not.toHaveClass("is-mobile-rail-open");
+    expect(pageRail).not.toHaveClass("is-mobile-open");
+    expect(inspector).not.toHaveClass("is-mobile-open");
+    expect(workspace?.contains(inspector)).toBe(false);
+    const statusBar = container.querySelector(".editor-status-bar");
+    expect(statusBar?.compareDocumentPosition(inspector as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    const [openThumbnails] = screen.getAllByRole("button", { name: "Open page thumbnails" });
+    if (openThumbnails === undefined) {
+      throw new Error("Mobile page drawer control is missing.");
+    }
+    await user.click(openThumbnails);
+    expect(workspace).toHaveClass("is-mobile-rail-open");
+    expect(pageRail).toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "Close page thumbnails" }));
+    expect(workspace).not.toHaveClass("is-mobile-rail-open");
+    expect(pageRail).not.toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "More editor tools" }));
+    expect(screen.getByRole("dialog", { name: "More tools" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Whiteout" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Fit page/ })).toBeNull();
+
+    const [openInspector] = screen.getAllByRole("button", { name: "Open editor inspector" });
+    if (openInspector === undefined) {
+      throw new Error("Mobile inspector control is missing.");
+    }
+    await user.click(openInspector);
+    expect(inspector).toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "Collapse editor inspector" }));
+    expect(inspector).not.toHaveClass("is-mobile-open");
+    vi.unstubAllGlobals();
+  });
+  it("uses the reduced Quick Edit notice, primary tools, and contextual text controls on phones", async () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const user = userEvent.setup();
+    const text: ExportElement = {
+      id: "quick-edit-text",
+      pageId: "page-1",
+      type: "text",
+      bounds: { x: 30, y: 40, width: 160, height: 48 },
+      text: "Quick text",
+      textAppearance: { fontSize: 16, color: "#000000" },
+    };
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({
+          selectedElementId: text.id,
+          selectedElement: text,
+          visibleElements: [text],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Quick Edit mode" })).toBeInTheDocument();
+    const primaryTools = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '.toolbar-tools-group button[data-mobile-primary="true"]',
+      ),
+    ].map((button) => button.getAttribute("aria-label"));
+    expect(primaryTools).toEqual(["Select", "Text", "Image", "Signature", "Checkmark", "Date"]);
+    for (const advancedTool of ["Whiteout", "Initials", "Cross", "Fit page", "Fit width"]) {
+      expect(screen.queryByRole("button", { name: advancedTool })).toBeNull();
+    }
+    expect(container.querySelector(".desktop-inspector-content")).toHaveAttribute("hidden");
+
+    const [openInspector] = screen.getAllByRole("button", { name: "Open editor inspector" });
+    if (openInspector === undefined) throw new Error("Mobile inspector control is missing.");
+    await user.click(openInspector);
+    const panel = container.querySelector(".mobile-quick-edit-panel");
+    if (!(panel instanceof HTMLElement)) throw new Error("Quick Edit panel is missing.");
+    expect(within(panel).getByLabelText("Text content")).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Text font size")).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Text color")).toBeInTheDocument();
+    expect(within(panel).queryByRole("tablist")).toBeNull();
+    expect(within(panel).queryByLabelText("Text font")).toBeNull();
+    expect(within(panel).queryByLabelText("Line height")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss Quick Edit notice" }));
+    expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+  it("keeps the full editor inspector and toolset outside the phone breakpoint", () => {
+    const mediaQuery = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Whiteout" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Initials" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cross" })).toBeVisible();
+    expect(container.querySelector(".desktop-inspector-content")).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("tablist", { name: "Text inspector sections" })).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="QuickPDF">
+  <defs>
+    <linearGradient id="quickpdf-mark-gradient" x1="8" y1="4" x2="54" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#285763"/>
+      <stop offset="1" stop-color="#0D2D35"/>
+    </linearGradient>
+    <linearGradient id="quickpdf-fold-gradient" x1="39" y1="5" x2="57" y2="25" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#44A1A4"/>
+      <stop offset="1" stop-color="#188A8E"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#quickpdf-mark-gradient)" d="M9 4h30v18c0 5.2 4.2 9.4 9.4 9.4H55v18.1C55 55.3 50.3 60 44.5 60h-27C11.7 60 7 55.3 7 49.5v-35C7 8.7 11.7 4 17.5 4H9Z"/>
+  <path fill="url(#quickpdf-fold-gradient)" d="M39 4 57 22H45.5C41.9 22 39 19.1 39 15.5V4Z"/>
+  <path fill="#44A1A4" d="M44.5 25.5h8.2a2.25 2.25 0 1 1 0 4.5h-8.2a2.25 2.25 0 1 1 0-4.5Zm0 7.2h8.2a2.25 2.25 0 1 1 0 4.5h-8.2a2.25 2.25 0 1 1 0-4.5Zm0 7.2h5.7a2.25 2.25 0 1 1 0 4.5h-5.7a2.25 2.25 0 1 1 0-4.5Z"/>
+  <circle cx="28" cy="38" r="13" fill="none" stroke="#FFF" stroke-width="5.5"/>
+  <path fill="#FFF" d="m34.7 44.4 12.2 12.2-5.3 5.3-12.2-12.2z"/>
+  <path fill="#FFF" d="m25.6 37.2 8.8 8.8-8.9-1.1-4.3-4.3z"/>
+</svg>
