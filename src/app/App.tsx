@@ -13,6 +13,7 @@ import { Shell } from "../presentation/components/Shell";
 import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
+import { PrivacyPolicyPage } from "../presentation/pages/PrivacyPolicyPage";
 
 const getPathname = (): string => window.location.pathname;
 
@@ -90,6 +91,12 @@ export const App = (): React.ReactElement => {
             onSnapshotChange={setSnapshot}
             onDocumentOpened={openEditor}
           />
+        </Shell>
+      );
+    case "/privacy":
+      return (
+        <Shell hideHeader>
+          <PrivacyPolicyPage />
         </Shell>
       );
     case "/editor":

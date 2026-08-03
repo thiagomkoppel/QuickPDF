@@ -271,3 +271,7 @@ Avoid unverifiable claims such as cryptographic deletion from memory.
 - large feature grids before the drop zone;
 - automatic upload wording;
 - animations that delay file opening.
+
+## Phone landing
+
+Below 768px, the landing page uses a native-app entry layout: a compact QuickPDF header with a keyboard-accessible menu for Privacy and GitHub, a concise Private & Secure hero, picker-first Open a PDF card, three trust cards, and a privacy footer. The same local staged opening workflow is used for picker and supported drag-and-drop input. Desktop and tablet landing layouts remain unchanged.

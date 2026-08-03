@@ -307,7 +307,8 @@ Initial supported standard fonts:
 
 - Helvetica;
 - Times Roman;
-- Courier.
+- Courier;
+- Patrick Hand (bundled handwriting font).
 
 Font changes update preview and export, preserve top-left anchoring, and are undoable.
 
@@ -424,3 +425,9 @@ A shortcut help dialog may be added later.
 - exported selection borders;
 - browser-level zoom while using editor zoom;
 - UI state stored in document history.
+
+## Phone Quick Edit
+
+Below `768px`, QuickPDF uses a reduced **Quick Edit** layout. It keeps the PDF workspace dominant and exposes only Select, Text, Signature, Checkmark, Date, Image, Undo, Redo, Download, simple page navigation, and viewer zoom. A dismissible session-only notice directs users to desktop or tablet for layers, advanced formatting, and the complete toolset.
+
+The phone inspector is a two-state contextual bottom panel: collapsed when nothing is selected and open for a selected overlay. It intentionally omits desktop inspector tabs, Layers, ordering, font family, typography controls beyond Text size and color, and precise geometry controls. Existing Whiteout, Initials, and Cross overlays remain viewable, movable where supported, and deletable, with an explanation that advanced editing is available on desktop or tablet. Tablet and desktop retain the full editor.

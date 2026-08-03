@@ -25,6 +25,10 @@ export type EditorTool =
 export type SignatureFont = "cursive" | "serif" | "marker" | "hand";
 export type SignatureSource = "draw" | "type" | "upload";
 export type SignatureElementType = "signature" | "initials";
+export interface InitialElementSize {
+  readonly width: number;
+  readonly height: number;
+}
 export type EditorErrorCode =
   | "UnsupportedFile"
   | "EmptyFile"
@@ -677,10 +681,14 @@ export class PdfEditorApplication {
     }
     return this.snapshot();
   }
-  public addText(point: { readonly x: number; readonly y: number }, text = "Text"): EditorSnapshot {
+  public addText(
+    point: { readonly x: number; readonly y: number },
+    text = "Text",
+    size: InitialElementSize = { width: 160, height: 40 },
+  ): EditorSnapshot {
     return this.#addElement({
       type: "text",
-      bounds: { x: point.x, y: point.y, width: 160, height: 40 },
+      bounds: { x: point.x, y: point.y, width: size.width, height: size.height },
       text,
       fontSize: DEFAULT_TEXT_APPEARANCE.fontSize,
     });
@@ -759,34 +767,43 @@ export class PdfEditorApplication {
       },
     });
   }
-  public addCheckmark(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+  public addCheckmark(
+    point: { readonly x: number; readonly y: number },
+    size = DEFAULT_CHECKMARK_SIZE,
+  ): EditorSnapshot {
     return this.#addElement({
       type: "checkmark",
       bounds: {
-        x: point.x - DEFAULT_CHECKMARK_SIZE / 2,
-        y: point.y - DEFAULT_CHECKMARK_SIZE / 2,
-        width: DEFAULT_CHECKMARK_SIZE,
-        height: DEFAULT_CHECKMARK_SIZE,
+        x: point.x - size / 2,
+        y: point.y - size / 2,
+        width: size,
+        height: size,
       },
     });
   }
 
-  public addCross(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+  public addCross(
+    point: { readonly x: number; readonly y: number },
+    size = DEFAULT_CROSS_SIZE,
+  ): EditorSnapshot {
     return this.#addElement({
       type: "cross",
       bounds: {
-        x: point.x - DEFAULT_CROSS_SIZE / 2,
-        y: point.y - DEFAULT_CROSS_SIZE / 2,
-        width: DEFAULT_CROSS_SIZE,
-        height: DEFAULT_CROSS_SIZE,
+        x: point.x - size / 2,
+        y: point.y - size / 2,
+        width: size,
+        height: size,
       },
     });
   }
 
-  public addDate(point: { readonly x: number; readonly y: number }): EditorSnapshot {
+  public addDate(
+    point: { readonly x: number; readonly y: number },
+    size: InitialElementSize = { width: 96, height: 28 },
+  ): EditorSnapshot {
     return this.#addElement({
       type: "date",
-      bounds: { x: point.x, y: point.y, width: 96, height: 28 },
+      bounds: { x: point.x, y: point.y, width: size.width, height: size.height },
       text: formatLocalDate(this.#dateProvider.today()),
       fontSize: DEFAULT_DATE_APPEARANCE.fontSize,
     });

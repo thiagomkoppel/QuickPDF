@@ -5,11 +5,12 @@ import {
   type ChangeEvent,
   type DragEvent,
   type KeyboardEvent,
+  type MouseEvent,
 } from "react";
 
 import type { EditorSnapshot, PdfEditorApplication } from "../../application/editor-application";
 
-const GITHUB_URL = "//github.com/";
+const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
 const MINIMUM_OPENING_DURATION_MS = 5_000;
 const OPENING_STAGES = [
   "Reading PDF...",
@@ -26,9 +27,7 @@ interface LandingPageProps {
 }
 
 const sleep = (duration: number): Promise<void> =>
-  new Promise((resolve) => {
-    window.setTimeout(resolve, duration);
-  });
+  new Promise((resolve) => window.setTimeout(resolve, duration));
 
 export const LandingPage = ({
   editor,
@@ -42,68 +41,67 @@ export const LandingPage = ({
   const [isOpening, setIsOpening] = useState(false);
   const [openingStage, setOpeningStage] = useState(0);
   const [openingFileName, setOpeningFileName] = useState<string>();
+  const [isPhoneLayout, setIsPhoneLayout] = useState(
+    () => window.matchMedia("(max-width: 767px)").matches,
+  );
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotionPreference = (): void => {
-      setPrefersReducedMotion(mediaQuery.matches);
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const update = (): void => {
+      setIsPhoneLayout(mediaQuery.matches);
     };
-    mediaQuery.addEventListener("change", updateMotionPreference);
+    mediaQuery.addEventListener("change", update);
     return () => {
-      mediaQuery.removeEventListener("change", updateMotionPreference);
+      mediaQuery.removeEventListener("change", update);
     };
   }, []);
-
   useEffect(() => {
-    if (!isOpening) {
-      return undefined;
-    }
-    if (prefersReducedMotion) {
-      return undefined;
-    }
-    const stageTimers = [1_250, 2_500, 3_750].map((delay, index) =>
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = (): void => {
+      setPrefersReducedMotion(mediaQuery.matches);
+    };
+    mediaQuery.addEventListener("change", update);
+    return () => {
+      mediaQuery.removeEventListener("change", update);
+    };
+  }, []);
+  useEffect(() => {
+    if (!isOpening || prefersReducedMotion) return undefined;
+    const timers = [1_250, 2_500, 3_750].map((delay, index) =>
       window.setTimeout(() => {
         setOpeningStage(index + 1);
       }, delay),
     );
     return () => {
-      stageTimers.forEach((timer) => {
+      timers.forEach((timer) => {
         window.clearTimeout(timer);
       });
     };
   }, [isOpening, prefersReducedMotion]);
 
   const openFile = async (file: File | undefined): Promise<void> => {
-    if (file === undefined || isOpening) {
-      return;
-    }
+    if (file === undefined || isOpening) return;
     dragDepthRef.current = 0;
     setIsDragActive(false);
     setOpeningFileName(file.name);
     setOpeningStage(0);
     setIsOpening(true);
     const startedAt = performance.now();
-
     try {
       const nextSnapshot = await editor.openFile(file);
       onSnapshotChange(nextSnapshot);
-      if (nextSnapshot.state.status !== "ready") {
-        return;
-      }
+      if (nextSnapshot.state.status !== "ready") return;
       const remaining = Math.max(0, MINIMUM_OPENING_DURATION_MS - (performance.now() - startedAt));
-      if (remaining > 0) {
-        await sleep(remaining);
-      }
+      if (remaining > 0) await sleep(remaining);
       setOpeningStage(3);
       onDocumentOpened();
     } finally {
       setIsOpening(false);
     }
   };
-
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     void openFile(event.currentTarget.files?.[0]);
     event.currentTarget.value = "";
@@ -128,11 +126,20 @@ export const LandingPage = ({
   const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-    if (dragDepthRef.current === 0) {
-      setIsDragActive(false);
-    }
+    if (dragDepthRef.current === 0) setIsDragActive(false);
   };
-  const openPicker = (): void => inputRef.current?.click();
+  const navigateToPrivacy = (event: MouseEvent<HTMLAnchorElement>): void => {
+    event.preventDefault();
+    window.history.pushState({}, "", "/privacy");
+    window.dispatchEvent(new Event("quickpdf:navigation"));
+  };
+  const openPicker = (): void => {
+    inputRef.current?.click();
+  };
+  const handlePickerAction = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    openPicker();
+  };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -152,9 +159,22 @@ export const LandingPage = ({
           <span />
           <span />
         </div>
-        <p className="landing-eyebrow">Private PDF workspace</p>
-        <h1 id="landing-title">Edit PDFs in seconds.</h1>
-        <p className="landing-subtitle">Your files never leave your browser.</p>
+        <p className="landing-eyebrow">
+          <span className="landing-eyebrow-desktop">Private PDF workspace</span>
+          <span className="landing-eyebrow-mobile">Private &amp; Secure</span>
+        </p>
+        <h1 id="landing-title">
+          <span className="landing-title-desktop">Edit PDFs in seconds.</span>
+          <span className="landing-title-mobile">
+            Edit PDFs
+            <br />
+            quickly.
+          </span>
+        </h1>
+        <p className="landing-subtitle">
+          <span className="landing-subtitle-desktop">Your files never leave your browser.</span>
+          <span className="landing-subtitle-mobile">Private, browser-only editing.</span>
+        </p>
         <input
           ref={inputRef}
           aria-label="Choose a PDF file"
@@ -176,9 +196,9 @@ export const LandingPage = ({
             event.preventDefault();
           }}
           onDrop={handleDrop}
-          onKeyDown={handleKeyDown}
-          role="button"
-          tabIndex={isOpening ? -1 : 0}
+          onKeyDown={isPhoneLayout ? undefined : handleKeyDown}
+          role={isPhoneLayout ? undefined : "button"}
+          tabIndex={isPhoneLayout || isOpening ? -1 : 0}
         >
           {isOpening ? (
             <span className="file-drop-opening" role="status">
@@ -193,22 +213,45 @@ export const LandingPage = ({
           ) : (
             <>
               <span aria-hidden="true" className="file-drop-upload-icon">
-                ↑
+                <span className="file-drop-upload-arrow">↑</span>
+                <span className="file-drop-upload-pdf">PDF</span>
               </span>
               <span className="file-drop-copy">
-                <strong>{isDragActive ? "Release to open your PDF" : "Drop your PDF here"}</strong>
-                <span>
+                <strong className="file-drop-desktop-copy">
+                  {isDragActive ? "Release to open your PDF" : "Drop your PDF here"}
+                </strong>
+                <strong className="file-drop-mobile-copy">
+                  {isDragActive ? "Release to open your PDF" : "Open a PDF"}
+                </strong>
+                <span className="file-drop-desktop-copy">
                   {isDragActive
                     ? "Your file stays in this browser session."
                     : "or choose a file from your device"}
                 </span>
-                <small id="drop-zone-support">
+                <span className="file-drop-mobile-copy">
+                  Choose a file from your device to start editing.
+                </span>
+                <small id="drop-zone-support" className="file-drop-desktop-copy">
                   Your document never leaves this browser session.
                 </small>
               </span>
               <span aria-hidden="true" className="file-drop-button">
                 Choose File
               </span>
+              <div className="file-drop-mobile-actions">
+                <button type="button" onClick={handlePickerAction}>
+                  Choose PDF
+                </button>
+                <span>or</span>
+                <button type="button" className="file-drop-browse" onClick={handlePickerAction}>
+                  Browse files
+                </button>
+                <small>
+                  Your file stays on this device.
+                  <br />
+                  We never upload or store your documents.
+                </small>
+              </div>
             </>
           )}
         </div>
@@ -226,31 +269,43 @@ export const LandingPage = ({
             <b>⌑</b>
             <span>
               <strong>100% Private</strong>
-              <small>Stays in your browser</small>
+              <small className="landing-badge-desktop">Stays in your browser</small>
+              <small className="landing-badge-mobile">Your files never leave your browser</small>
             </span>
           </li>
           <li>
-            <b>ϟ</b>
+            <b>⌁</b>
             <span>
-              <strong>Fast &amp; Simple</strong>
-              <small>Edit in seconds</small>
+              <strong className="landing-badge-desktop">Fast &amp; Simple</strong>
+              <strong className="landing-badge-mobile">No Uploads</strong>
+              <small className="landing-badge-desktop">Edit in seconds</small>
+              <small className="landing-badge-mobile">Everything stays on device</small>
             </span>
           </li>
           <li>
             <b>♢</b>
             <span>
-              <strong>Your Control</strong>
-              <small>No accounts, no tracking</small>
+              <strong className="landing-badge-desktop">Your Control</strong>
+              <strong className="landing-badge-mobile">100% Free</strong>
+              <small className="landing-badge-desktop">No accounts, no tracking</small>
+              <small className="landing-badge-mobile">
+                No sign up
+                <br />
+                No limits
+              </small>
             </span>
           </li>
         </ul>
       </div>
       <footer className="landing-footer" id="privacy">
         <span>
-          <strong>QuickPDF</strong> — Browser-Based PDF Editor
+          <strong className="landing-footer-desktop">QuickPDF — Browser-Based PDF Editor</strong>
+          <strong className="landing-footer-mobile">♡&nbsp; Made with privacy in mind</strong>
         </span>
         <span>
-          <a href="#privacy">Privacy Policy</a>
+          <a href="/privacy" onClick={navigateToPrivacy}>
+            Privacy Policy
+          </a>
           <a href={GITHUB_URL} rel="noreferrer" target="_blank">
             GitHub
           </a>

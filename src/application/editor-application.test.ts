@@ -177,6 +177,22 @@ describe("PdfEditorApplication export", () => {
       expect(app.redo().state.selectedElement?.color).toBe("#c62828");
     },
   );
+  it("accepts explicit initial geometry for compact placement", () => {
+    const text = app.addText({ x: 10, y: 20 }, "Text", { width: 200, height: 52 });
+    expect(text.state.selectedElement?.bounds).toEqual({ x: 10, y: 20, width: 200, height: 52 });
+
+    const checkmark = app.addCheckmark({ x: 80, y: 90 }, 44);
+    expect(checkmark.state.selectedElement?.bounds).toEqual({
+      x: 58,
+      y: 68,
+      width: 44,
+      height: 44,
+    });
+
+    const date = app.addDate({ x: 30, y: 40 }, { width: 144, height: 40 });
+    expect(date.state.selectedElement?.bounds).toEqual({ x: 30, y: 40, width: 144, height: 40 });
+  });
+
   it("resizes text bounds without changing the Style-tab font size", () => {
     const added = app.addText({ x: 10, y: 20 }, "Fixed text");
     const elementId = added.state.selectedElementId;
@@ -225,6 +241,29 @@ describe("PdfEditorApplication export", () => {
     expect(app.redo().state.selectedElement).toMatchObject({
       text: "Final edit",
       color: "#c62828",
+    });
+  });
+  it("preserves Patrick Hand through history, duplication, and session-local paste", () => {
+    const added = app.addText({ x: 10, y: 20 }, "John Doe");
+    const elementId = added.state.selectedElementId;
+    expect(elementId).toBeDefined();
+    if (elementId === undefined) return;
+
+    app.updateTextAppearance(elementId, { fontFamily: "Patrick Hand" });
+    expect(app.undo().state.selectedElement).toMatchObject({
+      textAppearance: { fontFamily: undefined },
+    });
+    expect(app.redo().state.selectedElement).toMatchObject({
+      textAppearance: { fontFamily: "Patrick Hand" },
+    });
+
+    expect(app.duplicateElement(elementId).state.selectedElement).toMatchObject({
+      textAppearance: { fontFamily: "Patrick Hand" },
+    });
+    app.selectElement(elementId);
+    app.copySelectedElement();
+    expect(app.pasteCopiedElement().state.selectedElement).toMatchObject({
+      textAppearance: { fontFamily: "Patrick Hand" },
     });
   });
   it("preserves text color and appearance through size and resize history", () => {

@@ -111,6 +111,47 @@ describe("PdfLibExportGateway", () => {
     drawText.mockRestore();
     drawLine.mockRestore();
   });
+  it("embeds Patrick Hand once and uses it for multiline aligned text", async () => {
+    const embedFont = vi.spyOn(PDFDocument.prototype, "embedFont");
+    const drawText = vi.spyOn(PDFPage.prototype, "drawText");
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes: await createPdf(),
+      pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+      elements: [
+        {
+          ...textElement("patrick-1", "page-1", "John Doe\nJane Doe"),
+          textAppearance: {
+            fontSize: 22,
+            color: "#000000",
+            fontFamily: "Patrick Hand",
+            alignment: "right",
+            lineHeight: 1.2,
+          },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    const customFontCallIndex = embedFont.mock.calls.findIndex(
+      ([value]) => value instanceof Uint8Array,
+    );
+    expect(customFontCallIndex).toBeGreaterThanOrEqual(0);
+    const customFontResult = embedFont.mock.results[customFontCallIndex];
+    if (customFontResult?.type !== "return") {
+      throw new Error("Patrick Hand embedding did not return a font.");
+    }
+    const customFont = await (customFontResult.value as unknown as Promise<unknown>);
+    const patrickDraws = drawText.mock.calls.filter(
+      ([value]) => value === "John Doe" || value === "Jane Doe",
+    );
+    expect(patrickDraws).toHaveLength(2);
+    expect(patrickDraws.every(([, options]) => options?.font === customFont)).toBe(true);
+
+    embedFont.mockRestore();
+    drawText.mockRestore();
+  });
   it("fails safely for invalid PDF bytes", async () => {
     const result = await new PdfLibExportGateway().exportPdf({
       originalBytes: new Uint8Array([1, 2, 3]),

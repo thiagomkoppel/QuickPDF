@@ -1,4 +1,7 @@
+import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+
+import patrickHandFontDataUrl from "../../presentation/assets/fonts/PatrickHand-Regular.ttf?inline";
 
 import type {
   ExportElement,
@@ -51,8 +54,24 @@ const dataUrlBytes = (dataUrl: string): Uint8Array => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-const fontForElement = (element: ExportElement, fallback: PDFFont, cursive: PDFFont): PDFFont =>
-  element.type === "signature" || element.type === "initials" ? cursive : fallback;
+const PATRICK_HAND_FONT_FAMILY = "Patrick Hand";
+
+const patrickHandFontBytes = (): Uint8Array => dataUrlBytes(patrickHandFontDataUrl);
+
+const fontForElement = (
+  element: ExportElement,
+  fallback: PDFFont,
+  cursive: PDFFont,
+  patrickHand: PDFFont | undefined,
+): PDFFont => {
+  if (element.type === "signature" || element.type === "initials") {
+    return cursive;
+  }
+  return element.textAppearance?.fontFamily === PATRICK_HAND_FONT_FAMILY &&
+    patrickHand !== undefined
+    ? patrickHand
+    : fallback;
+};
 const drawCheckmark = (
   page: PDFPage,
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
@@ -118,8 +137,17 @@ export class PdfLibExportGateway implements PdfExportGateway {
       const document = await PDFDocument.load(request.originalBytes, { ignoreEncryption: false });
       const font = await document.embedFont(StandardFonts.Helvetica);
       const signatureFont = await document.embedFont(StandardFonts.TimesRomanItalic);
+      const usesPatrickHand = request.elements.some(
+        (element) => element.textAppearance?.fontFamily === PATRICK_HAND_FONT_FAMILY,
+      );
+      const patrickHand = usesPatrickHand
+        ? await (async (): Promise<PDFFont> => {
+            document.registerFontkit(fontkit);
+            return document.embedFont(patrickHandFontBytes());
+          })()
+        : undefined;
       for (const element of request.elements) {
-        await this.#drawElement(document, element, font, signatureFont);
+        await this.#drawElement(document, element, font, signatureFont, patrickHand);
       }
       const bytes = await document.save();
       return { ok: true, bytes };
@@ -133,6 +161,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     element: ExportElement,
     font: PDFFont,
     signatureFont: PDFFont,
+    patrickHand: PDFFont | undefined,
   ): Promise<void> {
     const pageNumber = pageNumberFromPageId(element.pageId);
     if (pageNumber === undefined) {
@@ -195,7 +224,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     }
     const fontSize = element.textAppearance?.fontSize ?? 16;
     const colorParts = parseHexColor(element.textAppearance?.color);
-    const activeFont = fontForElement(element, font, signatureFont);
+    const activeFont = fontForElement(element, font, signatureFont, patrickHand);
     const start = pageTopLeftTextToPdfPoint({
       bounds: element.bounds,
       page: { width: page.getWidth(), height: page.getHeight() },

@@ -367,6 +367,44 @@ const expectBoxNear = (
   expect(Math.abs(box.y - expected.y)).toBeLessThanOrEqual(1);
 };
 
+test("renders and exports bundled Patrick Hand text", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("patrick-hand-fixture.pdf");
+  const fixtureBytes = await createPdf();
+  await import("node:fs/promises").then((fs) => fs.writeFile(fixturePath, fixtureBytes));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "patrick-hand-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) return;
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 100, overlayBox.y + 140);
+  await page.getByLabel("Edit text element").fill("John Doe");
+  await page.getByLabel("Edit text element").press("Escape");
+  await page.getByRole("tab", { name: "Style" }).click();
+  await page.getByLabel("Text font", { exact: true }).selectOption("Patrick Hand");
+  await expect(page.getByLabel("Text element content")).toHaveCSS("font-family", /Patrick Hand/);
+  await page.screenshot({ path: testInfo.outputPath("patrick-hand-editor.png"), fullPage: true });
+
+  const downloadedPath = testInfo.outputPath("patrick-hand-fixture-edited.pdf");
+  await downloadEditedPdf(page, "patrick-hand-fixture-edited.pdf", downloadedPath);
+  const exported = await PDFDocument.load(
+    await import("node:fs/promises").then((fs) => fs.readFile(downloadedPath)),
+  );
+  expect(exported.getPageCount()).toBe(1);
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(downloadedPath);
+  await expect(
+    page.getByRole("heading", { name: "patrick-hand-fixture-edited.pdf" }),
+  ).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("patrick-hand-exported.png"), fullPage: true });
+});
 test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PDF", async ({
   page,
 }, testInfo) => {
@@ -388,10 +426,19 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   }
 
   await page.getByRole("button", { name: "Whiteout" }).click();
+  await expect(page.getByRole("button", { name: "Whiteout" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const currentOverlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(currentOverlayBox).not.toBeNull();
+  if (currentOverlayBox === null) {
+    return;
+  }
   await dragWhiteout(
     page,
-    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
-    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+    { x: currentOverlayBox.x + 40, y: currentOverlayBox.y + 50 },
+    { x: currentOverlayBox.x + 160, y: currentOverlayBox.y + 98 },
   );
   const whiteout = page.getByRole("group", { name: "whiteout element" });
   await expect(whiteout).toBeVisible();
@@ -497,7 +544,7 @@ test("selects text with one click and edits text only through explicit edit acti
   }
 
   await page.getByRole("button", { name: "Text" }).click();
-  await page.mouse.click(overlayBox.x + 80, overlayBox.y + 130);
+  await page.locator(".overlay-layer").click({ position: { x: 80, y: 130 } });
   const initialEditor = page.getByLabel("Edit text element");
   await expect(initialEditor).toBeFocused();
   await initialEditor.fill("Click selectable text");
@@ -522,7 +569,7 @@ test("selects text with one click and edits text only through explicit edit acti
   );
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
   await expect(page.getByLabel("Edit text element")).toHaveCount(0);
-  await page.mouse.click(overlayBox.x + 20, overlayBox.y + 20);
+  await page.locator(".overlay-layer").click({ position: { x: 20, y: 20 } });
   await expect(page.getByRole("button", { name: "Duplicate" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(1);
   await page.mouse.click(
@@ -714,7 +761,7 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   }
 
   await page.getByRole("button", { name: "Text" }).click();
-  await page.mouse.click(overlayBox.x + 45, overlayBox.y + 120);
+  await page.locator(".overlay-layer").click({ position: { x: 45, y: 120 } });
   const textToDelete = page.getByLabel("Edit text element");
   await textToDelete.fill("Delete me");
   await textToDelete.press("Escape");
@@ -723,10 +770,19 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Whiteout" }).click();
+  await expect(page.getByRole("button", { name: "Whiteout" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const currentOverlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(currentOverlayBox).not.toBeNull();
+  if (currentOverlayBox === null) {
+    return;
+  }
   await dragWhiteout(
     page,
-    { x: overlayBox.x + 40, y: overlayBox.y + 50 },
-    { x: overlayBox.x + 160, y: overlayBox.y + 98 },
+    { x: currentOverlayBox.x + 40, y: currentOverlayBox.y + 50 },
+    { x: currentOverlayBox.x + 160, y: currentOverlayBox.y + 98 },
   );
   await expect(page.getByRole("group", { name: "whiteout element" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
@@ -1217,6 +1273,116 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
     .toBe(true);
 });
 
+test("keeps the phone editor inside the viewport with a collapsed full-width inspector", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("mobile-layout-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+    await expect(page.getByRole("region", { name: "mobile-layout-fixture.pdf" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+
+    const layout = await page.evaluate(() => {
+      const rectFor = (selector: string): DOMRect => {
+        const element = document.querySelector(selector);
+        if (element === null) {
+          throw new Error(`Missing ${selector}`);
+        }
+        return element.getBoundingClientRect();
+      };
+      const labels = [
+        ...document.querySelectorAll<HTMLElement>(
+          '.toolbar-tools-group button[data-mobile-primary="true"] .toolbar-label',
+        ),
+      ]
+        .map((label) => {
+          const rect = label.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
+        })
+        .sort((first, second) => first.left - second.left);
+      const workspace = rectFor('[aria-label="PDF workspace"]');
+      const pageFrame = rectFor(".pdf-page-frame");
+      const inspector = rectFor(".element-inspector");
+      const viewBar = rectFor(".editor-status-bar");
+      return {
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        inspector: { left: inspector.left, right: inspector.right, width: inspector.width },
+        viewBar: { left: viewBar.left, right: viewBar.right },
+        workspace: { width: workspace.width },
+        pageFrame: { width: pageFrame.width },
+        labels,
+        inspectorBodyDisplay: (() => {
+          const properties = document.querySelector(".element-inspector__properties-region");
+          if (properties === null) {
+            throw new Error("Missing inspector properties region");
+          }
+          return window.getComputedStyle(properties).display;
+        })(),
+      };
+    });
+
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.inspector.left).toBeGreaterThanOrEqual(-1);
+    expect(layout.inspector.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+    expect(layout.inspector.width).toBeGreaterThanOrEqual(layout.innerWidth - 1);
+    expect(layout.viewBar.left).toBeGreaterThanOrEqual(-1);
+    expect(layout.viewBar.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+    expect(layout.pageFrame.width).toBeLessThanOrEqual(layout.workspace.width + 1);
+    expect(layout.inspectorBodyDisplay).toBe("none");
+    for (let index = 1; index < layout.labels.length; index += 1) {
+      expect(layout.labels[index - 1]?.right ?? 0).toBeLessThanOrEqual(
+        (layout.labels[index]?.left ?? 0) + 1,
+      );
+    }
+  }
+});
+test("renders the phone landing with an accessible local-first menu", async ({ page }) => {
+  for (const viewport of [
+    { width: 390, height: 844, name: "390x844" },
+    { width: 430, height: 932, name: "430x932" },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+
+    await expect(page.getByText("Private & Secure")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Edit PDFs.*quickly/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choose PDF" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Browse files" })).toBeVisible();
+    await expect(page.getByText("100% Private")).toBeVisible();
+    await expect(page.getByText("No Uploads")).toBeVisible();
+    await expect(page.getByText("100% Free")).toBeVisible();
+
+    const menuButton = page.getByRole("button", { name: "Open site menu" });
+    await menuButton.click();
+    await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      page.locator("#mobile-site-menu").getByRole("link", { name: "Privacy" }),
+    ).toBeVisible();
+    const githubLink = page.locator("#mobile-site-menu").getByRole("link", { name: "GitHub" });
+    await expect(githubLink).toBeVisible();
+    await expect(githubLink).toHaveAttribute("href", "https://github.com/thiagomkoppel/QuickPDF");
+    await page.keyboard.press("Escape");
+    await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+      .toBe(true);
+    await page.screenshot({
+      path: `artifacts/ui-review/mobile-landing-${viewport.name}.png`,
+      fullPage: true,
+    });
+  }
+});
 test("returns to the landing page after reloading a memory-only editor session", async ({
   page,
 }, testInfo) => {

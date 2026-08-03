@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PdfJsPageRenderer } from "./pdfjs-page-renderer";
 
@@ -26,8 +26,12 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve: resolvePromise, reject: rejectPromise };
 };
 
+const clearRect = vi.fn();
+const drawImage = vi.fn();
+
 const context = {
-  clearRect: vi.fn(),
+  clearRect,
+  drawImage,
 } as Partial<CanvasRenderingContext2D> as CanvasRenderingContext2D;
 
 const createCanvas = (): HTMLCanvasElement => {
@@ -62,6 +66,11 @@ const createPdfDocument = (renderPromise: Promise<undefined> = Promise.resolve(u
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("PdfJsPageRenderer", () => {
@@ -111,10 +120,52 @@ describe("PdfJsPageRenderer", () => {
     expect(canvas.style.height).toBe("600px");
     expect(fixture.document.getPage).toHaveBeenCalledWith(1);
     expect(fixture.page.render).toHaveBeenCalledWith(
-      expect.objectContaining({ canvas, canvasContext: context, transform: [2, 0, 0, 2, 0, 0] }),
+      expect.objectContaining({
+        canvasContext: context,
+        transform: [2, 0, 0, 2, 0, 0],
+      }),
     );
   });
 
+  it("keeps the visible canvas intact until a staged render completes", async () => {
+    const render = deferred<undefined>();
+    const fixture = createPdfDocument(render.promise);
+    pdfjsMock.getDocument.mockReturnValueOnce(fixture.task);
+    const renderer = new PdfJsPageRenderer();
+    const openResult = await renderer.openRenderDocument(new Uint8Array([37, 80, 68, 70, 45]));
+    expect(openResult.ok).toBe(true);
+    if (!openResult.ok) {
+      return;
+    }
+    const canvas = createCanvas();
+    canvas.width = 40;
+    canvas.height = 50;
+    canvas.style.width = "40px";
+    canvas.style.height = "50px";
+
+    const handle = renderer.startRenderPage({
+      documentId: openResult.documentId,
+      pageNumber: 1,
+      scale: 1,
+      devicePixelRatio: 1,
+      canvas,
+    });
+    await Promise.resolve();
+
+    expect(canvas.width).toBe(40);
+    expect(canvas.height).toBe(50);
+    expect(drawImage).not.toHaveBeenCalled();
+
+    render.resolve(undefined);
+    await expect(handle.promise).resolves.toMatchObject({
+      ok: true,
+      cssWidth: 300,
+      cssHeight: 400,
+    });
+    expect(canvas.width).toBe(300);
+    expect(canvas.height).toBe(400);
+    expect(drawImage).toHaveBeenCalledTimes(1);
+  });
   it("renders a page thumbnail at a bounded CSS size with DPR backing dimensions", async () => {
     const fixture = createPdfDocument();
     pdfjsMock.getDocument.mockReturnValueOnce(fixture.task);
@@ -178,8 +229,8 @@ describe("PdfJsPageRenderer", () => {
     if (!openResult.ok) {
       return;
     }
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValueOnce(null);
     const canvas = document.createElement("canvas");
-    Object.defineProperty(canvas, "getContext", { value: vi.fn(() => null) });
 
     const result = await renderer.startRenderPage({
       documentId: openResult.documentId,

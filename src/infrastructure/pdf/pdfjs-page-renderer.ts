@@ -76,6 +76,29 @@ const clearCanvas = (canvas: HTMLCanvasElement): void => {
   canvas.style.height = "0px";
 };
 
+const copyCompletedRender = (
+  source: HTMLCanvasElement,
+  target: HTMLCanvasElement,
+  cssWidth: number,
+  cssHeight: number,
+  backingWidth: number,
+  backingHeight: number,
+): boolean => {
+  const targetContext = target.getContext("2d");
+  if (targetContext === null) {
+    return false;
+  }
+  target.width = backingWidth;
+  target.height = backingHeight;
+  target.style.width = `${String(cssWidth)}px`;
+  target.style.height = `${String(cssHeight)}px`;
+  targetContext.clearRect(0, 0, backingWidth, backingHeight);
+  targetContext.drawImage(source, 0, 0);
+  return true;
+};
+
+const isRenderCancelled = (state: { readonly cancelled: boolean }): boolean => state.cancelled;
+
 const positiveScale = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 1);
 
 const positivePixelRatio = (value: number): number =>
@@ -132,7 +155,7 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
 
       try {
         const page = await loaded.document.getPage(request.pageNumber);
-        if (renderState.cancelled) {
+        if (isRenderCancelled(renderState)) {
           page.cleanup();
           return renderFailure("The PDF page render was cancelled.", true);
         }
@@ -144,25 +167,39 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
         const cssHeight = viewport.height;
         const backingWidth = Math.max(1, Math.floor(cssWidth * pixelRatio));
         const backingHeight = Math.max(1, Math.floor(cssHeight * pixelRatio));
-        const context = request.canvas.getContext("2d");
+        const renderCanvas = document.createElement("canvas");
+        const context = renderCanvas.getContext("2d");
         if (context === null) {
           page.cleanup();
           return renderFailure("The browser could not prepare a PDF canvas.");
         }
 
-        request.canvas.width = backingWidth;
-        request.canvas.height = backingHeight;
-        request.canvas.style.width = `${String(cssWidth)}px`;
-        request.canvas.style.height = `${String(cssHeight)}px`;
+        renderCanvas.width = backingWidth;
+        renderCanvas.height = backingHeight;
         context.clearRect(0, 0, backingWidth, backingHeight);
         renderTask = page.render({
-          canvas: request.canvas,
+          canvas: renderCanvas,
           canvasContext: context,
           viewport,
           transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
         });
         await renderTask.promise;
         page.cleanup();
+        if (isRenderCancelled(renderState)) {
+          return renderFailure("The PDF page render was cancelled.", true);
+        }
+        if (
+          !copyCompletedRender(
+            renderCanvas,
+            request.canvas,
+            cssWidth,
+            cssHeight,
+            backingWidth,
+            backingHeight,
+          )
+        ) {
+          return renderFailure("The browser could not display the rendered PDF page.");
+        }
         return { ok: true, cssWidth, cssHeight, backingWidth, backingHeight };
       } catch (error) {
         if (renderState.cancelled || isCancellation(error)) {
@@ -195,7 +232,7 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
       }
       try {
         const page = await loaded.document.getPage(request.pageNumber);
-        if (renderState.cancelled) {
+        if (isRenderCancelled(renderState)) {
           page.cleanup();
           return renderFailure("The PDF thumbnail render was cancelled.", true);
         }

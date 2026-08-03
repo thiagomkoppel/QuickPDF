@@ -6,6 +6,8 @@ import type { PdfOpenResult } from "../application/editor-application";
 
 import { App } from "./App";
 
+const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
+
 const download = vi.fn();
 const openRenderDocument = vi.fn(() =>
   Promise.resolve({ ok: true as const, documentId: "render-1" }),
@@ -127,9 +129,9 @@ describe("QuickPDF application shell", () => {
   it("renders the landing page with the product name, product statement, and accurate privacy promise", () => {
     renderAt("/");
 
-    expect(screen.getByRole("img", { name: "QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "QuickPDF" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds." }),
+      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
     ).toBeInTheDocument();
     expect(screen.getByText("Your files never leave your browser.")).toBeInTheDocument();
     expect(screen.getByText("100% Private")).toBeInTheDocument();
@@ -141,6 +143,57 @@ describe("QuickPDF application shell", () => {
     );
   });
 
+  it("renders the complete browser-local privacy policy at the privacy route", () => {
+    renderAt("/privacy");
+
+    expect(screen.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeInTheDocument();
+    expect(screen.getByText("Privacy at a glance")).toBeInTheDocument();
+    expect(screen.getByText("Your PDF is processed locally in your browser.")).toBeInTheDocument();
+    expect(
+      screen.getByText("QuickPDF does not upload or store your document on its own servers."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to QuickPDF" })).toHaveAttribute("href", "/");
+
+    for (const heading of [
+      "1. Overview",
+      "2. Documents and editing data",
+      "3. Information QuickPDF does not intentionally collect",
+      "4. Browser storage and session lifetime",
+      "5. Signatures and sensitive information",
+      "6. Exported files",
+      "7. Hosting and technical request data",
+      "8. Cookies, analytics, and advertising",
+      "9. External links",
+      "10. Security and limitations",
+      "11. Whiteout is not redaction",
+      "12. Children's privacy",
+      "13. International use",
+      "14. Changes to this policy",
+      "15. Contact",
+    ]) {
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    }
+
+    expect(screen.getByRole("link", { name: "thiagomkoppel@gmail.com" })).toHaveAttribute(
+      "href",
+      "mailto:thiagomkoppel@gmail.com",
+    );
+    expect(screen.getByRole("link", { name: "GitHub page" })).toHaveAttribute("href", GITHUB_URL);
+    expect(screen.getByText("Last updated: August 3, 2026")).toBeInTheDocument();
+  });
+
+  it("navigates between the landing page and privacy policy without a full page reload", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.click(screen.getByRole("link", { name: "Privacy Policy" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Back to QuickPDF" }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+    ).toBeInTheDocument();
+  });
   it("opens the accessible local picker from the complete drop zone", () => {
     renderAt("/");
     const input = screen.getByLabelText("Choose a PDF file");
@@ -158,13 +211,13 @@ describe("QuickPDF application shell", () => {
 
     fireEvent.dragEnter(dropZone, { dataTransfer });
     fireEvent.dragEnter(dropZone, { dataTransfer });
-    expect(screen.getByText("Release to open your PDF")).toBeInTheDocument();
+    expect(screen.getAllByText("Release to open your PDF")).not.toHaveLength(0);
 
     fireEvent.dragLeave(dropZone, { dataTransfer });
-    expect(screen.getByText("Release to open your PDF")).toBeInTheDocument();
+    expect(screen.getAllByText("Release to open your PDF")).not.toHaveLength(0);
 
     fireEvent.dragLeave(dropZone, { dataTransfer });
-    expect(screen.getByText("Drop your PDF here")).toBeInTheDocument();
+    expect(screen.getAllByText("Drop your PDF here")).not.toHaveLength(0);
   });
 
   it("shows the browser-local opening stages while a file is opening", async () => {
@@ -326,6 +379,47 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
   });
 
+  it("renders the phone landing with its menu and local file-picker actions", async () => {
+    const originalMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 767px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    });
+    const user = userEvent.setup();
+
+    renderAt("/");
+
+    expect(screen.getByText("Private & Secure")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Private, browser-only editing.")).toBeInTheDocument();
+    expect(screen.getByText("No Uploads")).toBeInTheDocument();
+    expect(screen.getByText("100% Free")).toBeInTheDocument();
+    expect(screen.getByText(/Made with privacy in mind/)).toBeInTheDocument();
+
+    const input = screen.getByLabelText("Choose a PDF file");
+    const openPicker = vi.fn();
+    Object.defineProperty(input, "click", { configurable: true, value: openPicker });
+    await user.click(screen.getByRole("button", { name: "Choose PDF" }));
+    await user.click(screen.getByRole("button", { name: "Browse files" }));
+    expect(openPicker).toHaveBeenCalledTimes(2);
+
+    const menu = screen.getByRole("button", { name: "Open site menu" });
+    await user.click(menu);
+    expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveClass("is-mobile-menu-open");
+    await user.keyboard("{Escape}");
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+
+    window.matchMedia = originalMatchMedia;
+  });
   it("redirects an editor route without an active in-memory document to the landing page", async () => {
     renderAt("/editor");
 
@@ -334,7 +428,7 @@ describe("QuickPDF application shell", () => {
       expect(window.location.pathname).toBe("/");
     });
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds." }),
+      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
     ).toBeInTheDocument();
   });
 

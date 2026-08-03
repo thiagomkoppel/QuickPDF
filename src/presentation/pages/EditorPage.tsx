@@ -7,12 +7,14 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   EditorSnapshot,
   PdfEditorApplication,
   ExportElement,
   ImageElementInput,
+  InitialElementSize,
   SignatureFont,
   SignatureImageInput,
   SignatureElementType,
@@ -80,6 +82,11 @@ interface WorkspacePan {
   hasMoved: boolean;
 }
 
+interface PinchZoom {
+  readonly startDistance: number;
+  readonly startZoom: number;
+}
+
 interface WhiteoutDraft {
   readonly pointerId: number;
   readonly startX: number;
@@ -94,6 +101,11 @@ interface RenderState {
 }
 
 const MIN_ZOOM = 0.5;
+const MIN_MOBILE_ZOOM = 0.1;
+const MOBILE_TEXT_SIZE: InitialElementSize = { width: 200, height: 52 };
+const MOBILE_DATE_SIZE: InitialElementSize = { width: 144, height: 40 };
+const MOBILE_MARK_SIZE = 44;
+const MOBILE_WHITEOUT_SIZE: InitialElementSize = { width: 160, height: 56 };
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
 const MIN_WHITEOUT_DRAG_DISTANCE = 4;
@@ -125,7 +137,8 @@ type ToolbarIconName =
   | "fit"
   | "previous"
   | "next"
-  | "more";
+  | "more"
+  | "menu";
 
 const ToolbarIcon = ({ name }: { readonly name: ToolbarIconName }): React.ReactElement => {
   const svg = (children: React.ReactNode): React.ReactElement => (
@@ -145,6 +158,14 @@ const ToolbarIcon = ({ name }: { readonly name: ToolbarIconName }): React.ReactE
   );
 
   switch (name) {
+    case "menu":
+      return svg(
+        <>
+          <path d="M4 6.5h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17.5h16" />
+        </>,
+      );
     case "open":
       return svg(
         <path d="M3.5 6.5h6l1.7 2H20.5v9.8a2.2 2.2 0 0 1-2.2 2.2H5.7a2.2 2.2 0 0 1-2.2-2.2V6.5Z" />,
@@ -278,7 +299,8 @@ const ToolbarIcon = ({ name }: { readonly name: ToolbarIconName }): React.ReactE
       );
   }
 };
-const clampZoom = (value: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+const clampZoom = (value: number, minimum = MIN_ZOOM): number =>
+  Math.min(MAX_ZOOM, Math.max(minimum, value));
 
 const boundsStyle = (
   bounds: {
@@ -652,6 +674,32 @@ const PageThumbnail = ({
     </button>
   );
 };
+const MOBILE_EDITOR_MEDIA_QUERY = "(max-width: 767px)";
+
+const useIsCompactEditorViewport = (): boolean => {
+  const getMatches = (): boolean =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
+      : false;
+  const [isCompact, setIsCompact] = useState(getMatches);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+    const mediaQuery = window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY);
+    const update = (): void => {
+      setIsCompact(mediaQuery.matches);
+    };
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => {
+      mediaQuery.removeEventListener("change", update);
+    };
+  }, []);
+
+  return isCompact;
+};
 export const EditorPage = ({
   editor,
   snapshot,
@@ -659,6 +707,7 @@ export const EditorPage = ({
   pdfRenderer,
   onOpenRequest,
 }: EditorPageProps): React.ReactElement => {
+  const isCompactEditorViewport = useIsCompactEditorViewport();
   const state = snapshot.state;
   const currentPage = state.currentPage;
   const currentPageId = currentPage?.id;
@@ -674,7 +723,14 @@ export const EditorPage = ({
   const [zoom, setZoom] = useState(1);
   const [viewMode, setViewMode] = useState<ViewerMode>("fit-page");
   const [isPageRailCollapsed, setIsPageRailCollapsed] = useState(false);
+  const [isMobilePageRailOpen, setIsMobilePageRailOpen] = useState(false);
+  const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
+  const [isQuickEditNoticeDismissed, setIsQuickEditNoticeDismissed] = useState(false);
   const zoomRef = useRef(1);
+  const hasManualZoomRef = useRef(false);
+  const mobileFitDocumentIdRef = useRef<string | undefined>(undefined);
+  const lastRenderDocumentIdRef = useRef<string | undefined>(state.renderDocumentId);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
   const [dialogType, setDialogType] = useState<SignatureElementType | undefined>();
   const [pendingImage, setPendingImage] = useState<ImageElementInput | undefined>();
@@ -701,9 +757,70 @@ export const EditorPage = ({
   const movePreviewRef = useRef<MovePreview | undefined>(undefined);
   const moveCancelRef = useRef<(() => void) | undefined>(undefined);
   const workspacePanRef = useRef<WorkspacePan | undefined>(undefined);
+  const touchPointsRef = useRef(new Map<number, { readonly x: number; readonly y: number }>());
+  const pinchZoomRef = useRef<PinchZoom | undefined>(undefined);
   const suppressWorkspaceClickRef = useRef(false);
   const [isWorkspacePanning, setIsWorkspacePanning] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileMoreSheetRef = useRef<HTMLElement | null>(null);
+
+  const getMobileInsertionPoint = useCallback(
+    (type: SignatureElementType): { readonly x: number; readonly y: number } => {
+      if (!isCompactEditorViewport || currentPage === undefined) {
+        return defaultPlacement(type);
+      }
+      const workspace = workspaceRef.current;
+      const page = overlayLayerRef.current;
+      if (workspace === null || page === null || zoom <= 0) {
+        return defaultPlacement(type);
+      }
+      const workspaceRect = workspace.getBoundingClientRect();
+      const pageRect = page.getBoundingClientRect();
+      const left = Math.max(workspaceRect.left, pageRect.left);
+      const right = Math.min(workspaceRect.right, pageRect.right);
+      const top = Math.max(workspaceRect.top, pageRect.top);
+      const bottom = Math.min(workspaceRect.bottom, pageRect.bottom);
+      if (right <= left || bottom <= top) {
+        return defaultPlacement(type);
+      }
+      const defaultWidth = type === "signature" ? 180 : 96;
+      const defaultHeight = type === "signature" ? 64 : 40;
+      return {
+        x:
+          Math.min(
+            Math.max((left + right) / 2 - pageRect.left, (defaultWidth * zoom) / 2),
+            currentPage.width * zoom - (defaultWidth * zoom) / 2,
+          ) / zoom,
+        y:
+          Math.min(
+            Math.max((top + bottom) / 2 - pageRect.top, (defaultHeight * zoom) / 2),
+            currentPage.height * zoom - (defaultHeight * zoom) / 2,
+          ) / zoom,
+      };
+    },
+    [currentPage, isCompactEditorViewport, zoom],
+  );
+  useEffect(() => {
+    if (!isCompactEditorViewport || !isMobileMoreOpen) {
+      return undefined;
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsMobileMoreOpen(false);
+      }
+    };
+    const trigger = mobileMoreButtonRef.current;
+    window.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => {
+      mobileMoreSheetRef.current?.focus();
+    });
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      trigger?.focus();
+    };
+  }, [isCompactEditorViewport, isMobileMoreOpen]);
 
   const applySnapshot = useCallback(
     (nextSnapshot: EditorSnapshot): void => {
@@ -830,12 +947,12 @@ export const EditorPage = ({
       if (calculated === undefined) {
         return;
       }
-      const bounded = clampZoom(calculated);
+      const bounded = clampZoom(calculated, isCompactEditorViewport ? MIN_MOBILE_ZOOM : MIN_ZOOM);
       zoomRef.current = bounded;
       setZoom((current) => (current === bounded ? current : bounded));
       setViewMode(mode);
     },
-    [currentPageHeight, currentPageWidth],
+    [currentPageHeight, currentPageWidth, isCompactEditorViewport],
   );
   const applyZoom = useCallback(
     (
@@ -846,8 +963,9 @@ export const EditorPage = ({
         readonly clientY: number;
       },
     ): void => {
+      hasManualZoomRef.current = true;
       const currentZoom = zoomRef.current;
-      const boundedZoom = clampZoom(nextZoom);
+      const boundedZoom = clampZoom(nextZoom, isCompactEditorViewport ? MIN_MOBILE_ZOOM : MIN_ZOOM);
       if (boundedZoom === currentZoom) {
         return;
       }
@@ -865,9 +983,10 @@ export const EditorPage = ({
       }
 
       zoomRef.current = boundedZoom;
+      setViewMode("manual");
       setZoom(boundedZoom);
     },
-    [],
+    [isCompactEditorViewport],
   );
 
   useEffect(() => {
@@ -881,6 +1000,30 @@ export const EditorPage = ({
     applyFit(viewMode);
   }, [applyFit, currentPageId, isPageRailCollapsed, state.renderDocumentId, viewMode]);
 
+  useEffect(() => {
+    if (lastRenderDocumentIdRef.current === state.renderDocumentId) {
+      return;
+    }
+    lastRenderDocumentIdRef.current = state.renderDocumentId;
+    hasManualZoomRef.current = false;
+    mobileFitDocumentIdRef.current = undefined;
+  }, [state.renderDocumentId]);
+  useEffect(() => {
+    if (!isCompactEditorViewport || currentPageId === undefined || hasManualZoomRef.current) {
+      return;
+    }
+    if (mobileFitDocumentIdRef.current === state.renderDocumentId) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      applyFit("fit-page");
+      mobileFitDocumentIdRef.current = state.renderDocumentId;
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [applyFit, currentPageId, isCompactEditorViewport, state.renderDocumentId]);
   useEffect(() => {
     const workspace = workspaceRef.current;
     if (workspace === null || viewMode === "manual" || typeof ResizeObserver === "undefined") {
@@ -960,7 +1103,6 @@ export const EditorPage = ({
     return () => {
       renderSequenceRef.current += 1;
       handle.cancel();
-      pdfRenderer.clearCanvas(canvas);
     };
   }, [
     currentPageHeight,
@@ -972,6 +1114,15 @@ export const EditorPage = ({
     state.renderDocumentId,
     zoom,
   ]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    return () => {
+      if (canvas !== null) {
+        pdfRenderer.clearCanvas(canvas);
+      }
+    };
+  }, [pdfRenderer]);
 
   useEffect(() => {
     const editorViewport = editorViewportRef.current;
@@ -1325,7 +1476,7 @@ export const EditorPage = ({
   };
 
   const startWhiteoutDraft = (event: PointerEvent<HTMLDivElement>): void => {
-    if (currentPage === undefined || state.tool !== "whiteout") {
+    if (isCompactEditorViewport || currentPage === undefined || state.tool !== "whiteout") {
       return;
     }
     if (event.target instanceof HTMLElement && event.target.closest(".overlay-element") !== null) {
@@ -1458,7 +1609,9 @@ export const EditorPage = ({
       return;
     }
     if (state.tool === "text") {
-      const nextSnapshot = editor.addText(point, "Text");
+      const nextSnapshot = isCompactEditorViewport
+        ? editor.addText(point, "Text", MOBILE_TEXT_SIZE)
+        : editor.addText(point, "Text");
       const selectedElementId = nextSnapshot.state.selectedElementId;
       applySnapshot(editor.setTool("select"));
       setEditingTextElementId(selectedElementId);
@@ -1471,17 +1624,39 @@ export const EditorPage = ({
       return;
     }
     if (state.tool === "checkmark") {
-      applySnapshot(editor.addCheckmark(point));
+      applySnapshot(
+        isCompactEditorViewport
+          ? editor.addCheckmark(point, MOBILE_MARK_SIZE)
+          : editor.addCheckmark(point),
+      );
       applySnapshot(editor.setTool("select"));
       return;
     }
     if (state.tool === "cross") {
-      applySnapshot(editor.addCross(point));
+      applySnapshot(
+        isCompactEditorViewport ? editor.addCross(point, MOBILE_MARK_SIZE) : editor.addCross(point),
+      );
       applySnapshot(editor.setTool("select"));
       return;
     }
     if (state.tool === "date") {
-      applySnapshot(editor.addDate(point));
+      applySnapshot(
+        isCompactEditorViewport ? editor.addDate(point, MOBILE_DATE_SIZE) : editor.addDate(point),
+      );
+      applySnapshot(editor.setTool("select"));
+      return;
+    }
+    if (state.tool === "whiteout" && isCompactEditorViewport) {
+      const width = Math.min(MOBILE_WHITEOUT_SIZE.width, currentPage.width);
+      const height = Math.min(MOBILE_WHITEOUT_SIZE.height, currentPage.height);
+      applySnapshot(
+        editor.addWhiteout({
+          x: Math.min(Math.max(point.x - width / 2, 0), currentPage.width - width),
+          y: Math.min(Math.max(point.y - height / 2, 0), currentPage.height - height),
+          width,
+          height,
+        }),
+      );
       applySnapshot(editor.setTool("select"));
       return;
     }
@@ -1491,6 +1666,26 @@ export const EditorPage = ({
   };
 
   const startWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
+    if (
+      isCompactEditorViewport &&
+      event.pointerType === "touch" &&
+      !(event.target instanceof HTMLElement && event.target.closest(".overlay-element") !== null)
+    ) {
+      const points = touchPointsRef.current;
+      points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      capturePointer(event.currentTarget, event.pointerId);
+      if (points.size === 2) {
+        const [first, second] = [...points.values()];
+        if (first !== undefined && second !== undefined) {
+          pinchZoomRef.current = {
+            startDistance: Math.hypot(second.x - first.x, second.y - first.y),
+            startZoom: zoomRef.current,
+          };
+          setIsWorkspacePanning(true);
+        }
+      }
+      return;
+    }
     if (event.button !== 0 || state.tool !== "select" || event.target !== event.currentTarget) {
       return;
     }
@@ -1508,6 +1703,28 @@ export const EditorPage = ({
   };
 
   const updateWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
+    if (isCompactEditorViewport && event.pointerType === "touch") {
+      const points = touchPointsRef.current;
+      if (!points.has(event.pointerId)) return;
+      points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const pinch = pinchZoomRef.current;
+      const [first, second] = [...points.values()];
+      if (
+        pinch !== undefined &&
+        first !== undefined &&
+        second !== undefined &&
+        pinch.startDistance > 0
+      ) {
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        applyZoom(pinch.startZoom * (distance / pinch.startDistance), {
+          workspace: event.currentTarget,
+          clientX: (first.x + second.x) / 2,
+          clientY: (first.y + second.y) / 2,
+        });
+        suppressWorkspaceClickRef.current = true;
+      }
+      return;
+    }
     const pan = workspacePanRef.current;
     if (pan?.pointerId !== event.pointerId) {
       return;
@@ -1523,6 +1740,15 @@ export const EditorPage = ({
   };
 
   const endWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
+    if (isCompactEditorViewport && event.pointerType === "touch") {
+      touchPointsRef.current.delete(event.pointerId);
+      releasePointer(event.currentTarget, event.pointerId);
+      if (touchPointsRef.current.size < 2) {
+        pinchZoomRef.current = undefined;
+        setIsWorkspacePanning(false);
+      }
+      return;
+    }
     const pan = workspacePanRef.current;
     if (pan?.pointerId !== event.pointerId) {
       return;
@@ -1683,7 +1909,7 @@ export const EditorPage = ({
     if (dialogType === undefined) {
       return;
     }
-    const point = defaultPlacement(dialogType);
+    const point = getMobileInsertionPoint(dialogType);
     const nextSnapshot =
       dialogType === "signature"
         ? image.source === "upload"
@@ -1699,7 +1925,7 @@ export const EditorPage = ({
     if (dialogType === undefined) {
       return;
     }
-    const point = defaultPlacement(dialogType);
+    const point = getMobileInsertionPoint(dialogType);
     const nextSnapshot =
       dialogType === "signature"
         ? editor.addTypedSignature(point, { text, fontFamily })
@@ -1724,15 +1950,764 @@ export const EditorPage = ({
   const pageCssWidth = currentPage.width * zoom;
   const pageCssHeight = currentPage.height * zoom;
   const selectedElement = state.selectedElement;
+  const mobileQuickEditPanel = isCompactEditorViewport ? (
+    <div className="mobile-quick-edit-panel">
+      <div className="mobile-quick-edit-summary">
+        <strong>
+          {selectedElement === undefined ? "Quick Edit" : elementLabel(selectedElement)}
+        </strong>
+        <span>
+          {selectedElement === undefined
+            ? "Select an element to edit it."
+            : "Tap the handle to close this panel."}
+        </span>
+      </div>
+      {selectedElement === undefined ? null : (
+        <div className="mobile-quick-edit-content">
+          {selectedElement.type === "text" || selectedElement.type === "date" ? (
+            <>
+              <label>
+                {selectedElement.type === "date" ? "Date value" : "Content"}
+                <textarea
+                  aria-label={selectedElement.type === "date" ? "Date value" : "Text content"}
+                  value={selectedElement.text ?? ""}
+                  onChange={(event) => {
+                    applySnapshot(editor.updateText(selectedElement.id, event.currentTarget.value));
+                  }}
+                />
+              </label>
+              <label>
+                Font size
+                <select
+                  aria-label="Text font size"
+                  value={selectedElement.textAppearance?.fontSize ?? 16}
+                  onChange={(event) => {
+                    const fontSize = Number(event.currentTarget.value);
+                    if (Number.isFinite(fontSize) && fontSize > 0) {
+                      applySnapshot(editor.updateTextFontSize(selectedElement.id, fontSize));
+                    }
+                  }}
+                >
+                  {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-inspector-color">
+                Color
+                <ReleaseColorInput
+                  ariaLabel="Text color"
+                  value={
+                    colorPreviewByElementId.get(selectedElement.id) ??
+                    selectedElement.color ??
+                    "#000000"
+                  }
+                  onPreview={(color) => {
+                    handleColorPreview(selectedElement.id, color);
+                  }}
+                  onCommit={(color) => {
+                    handleColorCommit(selectedElement.id, color);
+                  }}
+                />
+              </label>
+            </>
+          ) : null}
+          {selectedElement.type === "checkmark" ? (
+            <>
+              <label>
+                Size
+                <input
+                  aria-label="Checkmark size"
+                  type="number"
+                  min="16"
+                  value={Math.round(selectedElement.bounds.width)}
+                  onChange={(event) => {
+                    const size = event.currentTarget.valueAsNumber;
+                    if (Number.isFinite(size)) {
+                      applySnapshot(
+                        editor.resizeElement(selectedElement.id, { width: size, height: size }),
+                      );
+                    }
+                  }}
+                />
+              </label>
+              <label className="text-inspector-color">
+                Color
+                <ReleaseColorInput
+                  ariaLabel="Checkmark color"
+                  value={
+                    colorPreviewByElementId.get(selectedElement.id) ??
+                    selectedElement.color ??
+                    "#000000"
+                  }
+                  onPreview={(color) => {
+                    handleColorPreview(selectedElement.id, color);
+                  }}
+                  onCommit={(color) => {
+                    handleColorCommit(selectedElement.id, color);
+                  }}
+                />
+              </label>
+            </>
+          ) : null}
+          {selectedElement.type === "image" || selectedElement.type === "signature" ? (
+            <>
+              <label>
+                Size
+                <input
+                  aria-label={`${elementLabel(selectedElement)} size`}
+                  type="number"
+                  min="16"
+                  value={Math.round(selectedElement.bounds.width)}
+                  onChange={(event) => {
+                    const width = event.currentTarget.valueAsNumber;
+                    if (Number.isFinite(width)) {
+                      const ratio = selectedElement.bounds.height / selectedElement.bounds.width;
+                      applySnapshot(
+                        editor.resizeElement(selectedElement.id, { width, height: width * ratio }),
+                      );
+                    }
+                  }}
+                />
+              </label>
+              <p className="mobile-quick-edit-note">
+                {selectedElement.type === "image"
+                  ? "Aspect ratio is locked."
+                  : "Use desktop or tablet to replace this signature."}
+              </p>
+            </>
+          ) : null}
+          {["whiteout", "initials", "cross"].includes(selectedElement.type) ? (
+            <p className="mobile-quick-edit-note" role="status">
+              This element can be viewed on mobile, but advanced editing is available on desktop or
+              tablet.
+            </p>
+          ) : null}
+          <div className="mobile-quick-edit-actions">
+            <button
+              type="button"
+              onClick={() => {
+                applySnapshot(editor.duplicateElement(selectedElement.id));
+              }}
+            >
+              Duplicate
+            </button>
+            <button
+              type="button"
+              className="text-inspector-delete"
+              onClick={() => {
+                applySnapshot(editor.deleteElement(selectedElement.id));
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const mobileMoreSheet =
+    isCompactEditorViewport && isMobileMoreOpen && typeof document !== "undefined"
+      ? createPortal(
+          <div className="mobile-more-overlay" role="presentation">
+            <button
+              type="button"
+              className="mobile-more-backdrop"
+              aria-label="Close more tools"
+              onClick={() => {
+                setIsMobileMoreOpen(false);
+              }}
+            />
+            <section
+              ref={mobileMoreSheetRef}
+              className="mobile-more-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="More tools"
+              tabIndex={-1}
+            >
+              <h2>More tools</h2>
+              <div className="mobile-more-sheet__tools">
+                <button
+                  type="button"
+                  onClick={() => {
+                    applySnapshot(editor.setTool("whiteout"));
+                    setIsMobileMoreOpen(false);
+                  }}
+                >
+                  <ToolbarIcon name="whiteout" /> Whiteout
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    applySnapshot(editor.setTool("initials"));
+                    setDialogType("initials");
+                    setIsMobileMoreOpen(false);
+                  }}
+                >
+                  <ToolbarIcon name="initials" /> Initials
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    applySnapshot(editor.setTool("cross"));
+                    setIsMobileMoreOpen(false);
+                  }}
+                >
+                  <ToolbarIcon name="cross" /> Cross
+                </button>
+              </div>
+              <button
+                type="button"
+                className="mobile-more-sheet__close"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </section>
+          </div>,
+          document.body,
+        )
+      : null;
   const whiteoutPreviewBounds =
     whiteoutDraft === undefined
       ? undefined
       : whiteoutBoundsFromDraft(whiteoutDraft, currentPage, false);
 
+  const elementInspector = (
+    <aside
+      className={`element-inspector${isMobileInspectorOpen ? " is-mobile-open" : ""}`}
+      aria-label="Selected element actions"
+    >
+      <button
+        type="button"
+        className="mobile-inspector-handle"
+        hidden={!isCompactEditorViewport}
+        aria-label={isMobileInspectorOpen ? "Collapse editor inspector" : "Open editor inspector"}
+        aria-expanded={isMobileInspectorOpen}
+        onClick={() => {
+          setIsMobileInspectorOpen((open) => !open);
+        }}
+      >
+        <span aria-hidden="true" />
+      </button>
+      {mobileQuickEditPanel}
+      {mobileMoreSheet}
+      <div className="desktop-inspector-content" hidden={isCompactEditorViewport}>
+        {selectedElement === undefined ? (
+          <>
+            <div
+              className="element-inspector__tabs-region"
+              data-testid="inspector-tabs-region"
+              aria-hidden="true"
+            />
+            <div
+              className="element-inspector__properties-region"
+              data-testid="inspector-properties-region"
+            >
+              <div className="element-inspector__properties-scroll">
+                <div className="document-inspector">
+                  <p>{state.fileName ?? "Local PDF"}</p>
+                  <dl>
+                    <div>
+                      <dt>Pages</dt>
+                      <dd>{String(state.pageCount)}</dd>
+                    </div>
+                    <div>
+                      <dt>Current page</dt>
+                      <dd>{String(state.currentPageNumber)}</dd>
+                    </div>
+                    <div>
+                      <dt>Zoom</dt>
+                      <dd>{`${String(Math.round(zoom * 100))}%`}</dd>
+                    </div>
+                  </dl>
+                  <p className="document-inspector-hint">
+                    Select an element to edit its properties.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="element-inspector__tabs-region" data-testid="inspector-tabs-region">
+              {selectedElement.type === "text" || selectedElement.type === "date" ? (
+                <div
+                  className="text-inspector-tabs"
+                  role="tablist"
+                  aria-label="Text inspector sections"
+                >
+                  {(["text", "style", "page"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={textInspectorTab === tab}
+                      onClick={() => {
+                        setTextInspectorTab(tab);
+                      }}
+                    >
+                      {tab === "text" ? "Text" : tab === "style" ? "Style" : "Page"}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
+                selectedElement.type,
+              ) ? (
+                <div
+                  className="text-inspector-tabs"
+                  role="tablist"
+                  aria-label="Image inspector sections"
+                >
+                  {(["text", "style", "page"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={imageInspectorTab === tab}
+                      onClick={() => {
+                        setImageInspectorTab(tab);
+                      }}
+                    >
+                      {tab === "text"
+                        ? "Image"
+                        : tab === "style"
+                          ? selectedElement.type === "checkmark" || selectedElement.type === "cross"
+                            ? "Style"
+                            : "Size"
+                          : "Page"}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div
+              className="element-inspector__properties-region"
+              data-testid="inspector-properties-region"
+            >
+              <div className="element-inspector__properties-scroll">
+                {selectedElement.type === "text" || selectedElement.type === "date" ? (
+                  <section className="text-inspector" aria-label="Text properties">
+                    {textInspectorTab === "text" ? (
+                      <>
+                        <label className="text-inspector-content">
+                          Content
+                          <textarea
+                            aria-label="Text content"
+                            value={selectedElement.text ?? ""}
+                            onChange={(event) => {
+                              applySnapshot(
+                                editor.updateText(selectedElement.id, event.currentTarget.value),
+                              );
+                            }}
+                          />
+                        </label>{" "}
+                        <div className="text-inspector-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              applySnapshot(editor.duplicateElement(selectedElement.id));
+                            }}
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            type="button"
+                            className="text-inspector-delete"
+                            onClick={() => {
+                              applySnapshot(editor.deleteElement(selectedElement.id));
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {textInspectorTab === "style" ? (
+                      <>
+                        <label>
+                          Font
+                          <select
+                            aria-label="Text font"
+                            value={selectedElement.textAppearance?.fontFamily ?? "Helvetica"}
+                            onChange={(event) => {
+                              applySnapshot(
+                                editor.updateTextAppearance(selectedElement.id, {
+                                  fontFamily: event.currentTarget.value,
+                                }),
+                              );
+                            }}
+                          >
+                            <option>Helvetica</option>
+                            <option>Times Roman</option>
+                            <option>Courier</option>
+                            <option disabled>
+                              Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+                            </option>
+                            <option>Patrick Hand</option>
+                          </select>
+                        </label>
+
+                        <div className="text-inspector-size-row">
+                          <label>
+                            Size
+                            <select
+                              aria-label="Text font size"
+                              value={selectedElement.textAppearance?.fontSize ?? 16}
+                              onChange={(event) => {
+                                const fontSize = Number(event.currentTarget.value);
+                                if (!Number.isFinite(fontSize) || fontSize <= 0) {
+                                  return;
+                                }
+                                applySnapshot(
+                                  editor.updateTextFontSize(selectedElement.id, fontSize),
+                                );
+                              }}
+                            >
+                              {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].map(
+                                (size) => (
+                                  <option key={size} value={size}>
+                                    {size}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                          <div className="text-inspector-toggle-group" aria-label="Text emphasis">
+                            <button
+                              type="button"
+                              aria-label="Bold"
+                              aria-pressed={selectedElement.textAppearance?.bold ?? false}
+                              onClick={() => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    bold: !(selectedElement.textAppearance?.bold ?? false),
+                                  }),
+                                );
+                              }}
+                            >
+                              B
+                            </button>
+                            <button
+                              type="button"
+                              className="text-inspector-italic"
+                              aria-label="Italic"
+                              aria-pressed={selectedElement.textAppearance?.italic ?? false}
+                              onClick={() => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    italic: !(selectedElement.textAppearance?.italic ?? false),
+                                  }),
+                                );
+                              }}
+                            >
+                              I
+                            </button>
+                            <button
+                              type="button"
+                              className="text-inspector-underline"
+                              aria-label="Underline"
+                              aria-pressed={selectedElement.textAppearance?.underline ?? false}
+                              onClick={() => {
+                                applySnapshot(
+                                  editor.updateTextAppearance(selectedElement.id, {
+                                    underline: !(
+                                      selectedElement.textAppearance?.underline ?? false
+                                    ),
+                                  }),
+                                );
+                              }}
+                            >
+                              U
+                            </button>
+                          </div>
+                        </div>
+
+                        <label className="text-inspector-color">
+                          Color
+                          <ReleaseColorInput
+                            ariaLabel="Text color"
+                            value={
+                              colorPreviewByElementId.get(selectedElement.id) ??
+                              selectedElement.color ??
+                              "#000000"
+                            }
+                            onPreview={(color) => {
+                              handleColorPreview(selectedElement.id, color);
+                            }}
+                            onCommit={(color) => {
+                              handleColorCommit(selectedElement.id, color);
+                            }}
+                          />
+                        </label>
+
+                        <div className="text-inspector-alignment">
+                          <span>Alignment</span>
+                          <div className="text-inspector-toggle-group" aria-label="Text alignment">
+                            {(
+                              [
+                                ["left", "Align left", "\u2261"],
+                                ["center", "Align center", "\u2261"],
+                                ["right", "Align right", "\u2261"],
+                              ] as const
+                            ).map(([alignment, label, icon]) => (
+                              <button
+                                key={alignment}
+                                type="button"
+                                className={`text-inspector-align-${alignment}`}
+                                aria-label={label}
+                                aria-pressed={
+                                  (selectedElement.textAppearance?.alignment ?? "left") ===
+                                  alignment
+                                }
+                                onClick={() => {
+                                  applySnapshot(
+                                    editor.updateTextAppearance(selectedElement.id, {
+                                      alignment,
+                                    }),
+                                  );
+                                }}
+                              >
+                                {icon}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <label className="text-inspector-inline-field">
+                          Line Height
+                          <select
+                            aria-label="Line height"
+                            value={selectedElement.textAppearance?.lineHeight ?? 1.2}
+                            onChange={(event) => {
+                              applySnapshot(
+                                editor.updateTextAppearance(selectedElement.id, {
+                                  lineHeight: Number(event.currentTarget.value),
+                                }),
+                              );
+                            }}
+                          >
+                            <option value="1">1.00</option>
+                            <option value="1.2">1.20</option>
+                            <option value="1.5">1.50</option>
+                            <option value="2">2.00</option>
+                          </select>
+                        </label>
+
+                        <label className="text-inspector-inline-field">
+                          Letter Spacing
+                          <select
+                            aria-label="Letter spacing"
+                            value={selectedElement.textAppearance?.letterSpacing ?? 0}
+                            onChange={(event) => {
+                              applySnapshot(
+                                editor.updateTextAppearance(selectedElement.id, {
+                                  letterSpacing: Number(event.currentTarget.value),
+                                }),
+                              );
+                            }}
+                          >
+                            <option value="-0.5">-0.5</option>
+                            <option value="0">0</option>
+                            <option value="0.5">0.5</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
+
+                    {textInspectorTab === "page" ? (
+                      <p className="text-inspector-page">
+                        This text belongs to page{" "}
+                        {String(
+                          state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
+                        )}
+                        .
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
+                {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
+                  selectedElement.type,
+                ) ? (
+                  <section className="image-inspector" aria-label="Image properties">
+                    {imageInspectorTab === "text" ? (
+                      <>
+                        <div className="image-inspector-preview">
+                          {selectedElement.image !== undefined ? (
+                            <img
+                              src={selectedElement.image.dataUrl}
+                              alt="Selected element preview"
+                            />
+                          ) : (
+                            <span
+                              className={`element-inspector-symbol element-inspector-symbol-${selectedElement.type}`}
+                            >
+                              {selectedElement.type === "checkmark"
+                                ? "Ã¢Å“â€œ"
+                                : selectedElement.type === "cross"
+                                  ? "Ãƒâ€”"
+                                  : selectedElement.type === "whiteout"
+                                    ? "Whiteout"
+                                    : (selectedElement.text ?? elementLabel(selectedElement))}
+                            </span>
+                          )}
+                        </div>
+                        <dl className="image-inspector-metadata">
+                          <div>
+                            <dt>Format</dt>
+                            <dd>
+                              {selectedElement.image === undefined
+                                ? "Overlay"
+                                : selectedElement.image.mimeType === "image/png"
+                                  ? "PNG"
+                                  : "JPG"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Original size</dt>
+                            <dd>{`${String(Math.round(selectedElement.bounds.width))} Ãƒâ€” ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
+                          </div>
+                          <div>
+                            <dt>Page</dt>
+                            <dd>
+                              {String(
+                                state.pages.findIndex(
+                                  (page) => page.id === selectedElement.pageId,
+                                ) + 1,
+                              )}
+                            </dd>
+                          </div>
+                        </dl>
+                      </>
+                    ) : null}
+                    {imageInspectorTab === "style" ? (
+                      <>
+                        <div className="image-inspector-size">
+                          <label>
+                            Width
+                            <input
+                              aria-label="Image width"
+                              type="number"
+                              min="16"
+                              value={Math.round(selectedElement.bounds.width)}
+                              onChange={(event) => {
+                                const width = event.currentTarget.valueAsNumber;
+                                if (Number.isFinite(width))
+                                  applySnapshot(
+                                    editor.resizeElement(selectedElement.id, {
+                                      width,
+                                      height: selectedElement.bounds.height,
+                                    }),
+                                  );
+                              }}
+                            />
+                          </label>
+                          <label>
+                            Height
+                            <input
+                              aria-label="Image height"
+                              type="number"
+                              min="16"
+                              value={Math.round(selectedElement.bounds.height)}
+                              onChange={(event) => {
+                                const height = event.currentTarget.valueAsNumber;
+                                if (Number.isFinite(height))
+                                  applySnapshot(
+                                    editor.resizeElement(selectedElement.id, {
+                                      width: selectedElement.bounds.width,
+                                      height,
+                                    }),
+                                  );
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {selectedElement.type === "checkmark" ||
+                        selectedElement.type === "cross" ? (
+                          <label className="text-inspector-color">
+                            Color
+                            <ReleaseColorInput
+                              ariaLabel={`${elementLabel(selectedElement)} color`}
+                              value={
+                                colorPreviewByElementId.get(selectedElement.id) ??
+                                selectedElement.color ??
+                                "#000000"
+                              }
+                              onPreview={(color) => {
+                                handleColorPreview(selectedElement.id, color);
+                              }}
+                              onCommit={(color) => {
+                                handleColorCommit(selectedElement.id, color);
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {imageInspectorTab === "page" ? (
+                      <p className="image-inspector-page">
+                        This image belongs to page{" "}
+                        {String(
+                          state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
+                        )}
+                        .
+                      </p>
+                    ) : null}
+                    {imageInspectorTab === "text" ? (
+                      <div className="image-inspector-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applySnapshot(editor.duplicateElement(selectedElement.id));
+                          }}
+                        >
+                          Duplicate
+                        </button>{" "}
+                        <button
+                          type="button"
+                          className="text-inspector-delete"
+                          onClick={() => {
+                            applySnapshot(editor.deleteElement(selectedElement.id));
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
+              </div>
+            </div>
+          </>
+        )}
+        <LayersPanel
+          layers={currentPageLayers}
+          selectedElementId={selectedElement?.id}
+          onSelect={(elementId) => {
+            applySnapshot(editor.selectElement(elementId));
+          }}
+          onReorder={(elementId, targetIndex) => {
+            applySnapshot(editor.reorderCurrentPageLayers(elementId, targetIndex));
+          }}
+        />
+      </div>
+    </aside>
+  );
+
   return (
     <section
       ref={editorViewportRef}
-      className="editor-viewer"
+      className={`editor-viewer${isCompactEditorViewport ? ` is-compact-editor${isMobileInspectorOpen ? " is-mobile-inspector-open" : ""}${!isQuickEditNoticeDismissed ? " is-quick-edit-notice-visible" : ""}` : ""}`}
       aria-labelledby="editor-title"
       onPointerDownCapture={(event) => {
         const colorInput =
@@ -1757,7 +2732,58 @@ export const EditorPage = ({
                 : "No unsaved edits"}
           </p>
         </div>
+        <div
+          className="mobile-editor-header-actions"
+          aria-label="Mobile editor actions"
+          hidden={!isCompactEditorViewport}
+        >
+          <button
+            type="button"
+            aria-label="Open page thumbnails"
+            aria-expanded={isMobilePageRailOpen}
+            onClick={() => {
+              setIsMobilePageRailOpen(true);
+            }}
+          >
+            <ToolbarIcon name="menu" />
+          </button>
+          <button type="button" aria-label="Undo" disabled={!snapshot.canUndo} onClick={undo}>
+            <ToolbarIcon name="undo" />
+          </button>
+          <button type="button" aria-label="Redo" disabled={!snapshot.canRedo} onClick={redo}>
+            <ToolbarIcon name="redo" />
+          </button>
+          <button
+            type="button"
+            aria-label="Download"
+            onClick={() => void download()}
+            disabled={!snapshot.canExport || state.status === "exporting"}
+          >
+            <ToolbarIcon name="download" />
+          </button>
+        </div>
       </header>
+
+      {isCompactEditorViewport && !isQuickEditNoticeDismissed ? (
+        <section className="quick-edit-notice" role="status" aria-label="Quick Edit mode">
+          <ToolbarIcon name="more" />
+          <p>
+            <strong>Quick Edit mode</strong>
+            <span>
+              Use desktop or tablet for layers, advanced formatting, and the full toolset.
+            </span>
+          </p>
+          <button
+            type="button"
+            aria-label="Dismiss Quick Edit notice"
+            onClick={() => {
+              setIsQuickEditNoticeDismissed(true);
+            }}
+          >
+            Ãƒâ€”
+          </button>
+        </section>
+      ) : null}
 
       <div className="editor-controls">
         <div
@@ -1765,7 +2791,11 @@ export const EditorPage = ({
           role="toolbar"
           aria-label="PDF editor controls"
         >
-          <div className="toolbar-group toolbar-file-group" aria-label="File controls">
+          <div
+            className="toolbar-group toolbar-file-group"
+            aria-label="File controls"
+            hidden={isCompactEditorViewport}
+          >
             <button
               type="button"
               aria-label="Open"
@@ -1785,7 +2815,11 @@ export const EditorPage = ({
               <span className="toolbar-label">Download</span>
             </button>
           </div>
-          <div className="toolbar-group" aria-label="Edit controls">
+          <div
+            className="toolbar-group"
+            aria-label="Edit controls"
+            hidden={isCompactEditorViewport}
+          >
             <button type="button" aria-label="Undo" disabled={!snapshot.canUndo} onClick={undo}>
               <ToolbarIcon name="undo" />
               <span className="toolbar-label">Undo</span>
@@ -1821,6 +2855,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Select"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "select"}
               onClick={() => {
                 applySnapshot(editor.setTool("select"));
@@ -1832,6 +2867,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Text"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "text"}
               onClick={() => {
                 applySnapshot(editor.setTool("text"));
@@ -1842,6 +2878,7 @@ export const EditorPage = ({
             </button>
             <button
               type="button"
+              hidden={isCompactEditorViewport}
               aria-label="Whiteout"
               aria-pressed={state.tool === "whiteout"}
               onClick={() => {
@@ -1854,6 +2891,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Image"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "image"}
               onClick={() => {
                 imageInputRef.current?.click();
@@ -1874,6 +2912,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Signature"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "signature"}
               onClick={() => {
                 applySnapshot(editor.setTool("signature"));
@@ -1885,6 +2924,7 @@ export const EditorPage = ({
             </button>
             <button
               type="button"
+              hidden={isCompactEditorViewport}
               aria-label="Initials"
               aria-pressed={state.tool === "initials"}
               onClick={() => {
@@ -1898,6 +2938,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Checkmark"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "checkmark"}
               onClick={() => {
                 applySnapshot(editor.setTool("checkmark"));
@@ -1908,6 +2949,7 @@ export const EditorPage = ({
             </button>
             <button
               type="button"
+              hidden={isCompactEditorViewport}
               aria-label="Cross"
               aria-pressed={state.tool === "cross"}
               onClick={() => {
@@ -1920,6 +2962,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Date"
+              data-mobile-primary="true"
               aria-pressed={state.tool === "date"}
               onClick={() => {
                 applySnapshot(editor.setTool("date"));
@@ -1929,11 +2972,28 @@ export const EditorPage = ({
               <span className="toolbar-label">Date</span>
             </button>
           </div>
+          <div className="mobile-tools-overflow" hidden={!isCompactEditorViewport}>
+            <button
+              type="button"
+              aria-label="More editor tools"
+              aria-expanded={isMobileMoreOpen}
+              onClick={() => {
+                setIsMobileMoreOpen((open) => !open);
+              }}
+            >
+              <ToolbarIcon name="more" />
+              <span className="toolbar-label">More</span>
+            </button>
+          </div>
           <output
             className="visually-hidden"
             aria-label="Zoom level"
           >{`${String(Math.round(zoom * 100))}%`}</output>
-          <div className="toolbar-group toolbar-view-group" aria-label="View controls">
+          <div
+            className="toolbar-group toolbar-view-group"
+            aria-label="View controls"
+            hidden={isCompactEditorViewport}
+          >
             <button
               type="button"
               aria-label="Zoom out"
@@ -1970,14 +3030,18 @@ export const EditorPage = ({
               aria-label="Fit width"
               aria-pressed={viewMode === "fit-width"}
               onClick={() => {
-                applyFit("fit-width");
+                applyFit("fit-page");
               }}
             >
               <ToolbarIcon name="fit" />
               <span className="toolbar-label">Fit width</span>
             </button>
           </div>
-          <div className="toolbar-group toolbar-pages-group" aria-label="Page controls">
+          <div
+            className="toolbar-group toolbar-pages-group"
+            aria-label="Page controls"
+            hidden={isCompactEditorViewport}
+          >
             <button
               type="button"
               aria-label="Previous page"
@@ -2032,7 +3096,7 @@ export const EditorPage = ({
             {state.error.message}
           </p>
         )}
-        {renderState.status === "loading" ? (
+        {renderState.status === "loading" && !isCompactEditorViewport ? (
           <p className="status-note" role="status">
             Rendering PDF page...
           </p>
@@ -2043,13 +3107,26 @@ export const EditorPage = ({
           </p>
         ) : null}
       </div>
-      <div className={`editor-workspace-shell${isPageRailCollapsed ? " is-rail-collapsed" : ""}`}>
+      <div
+        className={`editor-workspace-shell${isPageRailCollapsed ? " is-rail-collapsed" : ""}${isMobilePageRailOpen ? " is-mobile-rail-open" : ""}`}
+      >
         <aside
-          className={`page-rail${isPageRailCollapsed ? " is-collapsed" : ""}`}
+          className={`page-rail${isPageRailCollapsed ? " is-collapsed" : ""}${isMobilePageRailOpen ? " is-mobile-open" : ""}`}
           aria-label="Page rail"
         >
           <div className="page-rail-header">
             <strong>Pages</strong>
+            <button
+              type="button"
+              className="mobile-page-rail-close"
+              hidden={!isCompactEditorViewport}
+              aria-label="Close page thumbnails"
+              onClick={() => {
+                setIsMobilePageRailOpen(false);
+              }}
+            >
+              Ãƒâ€”
+            </button>
             <button
               type="button"
               aria-label={isPageRailCollapsed ? "Expand page rail" : "Collapse page rail"}
@@ -2284,518 +3361,89 @@ export const EditorPage = ({
           </main>
         </div>
 
-        <aside className="element-inspector" aria-label="Selected element actions">
-          {selectedElement === undefined ? (
-            <>
-              <div
-                className="element-inspector__tabs-region"
-                data-testid="inspector-tabs-region"
-                aria-hidden="true"
-              />
-              <div
-                className="element-inspector__properties-region"
-                data-testid="inspector-properties-region"
-              >
-                <div className="element-inspector__properties-scroll">
-                  <div className="document-inspector">
-                    <p>{state.fileName ?? "Local PDF"}</p>
-                    <dl>
-                      <div>
-                        <dt>Pages</dt>
-                        <dd>{String(state.pageCount)}</dd>
-                      </div>
-                      <div>
-                        <dt>Current page</dt>
-                        <dd>{String(state.currentPageNumber)}</dd>
-                      </div>
-                      <div>
-                        <dt>Zoom</dt>
-                        <dd>{`${String(Math.round(zoom * 100))}%`}</dd>
-                      </div>
-                    </dl>
-                    <p className="document-inspector-hint">
-                      Select an element to edit its properties.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="element-inspector__tabs-region" data-testid="inspector-tabs-region">
-                {selectedElement.type === "text" || selectedElement.type === "date" ? (
-                  <div
-                    className="text-inspector-tabs"
-                    role="tablist"
-                    aria-label="Text inspector sections"
-                  >
-                    {(["text", "style", "page"] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        role="tab"
-                        aria-selected={textInspectorTab === tab}
-                        onClick={() => {
-                          setTextInspectorTab(tab);
-                        }}
-                      >
-                        {tab === "text" ? "Text" : tab === "style" ? "Style" : "Page"}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
-                  selectedElement.type,
-                ) ? (
-                  <div
-                    className="text-inspector-tabs"
-                    role="tablist"
-                    aria-label="Image inspector sections"
-                  >
-                    {(["text", "style", "page"] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        role="tab"
-                        aria-selected={imageInspectorTab === tab}
-                        onClick={() => {
-                          setImageInspectorTab(tab);
-                        }}
-                      >
-                        {tab === "text"
-                          ? "Image"
-                          : tab === "style"
-                            ? selectedElement.type === "checkmark" ||
-                              selectedElement.type === "cross"
-                              ? "Style"
-                              : "Size"
-                            : "Page"}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div
-                className="element-inspector__properties-region"
-                data-testid="inspector-properties-region"
-              >
-                <div className="element-inspector__properties-scroll">
-                  {selectedElement.type === "text" || selectedElement.type === "date" ? (
-                    <section className="text-inspector" aria-label="Text properties">
-                      {textInspectorTab === "text" ? (
-                        <>
-                          <label className="text-inspector-content">
-                            Content
-                            <textarea
-                              aria-label="Text content"
-                              value={selectedElement.text ?? ""}
-                              onChange={(event) => {
-                                applySnapshot(
-                                  editor.updateText(selectedElement.id, event.currentTarget.value),
-                                );
-                              }}
-                            />
-                          </label>{" "}
-                          <div className="text-inspector-actions">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                applySnapshot(editor.duplicateElement(selectedElement.id));
-                              }}
-                            >
-                              Duplicate
-                            </button>
-                            <button
-                              type="button"
-                              className="text-inspector-delete"
-                              onClick={() => {
-                                applySnapshot(editor.deleteElement(selectedElement.id));
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </>
-                      ) : null}
-
-                      {textInspectorTab === "style" ? (
-                        <>
-                          <label>
-                            Font
-                            <select
-                              aria-label="Text font"
-                              value={selectedElement.textAppearance?.fontFamily ?? "Helvetica"}
-                              onChange={(event) => {
-                                applySnapshot(
-                                  editor.updateTextAppearance(selectedElement.id, {
-                                    fontFamily: event.currentTarget.value,
-                                  }),
-                                );
-                              }}
-                            >
-                              <option>Helvetica</option>
-                              <option>Times Roman</option>
-                              <option>Arial</option>
-                              <option>Georgia</option>
-                              <option>Courier</option>
-                            </select>
-                          </label>
-
-                          <div className="text-inspector-size-row">
-                            <label>
-                              Size
-                              <select
-                                aria-label="Text font size"
-                                value={selectedElement.textAppearance?.fontSize ?? 16}
-                                onChange={(event) => {
-                                  const fontSize = Number(event.currentTarget.value);
-                                  if (!Number.isFinite(fontSize) || fontSize <= 0) {
-                                    return;
-                                  }
-                                  applySnapshot(
-                                    editor.updateTextFontSize(selectedElement.id, fontSize),
-                                  );
-                                }}
-                              >
-                                {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].map(
-                                  (size) => (
-                                    <option key={size} value={size}>
-                                      {size}
-                                    </option>
-                                  ),
-                                )}
-                              </select>
-                            </label>
-                            <div className="text-inspector-toggle-group" aria-label="Text emphasis">
-                              <button
-                                type="button"
-                                aria-label="Bold"
-                                aria-pressed={selectedElement.textAppearance?.bold ?? false}
-                                onClick={() => {
-                                  applySnapshot(
-                                    editor.updateTextAppearance(selectedElement.id, {
-                                      bold: !(selectedElement.textAppearance?.bold ?? false),
-                                    }),
-                                  );
-                                }}
-                              >
-                                B
-                              </button>
-                              <button
-                                type="button"
-                                className="text-inspector-italic"
-                                aria-label="Italic"
-                                aria-pressed={selectedElement.textAppearance?.italic ?? false}
-                                onClick={() => {
-                                  applySnapshot(
-                                    editor.updateTextAppearance(selectedElement.id, {
-                                      italic: !(selectedElement.textAppearance?.italic ?? false),
-                                    }),
-                                  );
-                                }}
-                              >
-                                I
-                              </button>
-                              <button
-                                type="button"
-                                className="text-inspector-underline"
-                                aria-label="Underline"
-                                aria-pressed={selectedElement.textAppearance?.underline ?? false}
-                                onClick={() => {
-                                  applySnapshot(
-                                    editor.updateTextAppearance(selectedElement.id, {
-                                      underline: !(
-                                        selectedElement.textAppearance?.underline ?? false
-                                      ),
-                                    }),
-                                  );
-                                }}
-                              >
-                                U
-                              </button>
-                            </div>
-                          </div>
-
-                          <label className="text-inspector-color">
-                            Color
-                            <ReleaseColorInput
-                              ariaLabel="Text color"
-                              value={
-                                colorPreviewByElementId.get(selectedElement.id) ??
-                                selectedElement.color ??
-                                "#000000"
-                              }
-                              onPreview={(color) => {
-                                handleColorPreview(selectedElement.id, color);
-                              }}
-                              onCommit={(color) => {
-                                handleColorCommit(selectedElement.id, color);
-                              }}
-                            />
-                          </label>
-
-                          <div className="text-inspector-alignment">
-                            <span>Alignment</span>
-                            <div
-                              className="text-inspector-toggle-group"
-                              aria-label="Text alignment"
-                            >
-                              {(
-                                [
-                                  ["left", "Align left", "\u2261"],
-                                  ["center", "Align center", "\u2261"],
-                                  ["right", "Align right", "\u2261"],
-                                ] as const
-                              ).map(([alignment, label, icon]) => (
-                                <button
-                                  key={alignment}
-                                  type="button"
-                                  className={`text-inspector-align-${alignment}`}
-                                  aria-label={label}
-                                  aria-pressed={
-                                    (selectedElement.textAppearance?.alignment ?? "left") ===
-                                    alignment
-                                  }
-                                  onClick={() => {
-                                    applySnapshot(
-                                      editor.updateTextAppearance(selectedElement.id, {
-                                        alignment,
-                                      }),
-                                    );
-                                  }}
-                                >
-                                  {icon}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <label className="text-inspector-inline-field">
-                            Line Height
-                            <select
-                              aria-label="Line height"
-                              value={selectedElement.textAppearance?.lineHeight ?? 1.2}
-                              onChange={(event) => {
-                                applySnapshot(
-                                  editor.updateTextAppearance(selectedElement.id, {
-                                    lineHeight: Number(event.currentTarget.value),
-                                  }),
-                                );
-                              }}
-                            >
-                              <option value="1">1.00</option>
-                              <option value="1.2">1.20</option>
-                              <option value="1.5">1.50</option>
-                              <option value="2">2.00</option>
-                            </select>
-                          </label>
-
-                          <label className="text-inspector-inline-field">
-                            Letter Spacing
-                            <select
-                              aria-label="Letter spacing"
-                              value={selectedElement.textAppearance?.letterSpacing ?? 0}
-                              onChange={(event) => {
-                                applySnapshot(
-                                  editor.updateTextAppearance(selectedElement.id, {
-                                    letterSpacing: Number(event.currentTarget.value),
-                                  }),
-                                );
-                              }}
-                            >
-                              <option value="-0.5">-0.5</option>
-                              <option value="0">0</option>
-                              <option value="0.5">0.5</option>
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                            </select>
-                          </label>
-                        </>
-                      ) : null}
-
-                      {textInspectorTab === "page" ? (
-                        <p className="text-inspector-page">
-                          This text belongs to page{" "}
-                          {String(
-                            state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
-                          )}
-                          .
-                        </p>
-                      ) : null}
-                    </section>
-                  ) : null}
-                  {["image", "whiteout", "checkmark", "cross", "signature", "initials"].includes(
-                    selectedElement.type,
-                  ) ? (
-                    <section className="image-inspector" aria-label="Image properties">
-                      {imageInspectorTab === "text" ? (
-                        <>
-                          <div className="image-inspector-preview">
-                            {selectedElement.image !== undefined ? (
-                              <img
-                                src={selectedElement.image.dataUrl}
-                                alt="Selected element preview"
-                              />
-                            ) : (
-                              <span
-                                className={`element-inspector-symbol element-inspector-symbol-${selectedElement.type}`}
-                              >
-                                {selectedElement.type === "checkmark"
-                                  ? "✓"
-                                  : selectedElement.type === "cross"
-                                    ? "×"
-                                    : selectedElement.type === "whiteout"
-                                      ? "Whiteout"
-                                      : (selectedElement.text ?? elementLabel(selectedElement))}
-                              </span>
-                            )}
-                          </div>
-                          <dl className="image-inspector-metadata">
-                            <div>
-                              <dt>Format</dt>
-                              <dd>
-                                {selectedElement.image === undefined
-                                  ? "Overlay"
-                                  : selectedElement.image.mimeType === "image/png"
-                                    ? "PNG"
-                                    : "JPG"}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt>Original size</dt>
-                              <dd>{`${String(Math.round(selectedElement.bounds.width))} × ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
-                            </div>
-                            <div>
-                              <dt>Page</dt>
-                              <dd>
-                                {String(
-                                  state.pages.findIndex(
-                                    (page) => page.id === selectedElement.pageId,
-                                  ) + 1,
-                                )}
-                              </dd>
-                            </div>
-                          </dl>
-                        </>
-                      ) : null}
-                      {imageInspectorTab === "style" ? (
-                        <>
-                          <div className="image-inspector-size">
-                            <label>
-                              Width
-                              <input
-                                aria-label="Image width"
-                                type="number"
-                                min="16"
-                                value={Math.round(selectedElement.bounds.width)}
-                                onChange={(event) => {
-                                  const width = event.currentTarget.valueAsNumber;
-                                  if (Number.isFinite(width))
-                                    applySnapshot(
-                                      editor.resizeElement(selectedElement.id, {
-                                        width,
-                                        height: selectedElement.bounds.height,
-                                      }),
-                                    );
-                                }}
-                              />
-                            </label>
-                            <label>
-                              Height
-                              <input
-                                aria-label="Image height"
-                                type="number"
-                                min="16"
-                                value={Math.round(selectedElement.bounds.height)}
-                                onChange={(event) => {
-                                  const height = event.currentTarget.valueAsNumber;
-                                  if (Number.isFinite(height))
-                                    applySnapshot(
-                                      editor.resizeElement(selectedElement.id, {
-                                        width: selectedElement.bounds.width,
-                                        height,
-                                      }),
-                                    );
-                                }}
-                              />
-                            </label>
-                          </div>
-                          {selectedElement.type === "checkmark" ||
-                          selectedElement.type === "cross" ? (
-                            <label className="text-inspector-color">
-                              Color
-                              <ReleaseColorInput
-                                ariaLabel={`${elementLabel(selectedElement)} color`}
-                                value={
-                                  colorPreviewByElementId.get(selectedElement.id) ??
-                                  selectedElement.color ??
-                                  "#000000"
-                                }
-                                onPreview={(color) => {
-                                  handleColorPreview(selectedElement.id, color);
-                                }}
-                                onCommit={(color) => {
-                                  handleColorCommit(selectedElement.id, color);
-                                }}
-                              />
-                            </label>
-                          ) : null}
-                        </>
-                      ) : null}
-                      {imageInspectorTab === "page" ? (
-                        <p className="image-inspector-page">
-                          This image belongs to page{" "}
-                          {String(
-                            state.pages.findIndex((page) => page.id === selectedElement.pageId) + 1,
-                          )}
-                          .
-                        </p>
-                      ) : null}
-                      {imageInspectorTab === "text" ? (
-                        <div className="image-inspector-actions">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              applySnapshot(editor.duplicateElement(selectedElement.id));
-                            }}
-                          >
-                            Duplicate
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="text-inspector-delete"
-                            onClick={() => {
-                              applySnapshot(editor.deleteElement(selectedElement.id));
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ) : null}
-                    </section>
-                  ) : null}
-                </div>
-              </div>
-            </>
-          )}
-          <LayersPanel
-            layers={currentPageLayers}
-            selectedElementId={selectedElement?.id}
-            onSelect={(elementId) => {
-              applySnapshot(editor.selectElement(elementId));
-            }}
-            onReorder={(elementId, targetIndex) => {
-              applySnapshot(editor.reorderCurrentPageLayers(elementId, targetIndex));
-            }}
-          />
-        </aside>
+        {isCompactEditorViewport ? null : elementInspector}
       </div>
 
       <footer className="editor-status-bar" aria-label="Document status">
-        <span>{`Page ${String(state.currentPageNumber)} of ${String(state.pageCount)}`}</span>
-        <span>{`${String(Math.round(zoom * 100))}%`}</span>
-        <span>{state.isDirty ? "Unsaved changes" : "Ready"}</span>
+        <button
+          type="button"
+          className="mobile-status-page-drawer"
+          hidden={!isCompactEditorViewport}
+          aria-label="Open page thumbnails"
+          onClick={() => {
+            setIsMobilePageRailOpen(true);
+          }}
+        >
+          {`${String(state.currentPageNumber)} / ${String(state.pageCount)}`}
+        </button>
+        <button
+          type="button"
+          className="mobile-status-previous"
+          hidden={!isCompactEditorViewport}
+          aria-label="Previous page"
+          disabled={state.currentPageNumber <= 1}
+          onClick={() => {
+            applySnapshot(editor.previousPage());
+          }}
+        >
+          <ToolbarIcon name="previous" />
+        </button>
+        <button
+          type="button"
+          className="mobile-status-zoom"
+          hidden={!isCompactEditorViewport}
+          aria-label="Zoom out"
+          onClick={() => {
+            applyZoom(zoomRef.current - ZOOM_STEP);
+          }}
+        >
+          <ToolbarIcon name="zoom-out" />
+        </button>
+        <output
+          className="mobile-status-zoom-value"
+          aria-label="Mobile viewer scale"
+          hidden={!isCompactEditorViewport}
+        >{`${String(Math.round(zoom * 100))}%`}</output>
+        <button
+          type="button"
+          className="mobile-status-zoom"
+          hidden={!isCompactEditorViewport}
+          aria-label="Zoom in"
+          onClick={() => {
+            applyZoom(zoomRef.current + ZOOM_STEP);
+          }}
+        >
+          <ToolbarIcon name="zoom-in" />
+        </button>
+        <button
+          type="button"
+          className="mobile-status-next"
+          hidden={!isCompactEditorViewport}
+          aria-label="Next page"
+          disabled={state.currentPageNumber >= state.pageCount}
+          onClick={() => {
+            applySnapshot(editor.nextPage());
+          }}
+        >
+          <ToolbarIcon name="next" />
+        </button>
+        <button
+          type="button"
+          className="mobile-status-inspector"
+          hidden={!isCompactEditorViewport}
+          aria-label="Open editor inspector"
+          aria-expanded={isMobileInspectorOpen}
+          onClick={() => {
+            setIsMobileInspectorOpen(true);
+          }}
+        >
+          <ToolbarIcon name="fit" />
+        </button>
+        <span className="desktop-status-copy">{`Page ${String(state.currentPageNumber)} of ${String(state.pageCount)}`}</span>
+        <span className="desktop-status-copy">{`${String(Math.round(zoom * 100))}%`}</span>
+        <span className="desktop-status-copy">{state.isDirty ? "Unsaved changes" : "Ready"}</span>
       </footer>
+      {isCompactEditorViewport ? elementInspector : null}
       {dialogType === undefined ? null : (
         <SignatureDialog
           type={dialogType}
@@ -2977,7 +3625,7 @@ const SignatureDialog = ({
             aria-label="Close dialog"
             onClick={onCancel}
           >
-            ×
+            Ãƒâ€”
           </button>
         </header>
         <div className="dialog-tabs" role="tablist" aria-label={`${type} methods`}>

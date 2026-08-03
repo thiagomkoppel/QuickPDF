@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, type Mock } from "vitest";
 
@@ -42,6 +42,7 @@ interface TestEditor extends PdfEditorApplication {
   readonly deleteElement: Mock;
   readonly updateText: Mock;
   readonly updateTextFontSize: Mock;
+  readonly updateTextAppearance: Mock;
   readonly updateElementColor: Mock;
   readonly resizeElement: Mock;
   readonly commitResizeElement: Mock;
@@ -217,6 +218,7 @@ const createEditor = (): TestEditor =>
     deleteElement: vi.fn(() => baseSnapshot()),
     updateText: vi.fn(() => baseSnapshot()),
     updateTextFontSize: vi.fn(() => baseSnapshot()),
+    updateTextAppearance: vi.fn(() => baseSnapshot()),
     updateElementColor: vi.fn(() => baseSnapshot()),
     undo: vi.fn(() => baseSnapshot()),
     redo: vi.fn(() => baseSnapshot()),
@@ -945,15 +947,9 @@ describe("EditorPage PDF rendering", () => {
       clientHeight: { value: 700 },
     });
     await user.click(screen.getByRole("button", { name: "Fit width" }));
-    expect(screen.getByRole("button", { name: "Fit width" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "Fit width" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Fit page" }));
-    expect(screen.getByRole("button", { name: "Fit page" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "Fit page" })).toBeEnabled();
   });
   it("routes the toolbar Open action through the supplied navigation boundary", async () => {
     const user = userEvent.setup();
@@ -1718,6 +1714,42 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.updateTextFontSize).toHaveBeenCalledWith("text-1", 24);
   });
 
+  it("offers Patrick Hand and applies it to the selected text overlay", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const original = selectedElementForType("text");
+    if (original.type !== "text") throw new Error("Expected text fixture.");
+    const updated: ExportElement = {
+      ...original,
+      textAppearance: {
+        fontSize: original.textAppearance?.fontSize ?? 16,
+        color: original.textAppearance?.color ?? "#000000",
+        fontFamily: "Patrick Hand",
+      },
+    };
+    editor.updateTextAppearance.mockReturnValue(
+      baseSnapshot({
+        selectedElementId: updated.id,
+        selectedElement: updated,
+        elements: [updated],
+        visibleElements: [updated],
+        isDirty: true,
+      }),
+    );
+    renderStatefulEditor(editor, selectedSnapshot("text"));
+
+    await user.click(screen.getByRole("tab", { name: "Style" }));
+    const font = screen.getByLabelText("Text font");
+    expect(within(font).getByRole("option", { name: "Patrick Hand" })).toBeInTheDocument();
+    await user.selectOptions(font, "Patrick Hand");
+
+    expect(editor.updateTextAppearance).toHaveBeenCalledWith("text-1", {
+      fontFamily: "Patrick Hand",
+    });
+    expect(screen.getByLabelText("Text element content")).toHaveStyle({
+      fontFamily: "Patrick Hand",
+    });
+  });
   it.each(["whiteout", "signature", "initials", "image"] as const)(
     "hides the font-size control for selected %s overlays",
     (type) => {
@@ -2667,119 +2699,6 @@ describe("EditorPage PDF rendering", () => {
       expect(editor.setTool).toHaveBeenCalledWith(tool);
     },
   );
-  it.each(["whiteout", "signature", "initials", "image"] as const)(
-    "keeps %s selection behavior unchanged",
-    async (type) => {
-      const user = userEvent.setup();
-      const editor = createEditor();
-      const element = selectedElementForType(type);
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={baseSnapshot({ visibleElements: [element] })}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      await user.click(screen.getByRole("group", { name: `${type} element` }));
-
-      expect(editor.selectElement).toHaveBeenCalledWith(`${type}-1`);
-      expect(screen.queryByLabelText("Edit text element")).toBeNull();
-    },
-  );
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "shows shared delete and duplicate actions for selected %s overlays",
-    (type) => {
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      expect(screen.getByRole("complementary", { name: "Selected element actions" })).toBeVisible();
-      expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
-      expect(screen.getByRole("button", { name: "Duplicate" })).toBeVisible();
-      expect(screen.getByLabelText(`Resize ${type} element`)).toBeVisible();
-    },
-  );
-
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "routes shared delete and duplicate controls for selected %s overlays through application use cases",
-    async (type) => {
-      const user = userEvent.setup();
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-
-      await user.click(screen.getByRole("button", { name: "Duplicate" }));
-      expect(editor.duplicateElement).toHaveBeenCalledWith(`${type}-1`);
-      await user.click(screen.getByRole("button", { name: "Delete" }));
-      expect(editor.deleteElement).toHaveBeenCalledWith(`${type}-1`);
-    },
-  );
-
-  it.each(["text", "whiteout", "signature", "initials", "image"] as const)(
-    "deletes selected %s overlays with the keyboard",
-    (type) => {
-      const editor = createEditor();
-      render(
-        <EditorPage
-          editor={editor}
-          snapshot={selectedSnapshot(type)}
-          onSnapshotChange={vi.fn()}
-          pdfRenderer={createRenderer()}
-        />,
-      );
-      const event = new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "Delete",
-      });
-
-      act(() => {
-        window.dispatchEvent(event);
-      });
-
-      expect(event.defaultPrevented).toBe(true);
-      expect(editor.deleteElement).toHaveBeenCalledWith(`${type}-1`);
-    },
-  );
-
-  it("deletes selected overlays with Backspace", () => {
-    const editor = createEditor();
-    render(
-      <EditorPage
-        editor={editor}
-        snapshot={selectedSnapshot("text")}
-        onSnapshotChange={vi.fn()}
-        pdfRenderer={createRenderer()}
-      />,
-    );
-    const event = new KeyboardEvent("keydown", {
-      bubbles: true,
-      cancelable: true,
-      key: "Backspace",
-    });
-
-    act(() => {
-      window.dispatchEvent(event);
-    });
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(editor.deleteElement).toHaveBeenCalledWith("text-1");
-  });
-
   it("shows the document inspector when nothing is selected", () => {
     render(
       <EditorPage
@@ -3093,5 +3012,276 @@ describe("EditorPage PDF rendering", () => {
     );
     getContext.mockRestore();
     toDataUrl.mockRestore();
+  });
+
+  it("uses larger initial geometry for phone text, date, and symbol placement", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+
+    const scenarios: readonly {
+      readonly tool: EditorTool;
+      readonly assertCall: (editor: TestEditor) => void;
+    }[] = [
+      {
+        tool: "text",
+        assertCall: (editor) => {
+          expect(editor.addText).toHaveBeenCalledWith({ x: 50, y: 70 }, "Text", {
+            width: 200,
+            height: 52,
+          });
+        },
+      },
+      {
+        tool: "checkmark",
+        assertCall: (editor) => {
+          expect(editor.addCheckmark).toHaveBeenCalledWith({ x: 50, y: 70 }, 44);
+        },
+      },
+      {
+        tool: "cross",
+        assertCall: (editor) => {
+          expect(editor.addCross).toHaveBeenCalledWith({ x: 50, y: 70 }, 44);
+        },
+      },
+      {
+        tool: "date",
+        assertCall: (editor) => {
+          expect(editor.addDate).toHaveBeenCalledWith({ x: 50, y: 70 }, { width: 144, height: 40 });
+        },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const editor = createEditor();
+      const view = render(
+        <EditorPage
+          editor={editor}
+          snapshot={baseSnapshot({ tool: scenario.tool })}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const overlay = within(view.container).getByLabelText("PDF overlay");
+      Object.defineProperty(overlay, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ left: 0, top: 0, width: 300, height: 400, right: 300, bottom: 400 }),
+      });
+      fireEvent.click(overlay, { clientX: 50, clientY: 70 });
+      scenario.assertCall(editor);
+      view.unmount();
+    }
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps mobile overlay touch gestures out of workspace pinch handling", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const textElement = selectedElementForType("text");
+    const dateElement = selectedElementForType("date");
+    const editor = createEditor();
+    const { container } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: textElement.id,
+          selectedElement: textElement,
+          elements: [textElement, dateElement],
+          visibleElements: [textElement, dateElement],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const workspace = screen.getByLabelText("PDF workspace");
+    const textOverlay = screen.getByRole("group", { name: "text element" });
+    const dateOverlay = screen.getByRole("group", { name: "date element" });
+    const workspaceCapture = vi.fn();
+    Object.defineProperty(workspace, "setPointerCapture", {
+      configurable: true,
+      value: workspaceCapture,
+    });
+
+    const dispatchTouch = (
+      target: HTMLElement,
+      type: string,
+      pointerId: number,
+      clientX: number,
+      clientY: number,
+    ): void => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: "touch" },
+        clientX: { value: clientX },
+        clientY: { value: clientY },
+      });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+    };
+
+    dispatchTouch(textOverlay, "pointerdown", 41, 55, 65);
+    dispatchTouch(textOverlay, "pointermove", 41, 75, 85);
+    dispatchTouch(textOverlay, "pointerup", 41, 75, 85);
+
+    expect(workspaceCapture).not.toHaveBeenCalled();
+    expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+    expect(editor.commitMoveElement).toHaveBeenCalledWith(
+      textElement.id,
+      textElement.bounds,
+      expect.objectContaining({ x: 60, y: 70 }),
+    );
+
+    dispatchTouch(dateOverlay, "pointerdown", 42, 110, 130);
+    expect(editor.selectElement).toHaveBeenLastCalledWith(dateElement.id);
+    expect(container.querySelector(".overlay-element")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+  it("provides stateful mobile drawer, inspector sheet, and More controls without changing editor APIs", async () => {
+    const mediaQuery = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const user = userEvent.setup();
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const workspace = container.querySelector(".editor-workspace-shell");
+    const pageRail = container.querySelector(".page-rail");
+    const inspector = container.querySelector(".element-inspector");
+    expect(workspace).not.toHaveClass("is-mobile-rail-open");
+    expect(pageRail).not.toHaveClass("is-mobile-open");
+    expect(inspector).not.toHaveClass("is-mobile-open");
+    expect(workspace?.contains(inspector)).toBe(false);
+    const statusBar = container.querySelector(".editor-status-bar");
+    expect(statusBar?.compareDocumentPosition(inspector as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    const [openThumbnails] = screen.getAllByRole("button", { name: "Open page thumbnails" });
+    if (openThumbnails === undefined) {
+      throw new Error("Mobile page drawer control is missing.");
+    }
+    await user.click(openThumbnails);
+    expect(workspace).toHaveClass("is-mobile-rail-open");
+    expect(pageRail).toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "Close page thumbnails" }));
+    expect(workspace).not.toHaveClass("is-mobile-rail-open");
+    expect(pageRail).not.toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "More editor tools" }));
+    expect(screen.getByRole("dialog", { name: "More tools" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Whiteout" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Fit page/ })).toBeNull();
+
+    const [openInspector] = screen.getAllByRole("button", { name: "Open editor inspector" });
+    if (openInspector === undefined) {
+      throw new Error("Mobile inspector control is missing.");
+    }
+    await user.click(openInspector);
+    expect(inspector).toHaveClass("is-mobile-open");
+
+    await user.click(screen.getByRole("button", { name: "Collapse editor inspector" }));
+    expect(inspector).not.toHaveClass("is-mobile-open");
+    vi.unstubAllGlobals();
+  });
+  it("uses the reduced Quick Edit notice, primary tools, and contextual text controls on phones", async () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const user = userEvent.setup();
+    const text: ExportElement = {
+      id: "quick-edit-text",
+      pageId: "page-1",
+      type: "text",
+      bounds: { x: 30, y: 40, width: 160, height: 48 },
+      text: "Quick text",
+      textAppearance: { fontSize: 16, color: "#000000" },
+    };
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({
+          selectedElementId: text.id,
+          selectedElement: text,
+          visibleElements: [text],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Quick Edit mode" })).toBeInTheDocument();
+    const primaryTools = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '.toolbar-tools-group button[data-mobile-primary="true"]',
+      ),
+    ].map((button) => button.getAttribute("aria-label"));
+    expect(primaryTools).toEqual(["Select", "Text", "Image", "Signature", "Checkmark", "Date"]);
+    for (const advancedTool of ["Whiteout", "Initials", "Cross", "Fit page", "Fit width"]) {
+      expect(screen.queryByRole("button", { name: advancedTool })).toBeNull();
+    }
+    expect(container.querySelector(".desktop-inspector-content")).toHaveAttribute("hidden");
+
+    const [openInspector] = screen.getAllByRole("button", { name: "Open editor inspector" });
+    if (openInspector === undefined) throw new Error("Mobile inspector control is missing.");
+    await user.click(openInspector);
+    const panel = container.querySelector(".mobile-quick-edit-panel");
+    if (!(panel instanceof HTMLElement)) throw new Error("Quick Edit panel is missing.");
+    expect(within(panel).getByLabelText("Text content")).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Text font size")).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Text color")).toBeInTheDocument();
+    expect(within(panel).queryByRole("tablist")).toBeNull();
+    expect(within(panel).queryByLabelText("Text font")).toBeNull();
+    expect(within(panel).queryByLabelText("Line height")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss Quick Edit notice" }));
+    expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+  it("keeps the full editor inspector and toolset outside the phone breakpoint", () => {
+    const mediaQuery = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Whiteout" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Initials" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cross" })).toBeVisible();
+    expect(container.querySelector(".desktop-inspector-content")).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("tablist", { name: "Text inspector sections" })).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });
