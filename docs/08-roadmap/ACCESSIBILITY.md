@@ -7,6 +7,7 @@ Complete accessibility verification after UI and PWA delivery.
 ## Scope
 
 ### Keyboard
+
 - Toolbar navigation
 - Inspector tabs
 - Layer selection and reorder
@@ -16,6 +17,7 @@ Complete accessibility verification after UI and PWA delivery.
 - Shortcut documentation
 
 ### Screen readers
+
 - Correct landmarks
 - Accessible icon-button names
 - Selected tool state
@@ -25,6 +27,7 @@ Complete accessibility verification after UI and PWA delivery.
 - Progress announcements
 
 ### Visual and touch
+
 - Contrast
 - Visible focus
 - Reduced motion

@@ -23,6 +23,7 @@ Prepare QuickPDF for its first public release.
 ## Release checklist
 
 ### Product
+
 - Confirm public feature list.
 - Confirm known limitations.
 - Confirm Whiteout warning.
@@ -30,6 +31,7 @@ Prepare QuickPDF for its first public release.
 - Confirm supported browsers.
 
 ### Delivery
+
 - Production build
 - Static-hosting route fallback
 - Manifest and icons
@@ -39,6 +41,7 @@ Prepare QuickPDF for its first public release.
 - Deployment instructions
 
 ### Quality
+
 - Full tests
 - Desktop, tablet, and mobile E2E
 - PDF export regression suite
