@@ -6,13 +6,13 @@ QuickPDF decides renderer support from a local PDF.js capability preflight, not 
 
 ## Preflight outcomes
 
-The landing page starts in `checking`. The preflight then returns one of:
+The root application bootstrap starts in `checking` and immediately displays the startup screen. The preflight then returns one of:
 
 - `compatible`: the required browser APIs were available, the installed PDF.js module initialized its worker, and a tiny PDF rendered visible pixels to a canvas.
 - `incompatible`: a required API, PDF.js module, worker, canvas, or render probe definitively failed.
 - `indeterminate`: the lightweight probe did not finish within its bounded time. QuickPDF leaves the upload controls available rather than falsely blocking a browser.
 
-Only a completed `incompatible` result shows the compatibility panel. Compatible and indeterminate environments never see it, including during startup.
+The startup screen remains visible for at least five seconds and until the probe resolves. Only a completed `incompatible` result shows the compatibility panel. Compatible and indeterminate environments never see it, including during startup; indeterminate results continue into the normal application and retain the existing pre-open safety guard.
 
 ## Required capabilities
 

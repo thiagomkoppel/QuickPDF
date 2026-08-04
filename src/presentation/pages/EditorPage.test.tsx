@@ -858,6 +858,54 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
   });
 
+  it("pans an empty phone workspace with one touch without changing editor state", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const onSnapshotChange = vi.fn();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({ selectedElementId: "text-1" })}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const dispatchTouch = (type: string, clientX: number, clientY: number): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerId: { value: 71 },
+        pointerType: { value: "touch" },
+        clientX: { value: clientX },
+        clientY: { value: clientY },
+      });
+      act(() => {
+        workspace.dispatchEvent(event);
+      });
+      return event;
+    };
+
+    const down = dispatchTouch("pointerdown", 200, 180);
+    const move = dispatchTouch("pointermove", 150, 140);
+    dispatchTouch("pointerup", 150, 140);
+
+    expect(down.defaultPrevented).toBe(true);
+    expect(move.defaultPrevented).toBe(true);
+    expect(workspace.scrollLeft).toBe(170);
+    expect(workspace.scrollTop).toBe(120);
+    expect(onSnapshotChange).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
   it("pans the empty Select workspace without changing editor state", () => {
     const onSnapshotChange = vi.fn();
     render(

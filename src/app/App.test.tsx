@@ -85,6 +85,8 @@ const renderAt = (
     <App
       compatibilityProbe={compatibilityProbe}
       initialCompatibilityResult={compatiblePreflight}
+
+      startupMinimumDurationMs={0}
     />,
   );
 };

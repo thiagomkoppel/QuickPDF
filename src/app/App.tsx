@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   PdfEditorApplication,
@@ -18,12 +18,16 @@ import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
 import { PrivacyPolicyPage } from "../presentation/pages/PrivacyPolicyPage";
+import { StartupScreen, type StartupStage } from "../presentation/pages/StartupScreen";
 
 declare global {
   interface Window {
     __quickpdfCompatibilityResult__?: PdfJsCompatibilityResult;
   }
 }
+
+const STARTUP_MINIMUM_DURATION_MS = 5_000;
+const CHROME_UPDATE_URL = "https:" + "//www.google.com/chrome/update/";
 
 const getPathname = (): string => window.location.pathname;
 
@@ -58,9 +62,27 @@ const RedirectToLanding = (): null => {
 
 export type PdfJsCompatibilityProbe = () => Promise<PdfJsCompatibilityResult>;
 
+type PdfJsCompatibleResult = Extract<PdfJsCompatibilityResult, { readonly status: "compatible" }>;
+type PdfJsIncompatibleResult = Extract<
+  PdfJsCompatibilityResult,
+  { readonly status: "incompatible" }
+>;
+type PdfJsIndeterminateResult = Extract<
+  PdfJsCompatibilityResult,
+  { readonly status: "indeterminate" }
+>;
+
+export type AppBootstrapState =
+  | { readonly status: "checking"; readonly stage: StartupStage }
+  | { readonly status: "compatible"; readonly result: PdfJsCompatibleResult }
+  | { readonly status: "incompatible"; readonly result: PdfJsIncompatibleResult }
+  | { readonly status: "indeterminate"; readonly result?: PdfJsIndeterminateResult };
+
 interface AppProps {
   readonly compatibilityProbe?: PdfJsCompatibilityProbe;
   readonly initialCompatibilityResult?: PdfJsCompatibilityResult;
+  /** Explicit test seam; production uses the required five-second minimum. */
+  readonly startupMinimumDurationMs?: number;
 }
 
 interface EditorServices {
@@ -82,15 +104,77 @@ const createEditorServices = (): EditorServices => {
   };
 };
 
+const indeterminateCompatibility = (): Extract<
+  PdfJsCompatibilityResult,
+  { readonly status: "indeterminate" }
+> => ({
+  status: "indeterminate",
+  diagnostics: {
+    missingRequiredApis: [],
+    canvasAvailable: false,
+    moduleLoaded: false,
+    workerInitialized: false,
+    renderProbeCompleted: false,
+  },
+});
+
+const toBootstrapState = (result: PdfJsCompatibilityResult): AppBootstrapState => {
+  switch (result.status) {
+    case "compatible":
+      return { status: "compatible", result };
+    case "incompatible":
+      return { status: "incompatible", result };
+    case "indeterminate":
+      return { status: "indeterminate" };
+  }
+};
+
+const BrowserCompatibilityPage = ({
+  compatibility,
+}: {
+  readonly compatibility: Extract<PdfJsCompatibilityResult, { readonly status: "incompatible" }>;
+}): React.ReactElement => (
+  <Shell>
+    <section className="landing-page" aria-labelledby="browser-compatibility-title">
+      <div className="landing-hero">
+        <section className="browser-compatibility-panel" role="alert">
+          <h1 id="browser-compatibility-title">Browser not supported</h1>
+          <p>This browser cannot reliably display PDFs in QuickPDF.</p>
+          <p>Check your browser support or open QuickPDF on another device.</p>
+          {compatibility.diagnostics.missingRequiredApis.length > 0 ? (
+            <p>
+              Missing required browser capability:{" "}
+              {compatibility.diagnostics.missingRequiredApis.join(", ")}
+            </p>
+          ) : null}
+          <div className="browser-compatibility-actions">
+            <a href={CHROME_UPDATE_URL} rel="noreferrer" target="_blank">
+              Check for browser updates
+            </a>
+          </div>
+        </section>
+      </div>
+    </section>
+  </Shell>
+);
+
 export const App = ({
   compatibilityProbe = preflightPdfJsCompatibility,
   initialCompatibilityResult,
+  startupMinimumDurationMs = STARTUP_MINIMUM_DURATION_MS,
 }: AppProps): React.ReactElement => {
   const pathname = useSyncExternalStore(subscribeToNavigation, getPathname, getServerPathname);
   const { editor, pdfRenderer } = useMemo(() => createEditorServices(), []);
   const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => editor.snapshot());
   const resolvedInitialCompatibilityResult =
     initialCompatibilityResult ?? window.__quickpdfCompatibilityResult__;
+  const compatibilityProbeRef = useRef(compatibilityProbe);
+  const resolvedInitialResultRef = useRef(resolvedInitialCompatibilityResult);
+  const [bootstrap, setBootstrap] = useState<AppBootstrapState>(() =>
+    resolvedInitialCompatibilityResult !== undefined && startupMinimumDurationMs === 0
+      ? toBootstrapState(resolvedInitialCompatibilityResult)
+      : { status: "checking", stage: "initializing" },
+  );
 
   useEffect(
     () => () => {
@@ -99,9 +183,57 @@ export const App = ({
     [editor],
   );
 
+  useEffect(() => {
+    if (bootstrap.status !== "checking") return undefined;
+    let disposed = false;
+    const duration = Math.max(0, startupMinimumDurationMs);
+    const stages: readonly StartupStage[] = [
+      "loading-renderer",
+      "checking-worker",
+      "testing-render",
+      "finalizing",
+    ];
+    const stageTimers = stages.map((stage, index) =>
+      window.setTimeout(
+        () => {
+          if (!disposed) setBootstrap({ status: "checking", stage });
+        },
+        Math.round(duration * ((index + 1) / (stages.length + 1))),
+      ),
+    );
+    const probe =
+      resolvedInitialResultRef.current === undefined
+        ? compatibilityProbeRef.current()
+        : Promise.resolve(resolvedInitialResultRef.current);
+    const minimumDuration = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, duration);
+    });
+
+    void Promise.all([probe.catch(indeterminateCompatibility), minimumDuration]).then(
+      ([compatibility]) => {
+        if (!disposed) setBootstrap(toBootstrapState(compatibility));
+      },
+    );
+
+    return () => {
+      disposed = true;
+      stageTimers.forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+    };
+  }, [bootstrap.status, startupMinimumDurationMs]);
+
   const openEditor = (): void => {
     navigate("/editor");
   };
+
+  if (bootstrap.status === "checking") {
+    return <StartupScreen stage={bootstrap.stage} />;
+  }
+
+  if (bootstrap.status === "incompatible") {
+    return <BrowserCompatibilityPage compatibility={bootstrap.result} />;
+  }
 
   switch (pathname) {
     case "/":
@@ -112,10 +244,6 @@ export const App = ({
             snapshot={snapshot}
             onSnapshotChange={setSnapshot}
             onDocumentOpened={openEditor}
-            compatibilityCheck={compatibilityProbe}
-            {...(resolvedInitialCompatibilityResult === undefined
-              ? {}
-              : { initialCompatibilityResult: resolvedInitialCompatibilityResult })}
           />
         </Shell>
       );

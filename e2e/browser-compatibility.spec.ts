@@ -7,6 +7,16 @@ declare global {
   }
 }
 
+const compatibleProbe = {
+  status: "compatible",
+  diagnostics: {
+    missingRequiredApis: [],
+    canvasAvailable: true,
+    moduleLoaded: true,
+    workerInitialized: true,
+    renderProbeCompleted: true,
+  },
+} as const;
 const incompatibleProbe = {
   status: "incompatible",
   reason: "render-probe-failed",
@@ -30,6 +40,18 @@ const indeterminateProbe = {
   },
 } as const;
 
+test("never mounts the unsupported page for a compatible renderer", async ({ page }) => {
+  await page.addInitScript((result) => {
+    window.__quickpdfCompatibilityResult__ = result;
+  }, compatibleProbe);
+
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Preparing QuickPDF" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Browser not supported" })).toHaveCount(0);
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Browser not supported" })).toHaveCount(0);
+});
 test("shows the compatibility panel only for a confirmed incompatible renderer", async ({
   page,
 }) => {

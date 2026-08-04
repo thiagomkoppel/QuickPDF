@@ -44,6 +44,15 @@ interface EditorPageProps {
 type RenderStatus = "idle" | "loading" | "ready" | "error";
 type SignatureDialogMode = "draw" | "type" | "upload";
 type TextInspectorTab = "text" | "style" | "page";
+type WorkspaceGestureMode =
+  | "idle"
+  | "pending-pan"
+  | "panning"
+  | "pinching"
+  | "moving-overlay"
+  | "resizing-overlay"
+  | "drawing-whiteout";
+
 type PointerAction =
   | {
       readonly kind: "move";
@@ -760,6 +769,7 @@ export const EditorPage = ({
   const workspacePanRef = useRef<WorkspacePan | undefined>(undefined);
   const touchPointsRef = useRef(new Map<number, { readonly x: number; readonly y: number }>());
   const pinchZoomRef = useRef<PinchZoom | undefined>(undefined);
+  const workspaceGestureModeRef = useRef<WorkspaceGestureMode>("idle");
   const suppressWorkspaceClickRef = useRef(false);
   const [isWorkspacePanning, setIsWorkspacePanning] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -1412,6 +1422,7 @@ export const EditorPage = ({
       movePreviewRef.current = undefined;
       resizePreviewRef.current = undefined;
       setPointerAction(undefined);
+      workspaceGestureModeRef.current = "idle";
     };
 
     const cancelPointerAction = (): void => {
@@ -1446,6 +1457,7 @@ export const EditorPage = ({
       movePreviewRef.current = undefined;
       resizePreviewRef.current = undefined;
       setPointerAction(undefined);
+      workspaceGestureModeRef.current = "idle";
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -1488,6 +1500,7 @@ export const EditorPage = ({
       return;
     }
     event.preventDefault();
+    workspaceGestureModeRef.current = "drawing-whiteout";
     capturePointer(event.currentTarget, event.pointerId);
     if (editingTextElementId !== undefined) {
       setEditingTextElementId(undefined);
@@ -1521,6 +1534,7 @@ export const EditorPage = ({
     releasePointer(event.currentTarget, event.pointerId);
     const finalDraft = draft;
     setWhiteoutDraft(undefined);
+    workspaceGestureModeRef.current = "idle";
     if (currentPage === undefined || !isMeaningfulWhiteoutDrag(finalDraft)) {
       return;
     }
@@ -1539,6 +1553,7 @@ export const EditorPage = ({
       event.currentTarget.releasePointerCapture(whiteoutDraft.pointerId);
     }
     setWhiteoutDraft(undefined);
+    workspaceGestureModeRef.current = "idle";
   };
   const clearSelection = (): void => {
     setEditingTextElementId(undefined);
@@ -1666,25 +1681,44 @@ export const EditorPage = ({
     }
   };
 
+  const isEmptyWorkspaceTouchTarget = (target: EventTarget | null): boolean =>
+    target instanceof HTMLElement &&
+    target.closest(
+      ".overlay-element, button, input, textarea, select, [contenteditable='true']",
+    ) === null;
+
   const startWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
-    if (
-      isCompactEditorViewport &&
-      event.pointerType === "touch" &&
-      !(event.target instanceof HTMLElement && event.target.closest(".overlay-element") !== null)
-    ) {
+    if (isCompactEditorViewport && event.pointerType === "touch") {
+      if (state.tool !== "select" || !isEmptyWorkspaceTouchTarget(event.target)) {
+        return;
+      }
+      const workspace = event.currentTarget;
       const points = touchPointsRef.current;
+      event.preventDefault();
       points.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      capturePointer(event.currentTarget, event.pointerId);
-      if (points.size === 2) {
+      capturePointer(workspace, event.pointerId);
+      if (points.size >= 2) {
         const [first, second] = [...points.values()];
         if (first !== undefined && second !== undefined) {
+          workspacePanRef.current = undefined;
+          workspaceGestureModeRef.current = "pinching";
           pinchZoomRef.current = {
             startDistance: Math.hypot(second.x - first.x, second.y - first.y),
             startZoom: zoomRef.current,
           };
           setIsWorkspacePanning(true);
         }
+        return;
       }
+      workspaceGestureModeRef.current = "pending-pan";
+      workspacePanRef.current = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startScrollLeft: workspace.scrollLeft,
+        startScrollTop: workspace.scrollTop,
+        hasMoved: false,
+      };
       return;
     }
     if (event.button !== 0 || state.tool !== "select" || event.target !== event.currentTarget) {
@@ -1699,6 +1733,7 @@ export const EditorPage = ({
       startScrollTop: workspace.scrollTop,
       hasMoved: false,
     };
+    workspaceGestureModeRef.current = "pending-pan";
     capturePointer(workspace, event.pointerId);
     setIsWorkspacePanning(true);
   };
@@ -1711,11 +1746,13 @@ export const EditorPage = ({
       const pinch = pinchZoomRef.current;
       const [first, second] = [...points.values()];
       if (
+        workspaceGestureModeRef.current === "pinching" &&
         pinch !== undefined &&
         first !== undefined &&
         second !== undefined &&
         pinch.startDistance > 0
       ) {
+        event.preventDefault();
         const distance = Math.hypot(second.x - first.x, second.y - first.y);
         applyZoom(pinch.startZoom * (distance / pinch.startDistance), {
           workspace: event.currentTarget,
@@ -1723,7 +1760,27 @@ export const EditorPage = ({
           clientY: (first.y + second.y) / 2,
         });
         suppressWorkspaceClickRef.current = true;
+        return;
       }
+      const pan = workspacePanRef.current;
+      if (
+        (workspaceGestureModeRef.current !== "pending-pan" &&
+          workspaceGestureModeRef.current !== "panning") ||
+        pan?.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      event.preventDefault();
+      const deltaX = event.clientX - pan.startClientX;
+      const deltaY = event.clientY - pan.startClientY;
+      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+        pan.hasMoved = true;
+        workspaceGestureModeRef.current = "panning";
+        suppressWorkspaceClickRef.current = true;
+        setIsWorkspacePanning(true);
+      }
+      event.currentTarget.scrollLeft = pan.startScrollLeft - deltaX;
+      event.currentTarget.scrollTop = pan.startScrollTop - deltaY;
       return;
     }
     const pan = workspacePanRef.current;
@@ -1734,6 +1791,7 @@ export const EditorPage = ({
     const deltaY = event.clientY - pan.startClientY;
     if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
       pan.hasMoved = true;
+      workspaceGestureModeRef.current = "panning";
       suppressWorkspaceClickRef.current = true;
     }
     event.currentTarget.scrollLeft = pan.startScrollLeft - deltaX;
@@ -1742,10 +1800,21 @@ export const EditorPage = ({
 
   const endWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
     if (isCompactEditorViewport && event.pointerType === "touch") {
-      touchPointsRef.current.delete(event.pointerId);
+      const points = touchPointsRef.current;
+      const pan = workspacePanRef.current;
+      const wasPanPointer = pan?.pointerId === event.pointerId;
+      points.delete(event.pointerId);
       releasePointer(event.currentTarget, event.pointerId);
-      if (touchPointsRef.current.size < 2) {
+      if (workspaceGestureModeRef.current === "pinching") {
         pinchZoomRef.current = undefined;
+        workspacePanRef.current = undefined;
+        workspaceGestureModeRef.current = "idle";
+        setIsWorkspacePanning(false);
+        return;
+      }
+      if (wasPanPointer) {
+        workspacePanRef.current = undefined;
+        workspaceGestureModeRef.current = "idle";
         setIsWorkspacePanning(false);
       }
       return;
@@ -1757,6 +1826,7 @@ export const EditorPage = ({
     releasePointer(event.currentTarget, event.pointerId);
 
     workspacePanRef.current = undefined;
+    workspaceGestureModeRef.current = "idle";
     setIsWorkspacePanning(false);
   };
 
@@ -1792,6 +1862,7 @@ export const EditorPage = ({
       return;
     }
     event.preventDefault();
+    workspaceGestureModeRef.current = "moving-overlay";
     event.currentTarget.focus();
     if (editingTextElementId !== undefined && editingTextElementId !== element.id) {
       setEditingTextElementId(undefined);
@@ -1821,6 +1892,7 @@ export const EditorPage = ({
       target.removeEventListener("pointercancel", handleCancel);
       moveCancelRef.current = undefined;
       movePreviewRef.current = undefined;
+      workspaceGestureModeRef.current = "idle";
     };
     const restoreStart = (): void => {
       applySnapshot(editor.previewMoveElement(element.id, { x: startBounds.x, y: startBounds.y }));
@@ -1873,6 +1945,7 @@ export const EditorPage = ({
   ): void => {
     event.preventDefault();
     event.stopPropagation();
+    workspaceGestureModeRef.current = "resizing-overlay";
     applySnapshot(editor.selectElement(element.id));
     resizePreviewRef.current = {
       bounds: element.bounds,
