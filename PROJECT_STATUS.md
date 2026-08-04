@@ -11,6 +11,8 @@ Repository foundation initialized. The project has a Vite, React, and TypeScript
 Implemented proof-of-concept behavior:
 
 - open one local PDF through browser File APIs;
+- provide a manifest, mark-only install icons, standalone presentation, safe-area layout, and explicit session-only iOS/Chromium installation guidance without a service worker or document cache;
+- gate PDF opening behind documented browser version and capability checks; unsupported browsers, including Chrome 101 on Android, cannot pass local PDF bytes to PDF.js;
 - validate basic PDF file properties and signature bytes;
 - parse PDF page metadata with `pdf-lib` behind an infrastructure adapter;
 - render the active PDF page with PDF.js on a real canvas;

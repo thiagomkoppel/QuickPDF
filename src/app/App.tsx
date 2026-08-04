@@ -7,6 +7,10 @@ import {
 } from "../application/editor-application";
 import { BrowserDownloadAdapter } from "../infrastructure/browser/browser-download-adapter";
 import { BrowserLocalPdfFileReader } from "../infrastructure/browser/local-pdf-file-reader";
+import {
+  preflightPdfJsCompatibility,
+  type PdfJsCompatibilityResult,
+} from "../infrastructure/browser/browser-compatibility";
 import { PdfJsPageRenderer } from "../infrastructure/pdf/pdfjs-page-renderer";
 import { PdfLibExportGateway } from "../infrastructure/pdf/pdf-lib-export-gateway";
 import { Shell } from "../presentation/components/Shell";
@@ -14,6 +18,12 @@ import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
 import { PrivacyPolicyPage } from "../presentation/pages/PrivacyPolicyPage";
+
+declare global {
+  interface Window {
+    __quickpdfCompatibilityResult__?: PdfJsCompatibilityResult;
+  }
+}
 
 const getPathname = (): string => window.location.pathname;
 
@@ -46,6 +56,13 @@ const RedirectToLanding = (): null => {
   return null;
 };
 
+export type PdfJsCompatibilityProbe = () => Promise<PdfJsCompatibilityResult>;
+
+interface AppProps {
+  readonly compatibilityProbe?: PdfJsCompatibilityProbe;
+  readonly initialCompatibilityResult?: PdfJsCompatibilityResult;
+}
+
 interface EditorServices {
   readonly editor: PdfEditorApplication;
   readonly pdfRenderer: PdfJsPageRenderer;
@@ -65,10 +82,15 @@ const createEditorServices = (): EditorServices => {
   };
 };
 
-export const App = (): React.ReactElement => {
+export const App = ({
+  compatibilityProbe = preflightPdfJsCompatibility,
+  initialCompatibilityResult,
+}: AppProps): React.ReactElement => {
   const pathname = useSyncExternalStore(subscribeToNavigation, getPathname, getServerPathname);
   const { editor, pdfRenderer } = useMemo(() => createEditorServices(), []);
   const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => editor.snapshot());
+  const resolvedInitialCompatibilityResult =
+    initialCompatibilityResult ?? window.__quickpdfCompatibilityResult__;
 
   useEffect(
     () => () => {
@@ -90,6 +112,10 @@ export const App = (): React.ReactElement => {
             snapshot={snapshot}
             onSnapshotChange={setSnapshot}
             onDocumentOpened={openEditor}
+            compatibilityCheck={compatibilityProbe}
+            {...(resolvedInitialCompatibilityResult === undefined
+              ? {}
+              : { initialCompatibilityResult: resolvedInitialCompatibilityResult })}
           />
         </Shell>
       );

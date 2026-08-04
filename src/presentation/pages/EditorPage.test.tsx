@@ -3233,6 +3233,9 @@ describe("EditorPage PDF rendering", () => {
     );
 
     expect(screen.getByRole("status", { name: "Quick Edit mode" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss Quick Edit notice" })).toHaveTextContent(
+      "×",
+    );
     const primaryTools = [
       ...container.querySelectorAll<HTMLButtonElement>(
         '.toolbar-tools-group button[data-mobile-primary="true"]',

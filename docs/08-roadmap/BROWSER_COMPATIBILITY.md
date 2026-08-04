@@ -1,42 +1,44 @@
-# Browser Compatibility Roadmap
+# Browser Compatibility
 
-## Target browsers
+## Supported browser policy
 
-Desktop:
+QuickPDF decides renderer support from a local PDF.js capability preflight, not browser names, versions, operating-system versions, or device models. The preflight uses only bundled static probe bytes; it never reads a user-selected PDF.
 
-- Chrome
-- Edge
-- Firefox
-- Safari
+## Preflight outcomes
 
-Mobile/tablet:
+The landing page starts in `checking`. The preflight then returns one of:
 
-- iOS Safari
-- iPadOS Safari
-- Android Chrome
+- `compatible`: the required browser APIs were available, the installed PDF.js module initialized its worker, and a tiny PDF rendered visible pixels to a canvas.
+- `incompatible`: a required API, PDF.js module, worker, canvas, or render probe definitively failed.
+- `indeterminate`: the lightweight probe did not finish within its bounded time. QuickPDF leaves the upload controls available rather than falsely blocking a browser.
 
-## Verify
+Only a completed `incompatible` result shows the compatibility panel. Compatible and indeterminate environments never see it, including during startup.
 
-- file selection
-- drag and drop
-- PDF.js rendering
-- canvas behavior
-- pointer and touch events
-- native color picker
-- signature drawing
-- download behavior
-- custom fonts
-- font embedding
-- service worker
-- manifest installation
-- dynamic viewport units
-- safe-area insets
-- fullscreen support
-- clipboard behavior
+## Required capabilities
 
-## Policy
+QuickPDF checks the APIs needed across its local PDF workflow:
 
-- Core editing must work without PWA installation.
-- Optional unsupported capabilities must fail gracefully.
-- Prefer capability detection over browser detection.
-- Document known limitations.
+- `Promise`
+- `ReadableStream`
+- `AbortController`
+- `TextDecoder`
+- `TextEncoder`
+- `Worker`
+- `WebAssembly`
+- `ResizeObserver`
+- `URL.createObjectURL`
+- a usable 2D canvas
+
+The probe then verifies PDF.js worker initialization and actual canvas rendering. Optional APIs such as `OffscreenCanvas` and bitmap-transfer APIs are not required.
+
+## Known limitation
+
+A browser can be classified incompatible only when the actual local probe fails. For example, an older Firefox browser on Android remains usable if it satisfies the required APIs and successfully runs the bundled PDF.js probe. A browser that completes PDF.js parsing but produces blank canvas output fails the render probe and receives the compatibility guidance before any user PDF is selected.
+
+## User-facing behavior
+
+The compatibility panel is an accessible alert shown only for confirmed renderer incompatibility. It explains that the browser cannot reliably display PDFs and directs the user to browser support or another device. It does not label a document invalid, corrupt, or unreadable.
+
+## Privacy
+
+The preflight runs entirely in memory with a static PDF fixture compiled into the application. It does not upload document bytes, inspect a selected document, store browser fingerprints, or use analytics.

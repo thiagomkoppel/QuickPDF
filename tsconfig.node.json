@@ -22,6 +22,7 @@
   },
   "include": [
     "vite.config.ts",
+    "src/vite-env.d.ts",
     "vitest.config.ts",
     "eslint.config.js",
     "playwright.config.ts",

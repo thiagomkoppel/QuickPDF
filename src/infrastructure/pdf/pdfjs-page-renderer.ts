@@ -1,5 +1,4 @@
-import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import { pdfjs } from "./pdfjs-runtime";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
 import type {
@@ -7,8 +6,6 @@ import type {
   PdfRenderDocumentGateway,
   PdfRenderDocumentResult,
 } from "../../application/editor-application";
-
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export interface PdfPageRenderRequest {
   readonly documentId: string;

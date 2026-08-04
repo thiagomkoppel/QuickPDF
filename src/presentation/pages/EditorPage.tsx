@@ -732,6 +732,7 @@ export const EditorPage = ({
   const mobileFitDocumentIdRef = useRef<string | undefined>(undefined);
   const lastRenderDocumentIdRef = useRef<string | undefined>(state.renderDocumentId);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
+
   const [dialogType, setDialogType] = useState<SignatureElementType | undefined>();
   const [pendingImage, setPendingImage] = useState<ImageElementInput | undefined>();
   const [imageUploadError, setImageUploadError] = useState<string | undefined>();
@@ -2349,9 +2350,7 @@ export const EditorPage = ({
                             <option>Helvetica</option>
                             <option>Times Roman</option>
                             <option>Courier</option>
-                            <option disabled>
-                              Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-                            </option>
+                            <option disabled>----------------</option>
                             <option>Patrick Hand</option>
                           </select>
                         </label>
@@ -2553,9 +2552,9 @@ export const EditorPage = ({
                               className={`element-inspector-symbol element-inspector-symbol-${selectedElement.type}`}
                             >
                               {selectedElement.type === "checkmark"
-                                ? "Ã¢Å“â€œ"
+                                ? "\u2713"
                                 : selectedElement.type === "cross"
-                                  ? "Ãƒâ€”"
+                                  ? "\u00d7"
                                   : selectedElement.type === "whiteout"
                                     ? "Whiteout"
                                     : (selectedElement.text ?? elementLabel(selectedElement))}
@@ -2575,7 +2574,7 @@ export const EditorPage = ({
                           </div>
                           <div>
                             <dt>Original size</dt>
-                            <dd>{`${String(Math.round(selectedElement.bounds.width))} Ãƒâ€” ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
+                            <dd>{`${String(Math.round(selectedElement.bounds.width))} \u00d7 ${String(Math.round(selectedElement.bounds.height))} pt`}</dd>
                           </div>
                           <div>
                             <dt>Page</dt>
@@ -2780,7 +2779,7 @@ export const EditorPage = ({
               setIsQuickEditNoticeDismissed(true);
             }}
           >
-            Ãƒâ€”
+            {"\u00d7"}
           </button>
         </section>
       ) : null}
@@ -3125,7 +3124,7 @@ export const EditorPage = ({
                 setIsMobilePageRailOpen(false);
               }}
             >
-              Ãƒâ€”
+              {"\u00d7"}
             </button>
             <button
               type="button"
@@ -3625,7 +3624,7 @@ const SignatureDialog = ({
             aria-label="Close dialog"
             onClick={onCancel}
           >
-            Ãƒâ€”
+            {"\u00d7"}
           </button>
         </header>
         <div className="dialog-tabs" role="tablist" aria-label={`${type} methods`}>

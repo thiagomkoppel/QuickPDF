@@ -1,53 +1,33 @@
 # Progressive Web App
 
-## Goal
+## Part 1: Installability foundation
 
-Make QuickPDF installable on phones, tablets, and desktop browsers while preserving the browser-local privacy model.
+QuickPDF can be installed as a standalone browser application on supported Android, iOS/iPadOS, and Chromium desktop browsers. This part provides the manifest, mark-only icons, standalone presentation detection, safe-area layout, and platform-appropriate install guidance.
 
-## Scope
+## Included
 
-- Web app manifest
-- QuickPDF app icons
-- Apple touch icon
-- Standalone display mode
-- Safe-area support
-- Android/Chromium install prompt
-- iOS/iPadOS Add to Home Screen guidance
-- Offline application shell
-- Safe update notification
+- Web app manifest with standalone display, root start URL, root scope, theme/background color, and orientation support.
+- Local PNG, maskable, Apple touch, and favicon assets generated from the QuickPDF document/Q mark.
+- HTML manifest, theme-color, Apple standalone, touch-icon, and favicon metadata.
+- Presentation-only standalone detection via `display-mode: standalone` and iOS `navigator.standalone`.
+- Safe-area-aware application shell using `100dvh` and top/bottom safe-area insets.
+- An explicit iOS Safari installation action that opens a dismissible Add to Home Screen instruction sheet.
+- A deferred Chromium install action through `beforeinstallprompt`, hidden after `appinstalled` or an accepted prompt.
 
-## Cache policy
+## Explicitly not included
 
-Cache only static application assets:
+Part 1 does not register a service worker and does not implement offline support, application-shell caching, background sync, update notifications, autosave, IndexedDB, localStorage, document restoration, or any document cache.
 
-- HTML
-- JavaScript
-- CSS
-- icons
-- bundled fonts
-- brand assets
+QuickPDF continues to keep active PDFs, overlays, signatures, images, clipboard content, history, and editor state only in browser memory for the active session. Installing the application does not alter this privacy model.
 
-Never cache:
+## Routing
 
-- opened PDFs
-- signatures
-- initials
-- uploaded images
-- exported PDFs
-- editor session contents
+The manifest starts at `/` with scope `/`. The existing SPA route behavior remains unchanged:
 
-## Acceptance criteria
+- `/` opens the landing page.
+- `/privacy` remains refreshable through the static host fallback configuration.
+- `/editor` without an active in-memory document redirects to the landing page.
 
-- Installable on supported browsers.
-- Standalone launch works.
-- Application shell can open offline after installation.
-- No user documents enter service-worker caches.
-- Existing routes and editor behavior remain intact.
-- Production build emits manifest, icons, and service worker.
+## Future parts
 
-## Deferred
-
-- Background sync
-- Push notifications
-- Cloud storage
-- Automatic session recovery
+Later PWA work must receive a separate privacy review before adding any service worker, cache, offline capability, or update behavior. User document bytes must never enter a service-worker cache.

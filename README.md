@@ -29,3 +29,7 @@ Current overlay tools include Text, Whiteout, Signature, Initials, Image, Checkm
 Date overlays capture the local date at placement time in deterministic `MM/DD/YYYY` format. They do not update live and do not use a date picker in this milestone.
 
 All current overlays use the shared selection, move, resize, duplicate, delete, session-local copy/paste, Undo/Redo, dirty-state, and export lifecycle. Document bytes, image data, copied overlays, and history remain browser-memory-only for the active session.
+
+## Browser compatibility
+
+QuickPDF supports current Chrome and Edge (118+), capable current Firefox releases, and Safari 16.4+. It checks browser support before accepting a PDF so that known incompatible browsers, including Chrome 101 on Android, do not receive local document bytes. Firefox on older Android devices is allowed when it provides the required browser capabilities. See [Browser Compatibility](docs/08-roadmap/BROWSER_COMPATIBILITY.md).

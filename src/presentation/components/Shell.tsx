@@ -9,6 +9,8 @@ import {
 
 import quickPdfMark from "../assets/brand/quickpdf-mark.svg";
 
+import { usePwaInstallController } from "./use-pwa-install";
+
 const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
 
 interface ShellProps {
@@ -30,8 +32,13 @@ const handleInternalNavigation =
 
 export const Shell = ({ children, hideHeader = false }: ShellProps): React.ReactElement => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const install = usePwaInstallController();
   const menuRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const installSheetActionRef = useRef<HTMLButtonElement>(null);
+  const dismissInstructions = install.dismissInstructions;
+  const canInstall =
+    install.availability === "chromium-prompt" || install.availability === "ios-instructions";
 
   useEffect(() => {
     if (!isMobileMenuOpen) return undefined;
@@ -54,7 +61,7 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
     };
     document.addEventListener("pointerdown", closeOnPointerDown);
     document.addEventListener("keydown", closeOnEscape);
-    menuRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+    menuRef.current?.querySelector<HTMLElement>("button, a")?.focus();
     return () => {
       document.removeEventListener("pointerdown", closeOnPointerDown);
       document.removeEventListener("keydown", closeOnEscape);
@@ -62,11 +69,28 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
     };
   }, [isMobileMenuOpen]);
 
+  useEffect(() => {
+    if (!install.isInstructionsOpen) return undefined;
+    const menuButton = menuButtonRef.current;
+    const closeOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismissInstructions();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    installSheetActionRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      menuButton?.focus();
+    };
+  }, [dismissInstructions, install.isInstructionsOpen]);
+
   const trapMobileMenuFocus = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key !== "Tab") return;
-    const links = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>("a")];
-    const first = links[0];
-    const last = links.at(-1);
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button, a")];
+    const first = controls[0];
+    const last = controls.at(-1);
     if (first === undefined || last === undefined) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
@@ -77,8 +101,16 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
     }
   };
 
+  const requestInstall = (): void => {
+    setIsMobileMenuOpen(false);
+    void install.requestInstall();
+  };
+
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${install.isStandalone ? " is-standalone" : ""}`}
+      data-standalone={install.isStandalone}
+    >
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -115,7 +147,13 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
             className={`primary-nav${isMobileMenuOpen ? " is-mobile-menu-open" : ""}`}
             onKeyDown={trapMobileMenuFocus}
           >
+            {canInstall ? (
+              <button className="primary-nav__install" type="button" onClick={requestInstall}>
+                Install QuickPDF
+              </button>
+            ) : null}
             <a
+              className="primary-nav__privacy"
               href="/privacy"
               onClick={(event) => {
                 handleInternalNavigation("/privacy")(event);
@@ -125,6 +163,7 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
               Privacy
             </a>
             <a
+              className="primary-nav__github"
               href={GITHUB_URL}
               rel="noreferrer"
               target="_blank"
@@ -137,6 +176,38 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
           </nav>
         </header>
       )}
+      {install.isInstructionsOpen ? (
+        <div
+          className="ios-install-sheet-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) install.dismissInstructions();
+          }}
+        >
+          <section
+            aria-labelledby="ios-install-title"
+            aria-modal="true"
+            className="ios-install-sheet"
+            role="dialog"
+          >
+            <div aria-hidden="true" className="ios-install-sheet__handle" />
+            <h2 id="ios-install-title">Install QuickPDF</h2>
+            <ol>
+              <li>
+                Tap the{" "}
+                <span aria-hidden="true" className="ios-install-sheet__share-icon">
+                  ↑
+                </span>{" "}
+                Share button in Safari.
+              </li>
+              <li>Choose “Add to Home Screen.”</li>
+              <li>Tap “Add.”</li>
+            </ol>
+            <button ref={installSheetActionRef} type="button" onClick={install.dismissInstructions}>
+              Got it
+            </button>
+          </section>
+        </div>
+      ) : null}
       <main id="main-content" className="main-content" tabIndex={-1}>
         {children}
       </main>

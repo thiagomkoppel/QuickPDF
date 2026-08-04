@@ -177,3 +177,13 @@ Records the decision to use Vite, React, strict TypeScript, and static deploymen
 ### `07-decisions/ADR-005-COMMAND-HISTORY.md`
 
 Records the decision to use application-owned, reversible, mergeable command history for Undo/Redo.
+
+## Roadmap
+
+### `08-roadmap/BROWSER_COMPATIBILITY.md`
+
+Defines QuickPDF's supported-browser policy, required runtime capabilities, compatibility gate, and documented legacy-browser limitation.
+
+### `08-roadmap/PWA.md`
+
+Defines the installability-only PWA foundation and its explicit no-service-worker, no-document-cache privacy boundary.

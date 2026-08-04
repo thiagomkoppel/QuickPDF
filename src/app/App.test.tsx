@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PdfOpenResult } from "../application/editor-application";
+import type { PdfJsCompatibilityResult } from "../infrastructure/browser/browser-compatibility";
 
 import { App } from "./App";
 
@@ -64,9 +65,28 @@ vi.mock("../infrastructure/pdf/pdf-lib-export-gateway", () => ({
   },
 }));
 
-const renderAt = (path: string) => {
+const compatiblePreflight: PdfJsCompatibilityResult = {
+  status: "compatible",
+  diagnostics: {
+    missingRequiredApis: [],
+    canvasAvailable: true,
+    moduleLoaded: true,
+    workerInitialized: true,
+    renderProbeCompleted: true,
+  },
+};
+
+const renderAt = (
+  path: string,
+  compatibilityProbe = () => Promise.resolve(compatiblePreflight),
+) => {
   window.history.pushState({}, "", path);
-  return render(<App />);
+  return render(
+    <App
+      compatibilityProbe={compatibilityProbe}
+      initialCompatibilityResult={compatiblePreflight}
+    />,
+  );
 };
 
 const testFile = (bytes: Uint8Array, name: string): File => {
@@ -116,6 +136,42 @@ const dragWhiteout = (overlay: HTMLElement): void => {
 };
 
 beforeEach(() => {
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: "Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36",
+  });
+  Object.defineProperty(globalThis, "Worker", {
+    configurable: true,
+    value: function TestWorker(): void {
+      return undefined;
+    },
+  });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class TestResizeObserver {
+      public observe(): void {
+        return undefined;
+      }
+
+      public unobserve(): void {
+        return undefined;
+      }
+
+      public disconnect(): void {
+        return undefined;
+      }
+    },
+  });
+  Object.defineProperty(globalThis, "CanvasRenderingContext2D", {
+    configurable: true,
+    value: function TestCanvasRenderingContext2D(): void {
+      return undefined;
+    },
+  });
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: () => "blob:quickpdf-test",
+  });
   download.mockClear();
   exportPdf.mockClear();
   open.mockClear();
@@ -153,6 +209,11 @@ describe("QuickPDF application shell", () => {
       screen.getByText("QuickPDF does not upload or store your document on its own servers."),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to QuickPDF" })).toHaveAttribute("href", "/");
+    const privacyBrand = screen.getByRole("link", { name: "QuickPDF" });
+    expect(privacyBrand.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("quickpdf-mark"),
+    );
 
     for (const heading of [
       "1. Overview",

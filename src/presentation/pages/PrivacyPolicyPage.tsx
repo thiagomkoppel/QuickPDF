@@ -1,6 +1,6 @@
 import type { MouseEvent } from "react";
 
-import quickPdfLogo from "../assets/brand/quickpdf-logo.svg";
+import quickPdfMark from "../assets/brand/quickpdf-mark.svg";
 
 const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
 const CONTACT_EMAIL = "thiagomkoppel@gmail.com";
@@ -195,8 +195,14 @@ export const PrivacyPolicyPage = (): React.ReactElement => (
   <section className="privacy-policy-page" aria-labelledby="privacy-policy-title">
     <div className="privacy-policy-page__content">
       <header className="privacy-policy-page__header">
-        <a className="privacy-policy-page__brand" href="/" onClick={handleInternalNavigation("/")}>
-          <img src={quickPdfLogo} alt="QuickPDF" />
+        <a
+          aria-label="QuickPDF"
+          className="privacy-policy-page__brand"
+          href="/"
+          onClick={handleInternalNavigation("/")}
+        >
+          <img src={quickPdfMark} alt="" aria-hidden="true" />
+          <span aria-hidden="true">QuickPDF</span>
         </a>
         <a className="privacy-policy-page__back" href="/" onClick={handleInternalNavigation("/")}>
           Back to QuickPDF
