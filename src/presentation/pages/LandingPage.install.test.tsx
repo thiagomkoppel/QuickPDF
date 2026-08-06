@@ -77,8 +77,10 @@ describe("LandingPage install onboarding", () => {
 
     fireEvent(window, event);
     const card = await screen.findByRole("region", { name: "Install QuickPDF" });
-    expect(within(card).getByText("Install QuickPDF for the best experience.")).toBeInTheDocument();
-    expect(within(card).getByText("Opens instantly")).toBeInTheDocument();
+    expect(
+      within(card).getByText("Use QuickPDF like an app and open it offline."),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("Opens quickly")).toBeInTheDocument();
     expect(within(card).getByText("Launches from your home screen")).toBeInTheDocument();
     expect(within(card).getByText("Runs like a native application")).toBeInTheDocument();
     expect(within(card).getByText("Your PDFs always stay on your device")).toBeInTheDocument();

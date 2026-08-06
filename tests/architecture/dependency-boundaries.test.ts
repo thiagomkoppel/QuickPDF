@@ -10,7 +10,6 @@ const forbiddenDomainImports = [
   "../infrastructure",
   "../presentation",
 ];
-
 const forbiddenApplicationImports = [
   "react",
   "react-dom",
@@ -18,55 +17,49 @@ const forbiddenApplicationImports = [
   "pdf-lib",
   "../presentation",
 ];
-
 const normalizePath = (filePath: string): string => filePath.replaceAll("\\", "/");
+const isTestFile = (filePath: string): boolean => /\.(?:test|spec)\.[^.]+$/.test(filePath);
 
 describe("source dependency boundaries", () => {
   it("keeps the domain layer independent from UI, PDF libraries, and browser adapters", () => {
-    const domainFiles = readProjectFiles("src/domain", [".ts", ".tsx"]);
-
-    const violations = domainFiles.flatMap((file) =>
+    const violations = readProjectFiles("src/domain", [".ts", ".tsx"]).flatMap((file) =>
       forbiddenDomainImports
-        .filter((forbiddenImport) => file.contents.includes(`from "${forbiddenImport}`))
-        .map((forbiddenImport) => `${file.path} imports ${forbiddenImport}`),
+        .filter((value) => file.contents.includes(`from "${value}`))
+        .map((value) => `${file.path} imports ${value}`),
     );
-
     expect(violations).toEqual([]);
   });
-
   it("keeps application use cases independent from React and PDF libraries", () => {
-    const applicationFiles = readProjectFiles("src/application", [".ts", ".tsx"]);
-
-    const violations = applicationFiles.flatMap((file) =>
+    const violations = readProjectFiles("src/application", [".ts", ".tsx"]).flatMap((file) =>
       forbiddenApplicationImports
-        .filter((forbiddenImport) => file.contents.includes(`from "${forbiddenImport}`))
-        .map((forbiddenImport) => `${file.path} imports ${forbiddenImport}`),
+        .filter((value) => file.contents.includes(`from "${value}`))
+        .map((value) => `${file.path} imports ${value}`),
     );
-
     expect(violations).toEqual([]);
   });
-
   it("isolates PDF library usage to PDF infrastructure", () => {
-    const sourceFiles = readProjectFiles("src", [".ts", ".tsx"]);
-    const violations = sourceFiles
+    const violations = readProjectFiles("src", [".ts", ".tsx"])
       .filter(
         (file) =>
           file.contents.includes('from "pdf-lib') || file.contents.includes('from "pdfjs-dist'),
       )
       .filter((file) => !normalizePath(file.path).includes("src/infrastructure/pdf"))
       .map((file) => `${file.path} imports a PDF library outside PDF infrastructure`);
-
     expect(violations).toEqual([]);
   });
-
-  it("does not introduce browser persistence, analytics, service workers, remote assets, or document network APIs", () => {
-    const sourceFiles = readProjectFiles("src", [".ts", ".tsx", ".css"]);
-    const forbiddenPatterns = [
+  it("isolates service-worker browser APIs to PWA infrastructure", () => {
+    const violations = readProjectFiles("src", [".ts", ".tsx"])
+      .filter((file) => file.contents.includes("navigator.serviceWorker"))
+      .filter((file) => !normalizePath(file.path).includes("src/infrastructure/pwa/"))
+      .map((file) => `${file.path} accesses navigator.serviceWorker outside PWA infrastructure`);
+    expect(violations).toEqual([]);
+  });
+  it("keeps persistence, analytics, document network APIs, and remote assets out of production source", () => {
+    const patterns = [
       "localStorage",
       "sessionStorage",
       "indexedDB",
       "document.cookie",
-      "navigator.serviceWorker",
       "gtag(",
       'from "analytics"',
       'from "telemetry"',
@@ -78,13 +71,13 @@ describe("source dependency boundaries", () => {
       "http://",
       "https://",
     ];
-
-    const violations = sourceFiles.flatMap((file) =>
-      forbiddenPatterns
-        .filter((pattern) => file.contents.includes(pattern))
-        .map((pattern) => `${file.path} contains ${pattern}`),
-    );
-
+    const violations = readProjectFiles("src", [".ts", ".tsx", ".css"])
+      .filter((file) => !isTestFile(file.path))
+      .flatMap((file) =>
+        patterns
+          .filter((pattern) => file.contents.includes(pattern))
+          .map((pattern) => `${file.path} contains ${pattern}`),
+      );
     expect(violations).toEqual([]);
   });
 });

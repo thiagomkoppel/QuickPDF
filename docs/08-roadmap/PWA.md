@@ -31,3 +31,7 @@ The manifest starts at `/` with scope `/`. The existing SPA route behavior remai
 ## Future parts
 
 Later PWA work must receive a separate privacy review before adding any service worker, cache, offline capability, or update behavior. User document bytes must never enter a service-worker cache.
+
+## Part 2: Offline application shell
+
+Production builds now precache only QuickPDF-owned shell assets. User document bytes and editor sessions remain excluded from Cache Storage and remain memory-only.

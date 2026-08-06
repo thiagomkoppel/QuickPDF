@@ -158,6 +158,28 @@ export const LandingPage = ({
 
   return (
     <section className="landing-page" aria-labelledby="landing-title">
+      {install.update.status === "available" ? (
+        <aside className="pwa-update-banner" aria-live="polite">
+          <strong>QuickPDF update available</strong>
+          <span>A new version is ready.</span>
+          <button
+            type="button"
+            onClick={() => {
+              install.dismissUpdate();
+            }}
+          >
+            Later
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              install.requestUpdate();
+            }}
+          >
+            Update now
+          </button>
+        </aside>
+      ) : null}
       <div className="landing-hero">
         <div aria-hidden="true" className="landing-hero-icon">
           <span />
@@ -280,9 +302,9 @@ export const LandingPage = ({
             </span>
             <div className="landing-install-card__content">
               <h2 id="landing-install-title">Install QuickPDF</h2>
-              <p>Install QuickPDF for the best experience.</p>
+              <p>Use QuickPDF like an app and open it offline.</p>
               <ul>
-                <li>Opens instantly</li>
+                <li>Opens quickly</li>
                 <li>Launches from your home screen</li>
                 <li>Runs like a native application</li>
                 <li>Your PDFs always stay on your device</li>

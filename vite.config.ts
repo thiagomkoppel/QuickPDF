@@ -5,5 +5,5 @@ const compatibilityGateTarget = "chrome101";
 
 export default defineConfig({
   plugins: [react()],
-  build: { target: compatibilityGateTarget },
+  build: { target: compatibilityGateTarget, manifest: true },
 });

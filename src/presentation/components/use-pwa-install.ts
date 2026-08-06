@@ -11,6 +11,11 @@ import {
 } from "react";
 
 import { currentInstallPlatform, isIosSafari } from "../../infrastructure/browser/standalone-mode";
+import {
+  activateQuickPdfUpdate,
+  watchForQuickPdfUpdate,
+  type PwaUpdateState,
+} from "../../infrastructure/pwa/service-worker-update";
 
 export type InstallAvailability =
   "chromium-prompt" | "ios-instructions" | "unavailable" | "installed";
@@ -25,6 +30,9 @@ export interface PwaInstallController {
   readonly isInstructionsOpen: boolean;
   readonly isStandalone: boolean;
   readonly lastInstallOutcome?: "accepted" | "dismissed";
+  readonly update: PwaUpdateState;
+  requestUpdate: () => void;
+  dismissUpdate: () => void;
   requestInstall: () => Promise<void>;
   dismissInstructions: () => void;
 }
@@ -37,6 +45,8 @@ export const usePwaInstallController = (): PwaInstallController => {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<DeferredInstallPrompt>();
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [lastInstallOutcome, setLastInstallOutcome] = useState<"accepted" | "dismissed">();
+  const [update, setUpdate] = useState<PwaUpdateState>({ status: "idle" });
+  const [isUpdateDismissed, setIsUpdateDismissed] = useState(false);
   const installPlatform = currentInstallPlatform();
 
   useEffect(() => {
@@ -68,6 +78,15 @@ export const usePwaInstallController = (): PwaInstallController => {
     };
   }, [isInstalledThisSession]);
 
+  useEffect(
+    () =>
+      watchForQuickPdfUpdate((next) => {
+        setUpdate(next);
+        if (next.status === "available") setIsUpdateDismissed(false);
+      }),
+    [],
+  );
+
   const availability = useMemo<InstallAvailability>(() => {
     if (isStandalone || isInstalledThisSession) return "installed";
     if (deferredInstallPrompt !== undefined) return "chromium-prompt";
@@ -92,6 +111,16 @@ export const usePwaInstallController = (): PwaInstallController => {
 
   return {
     availability,
+    update: isUpdateDismissed ? { status: "idle" } : update,
+    dismissUpdate: () => {
+      setIsUpdateDismissed(true);
+    },
+    requestUpdate: () => {
+      if (update.status === "available") {
+        setUpdate({ status: "activating" });
+        activateQuickPdfUpdate(update);
+      }
+    },
     isInstructionsOpen,
     isStandalone,
     ...(lastInstallOutcome === undefined ? {} : { lastInstallOutcome }),

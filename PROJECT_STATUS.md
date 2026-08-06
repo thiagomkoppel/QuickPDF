@@ -58,3 +58,5 @@ Prove that the application can safely and reliably:
 ## Recent assessment
 
 Live PDF rendering now uses PDF.js behind an infrastructure boundary. The editor renders the active page to a canvas, aligns overlays in CSS page units, supports temporary signature, initials, image, checkmark, cross, and date overlays, and keeps export coordinates independent from zoom and device pixel ratio.
+
+Offline shell work: production builds now generate a QuickPDF-only service worker that precaches the application shell, PDF.js worker, and Patrick Hand font while excluding user documents and editor session data.

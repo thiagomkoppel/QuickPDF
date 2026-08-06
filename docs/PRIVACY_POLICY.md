@@ -154,3 +154,7 @@ Questions about this Privacy Policy may be sent to:
 [thiagomkoppel@gmail.com](mailto:thiagomkoppel@gmail.com)
 
 The official project repository is [thiagomkoppel/QuickPDF](https://github.com/thiagomkoppel/QuickPDF). Do not include private document contents in a contact request.
+
+16. Offline application shell
+
+QuickPDF may store its own application files in browser Cache Storage so the app can open offline. This can include QuickPDF JavaScript, CSS, icons, fonts, and the PDF.js runtime and worker. It does not include PDFs opened by users, edited documents, exports, signatures, uploaded images, or document contents.
