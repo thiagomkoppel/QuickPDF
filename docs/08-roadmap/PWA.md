@@ -12,7 +12,7 @@ QuickPDF can be installed as a standalone browser application on supported Andro
 - Presentation-only standalone detection via `display-mode: standalone` and iOS `navigator.standalone`.
 - Safe-area-aware application shell using `100dvh` and top/bottom safe-area insets.
 - An explicit iOS Safari installation action that opens a dismissible Add to Home Screen instruction sheet.
-- A deferred Chromium install action through `beforeinstallprompt`, hidden after `appinstalled` or an accepted prompt.
+- A deferred Chromium install action through `beforeinstallprompt`, hidden after `appinstalled` or an accepted prompt, and surfaced through a non-intrusive landing onboarding card before installation; its install action appears only when installation is genuinely available.
 
 ## Explicitly not included
 

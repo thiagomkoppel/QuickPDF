@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  createElement,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { currentInstallPlatform, isIosSafari } from "../../infrastructure/browser/standalone-mode";
 
@@ -18,6 +28,8 @@ export interface PwaInstallController {
   requestInstall: () => Promise<void>;
   dismissInstructions: () => void;
 }
+
+const PwaInstallContext = createContext<PwaInstallController | undefined>(undefined);
 
 export const usePwaInstallController = (): PwaInstallController => {
   const [isStandalone, setIsStandalone] = useState(() => currentInstallPlatform().standalone);
@@ -88,4 +100,32 @@ export const usePwaInstallController = (): PwaInstallController => {
       setIsInstructionsOpen(false);
     },
   };
+};
+
+export const PwaInstallProvider = ({
+  children,
+}: {
+  readonly children: ReactNode;
+}): React.ReactElement => {
+  const controller = usePwaInstallController();
+  return createElement(PwaInstallContext.Provider, { value: controller }, children);
+};
+
+export const PwaInstallBoundary = ({
+  children,
+}: {
+  readonly children: ReactNode;
+}): React.ReactElement => {
+  const controller = useContext(PwaInstallContext);
+  return controller === undefined
+    ? createElement(PwaInstallProvider, undefined, children)
+    : createElement(Fragment, undefined, children);
+};
+
+export const usePwaInstall = (): PwaInstallController => {
+  const controller = useContext(PwaInstallContext);
+  if (controller === undefined) {
+    throw new Error("PwaInstallProvider is required for install presentation.");
+  }
+  return controller;
 };

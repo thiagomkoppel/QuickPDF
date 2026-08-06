@@ -3239,7 +3239,7 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByRole("button", { name: "More editor tools" }));
     expect(screen.getByRole("dialog", { name: "More tools" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Whiteout" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Fit page/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fit page" })).toBeNull();
 
     const [openInspector] = screen.getAllByRole("button", { name: "Open editor inspector" });
     if (openInspector === undefined) {
@@ -3248,8 +3248,171 @@ describe("EditorPage PDF rendering", () => {
     await user.click(openInspector);
     expect(inspector).toHaveClass("is-mobile-open");
 
-    await user.click(screen.getByRole("button", { name: "Collapse editor inspector" }));
+    await user.click(screen.getByRole("button", { name: "Collapse inspector sheet" }));
     expect(inspector).not.toHaveClass("is-mobile-open");
+    vi.unstubAllGlobals();
+  });
+  it("uses one simplified Quick Edit shell for touch tablets in portrait and landscape", async () => {
+    const mediaQuery = {
+      addEventListener: vi.fn(),
+      matches: false,
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        ...mediaQuery,
+        matches: query === "(pointer: coarse)",
+      })),
+    );
+    vi.stubGlobal("visualViewport", {
+      addEventListener: vi.fn(),
+      height: 1180,
+      removeEventListener: vi.fn(),
+      width: 820,
+    });
+    const user = userEvent.setup();
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const viewer = container.querySelector(".editor-viewer");
+    const workspace = container.querySelector(".editor-workspace-shell");
+    const inspector = container.querySelector(".element-inspector");
+    expect(viewer).toHaveClass("is-compact-editor", "is-tablet-quick-edit");
+    expect(viewer).not.toHaveClass("is-tablet-editor", "is-tablet-portrait");
+    expect(workspace?.contains(inspector)).toBe(false);
+    expect(screen.getByRole("status", { name: "Quick Edit mode" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss Quick Edit notice" }));
+    expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Whiteout" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Initials" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cross" })).toBeNull();
+    expect(container.querySelector(".desktop-inspector-content")).toHaveAttribute("hidden");
+    expect(container.querySelector(".layers-panel")).not.toBeVisible();
+
+    const [openThumbnails] = screen.getAllByRole("button", { name: "Open page thumbnails" });
+    if (openThumbnails === undefined) throw new Error("Tablet page drawer control is missing.");
+    await user.click(openThumbnails);
+    expect(workspace).toHaveClass("is-mobile-rail-open");
+    await user.click(screen.getByRole("button", { name: "Close page thumbnails" }));
+    expect(workspace).not.toHaveClass("is-mobile-rail-open");
+
+    await user.click(screen.getByRole("button", { name: "More editor tools" }));
+    expect(screen.getByRole("dialog", { name: "More tools" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Whiteout" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await user.click(screen.getByRole("button", { name: "Open editor inspector" }));
+    expect(inspector).toHaveClass("is-mobile-open");
+    await user.click(screen.getByRole("button", { name: "Collapse inspector sheet" }));
+    expect(inspector).not.toHaveClass("is-mobile-open");
+    vi.unstubAllGlobals();
+  });
+  it("uses simplified Quick Edit controls on wide touch tablets", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        addEventListener: vi.fn(),
+        matches: query === "(pointer: coarse)",
+        removeEventListener: vi.fn(),
+      })),
+    );
+    vi.stubGlobal("visualViewport", {
+      addEventListener: vi.fn(),
+      height: 800,
+      removeEventListener: vi.fn(),
+      width: 1280,
+    });
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={selectedSnapshot("text")}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(container.querySelector(".editor-viewer")).toHaveClass(
+      "is-compact-editor",
+      "is-tablet-quick-edit",
+    );
+    expect(screen.queryByRole("button", { name: "Collapse tablet inspector" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fit page" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fit width" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+  it("uses Light Mode canvas resolution on low-powered tablets and allows Full Quality", async () => {
+    const originalPixelRatio = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    const originalHardwareConcurrency = Object.getOwnPropertyDescriptor(
+      navigator,
+      "hardwareConcurrency",
+    );
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
+    Object.defineProperty(navigator, "hardwareConcurrency", { configurable: true, value: 4 });
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        addEventListener: vi.fn(),
+        matches: query === "(pointer: coarse)",
+        removeEventListener: vi.fn(),
+      })),
+    );
+    vi.stubGlobal("visualViewport", {
+      addEventListener: vi.fn(),
+      height: 800,
+      removeEventListener: vi.fn(),
+      width: 1280,
+    });
+    const renderer = createRenderer();
+    const user = userEvent.setup();
+    const view = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={renderer}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(renderer.startRenderPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ devicePixelRatio: 1 }),
+      );
+    });
+    expect(view.container.querySelector(".editor-viewer")).toHaveClass("is-performance-light");
+
+    await user.selectOptions(screen.getByLabelText("Editor performance profile"), "full");
+    await waitFor(() => {
+      expect(renderer.startRenderPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ devicePixelRatio: 2 }),
+      );
+    });
+    expect(view.container.querySelector(".editor-viewer")).toHaveClass("is-performance-full");
+
+    await user.selectOptions(screen.getByLabelText("Editor performance profile"), "light");
+    await waitFor(() => {
+      expect(renderer.startRenderPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ devicePixelRatio: 1 }),
+      );
+    });
+
+    view.unmount();
+    if (originalPixelRatio === undefined) {
+      Reflect.deleteProperty(window, "devicePixelRatio");
+    } else {
+      Object.defineProperty(window, "devicePixelRatio", originalPixelRatio);
+    }
+    if (originalHardwareConcurrency === undefined) {
+      Reflect.deleteProperty(navigator, "hardwareConcurrency");
+    } else {
+      Object.defineProperty(navigator, "hardwareConcurrency", originalHardwareConcurrency);
+    }
     vi.unstubAllGlobals();
   });
   it("uses the reduced Quick Edit notice, primary tools, and contextual text controls on phones", async () => {
@@ -3290,7 +3453,7 @@ describe("EditorPage PDF rendering", () => {
       ),
     ].map((button) => button.getAttribute("aria-label"));
     expect(primaryTools).toEqual(["Select", "Text", "Image", "Signature", "Checkmark", "Date"]);
-    for (const advancedTool of ["Whiteout", "Initials", "Cross", "Fit page", "Fit width"]) {
+    for (const advancedTool of ["Whiteout", "Initials", "Cross"]) {
       expect(screen.queryByRole("button", { name: advancedTool })).toBeNull();
     }
     expect(container.querySelector(".desktop-inspector-content")).toHaveAttribute("hidden");
@@ -3310,6 +3473,28 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss Quick Edit notice" }));
     expect(screen.queryByRole("status", { name: "Quick Edit mode" })).toBeNull();
     vi.unstubAllGlobals();
+  });
+  it("opens Export PDF options before generating a download", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const exportCurrentPdf = (editor as unknown as { readonly exportCurrentPdf: Mock })
+      .exportCurrentPdf;
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    expect(screen.getByRole("dialog", { name: "Export PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Original Size/ })).toBeChecked();
+    expect(exportCurrentPdf).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("radio", { name: /Compress PDF/ }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(exportCurrentPdf).not.toHaveBeenCalled();
   });
   it("keeps the full editor inspector and toolset outside the phone breakpoint", () => {
     const mediaQuery = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };

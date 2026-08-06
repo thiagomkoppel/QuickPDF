@@ -47,6 +47,8 @@ export type EditorErrorCode =
   | "OperationRejected"
   | "RenderFailed"
   | "ExportFailed"
+  | "CompressionFailed"
+  | "CompressionNotBeneficial"
   | "DownloadFailed";
 
 export interface EditorError {
@@ -148,6 +150,32 @@ export type PdfExportResult = PdfExportSuccess | PdfFailure;
 export interface PdfExportGateway {
   open(bytes: Uint8Array): Promise<PdfOpenResult>;
   exportPdf(request: PdfExportRequest): Promise<PdfExportResult>;
+}
+
+export type PdfExportMode = "original" | "compressed";
+
+export interface PdfCompressionProgress {
+  readonly currentPage: number;
+  readonly totalPages: number;
+}
+
+export type PdfCompressionResult =
+  | { readonly ok: true; readonly bytes: Uint8Array }
+  | { readonly ok: false; readonly cancelled: boolean; readonly message: string };
+
+export interface PdfCompressionGateway {
+  compress(request: {
+    readonly bytes: Uint8Array;
+    readonly onProgress?: (progress: PdfCompressionProgress) => void;
+    readonly signal?: AbortSignal;
+  }): Promise<PdfCompressionResult>;
+}
+
+export interface PdfExportOptions {
+  readonly mode?: PdfExportMode;
+  readonly filename?: string;
+  readonly onCompressionProgress?: (progress: PdfCompressionProgress) => void;
+  readonly signal?: AbortSignal;
 }
 
 export interface DownloadRequest {
@@ -392,6 +420,17 @@ const toExportElement = (element: EditorElement): ExportElement => {
     },
   };
 };
+export const exportFilenameFromInput = (fileName: string): string => {
+  const fallback = "quickpdf-edited";
+  const withoutPath = fileName.split(/[/\\]/).at(-1) ?? fallback;
+  const withoutExtension = withoutPath.replace(/\.pdf$/i, "");
+  const safeBase = withoutExtension
+    .replace(/[^a-zA-Z0-9._ -]+/g, "")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  return `${safeBase.length === 0 ? fallback : safeBase}.pdf`;
+};
+
 const safeExportFilename = (fileName: string | undefined): string => {
   const fallback = "quickpdf-edited";
   const withoutPath = (fileName ?? fallback).split(/[/\\]/).at(-1) ?? fallback;
@@ -510,6 +549,7 @@ export class PdfEditorApplication {
   readonly #idGenerator: IdGenerator;
   readonly #renderGateway: PdfRenderDocumentGateway | undefined;
   readonly #dateProvider: DateProvider;
+  readonly #compressionGateway: PdfCompressionGateway | undefined;
   #session: DocumentSession | undefined;
   #originalBytes: Uint8Array | undefined;
   #renderDocumentId: string | undefined;
@@ -527,6 +567,7 @@ export class PdfEditorApplication {
     idGenerator: IdGenerator,
     renderGateway?: PdfRenderDocumentGateway,
     dateProvider: DateProvider = { today: () => new Date() },
+    compressionGateway?: PdfCompressionGateway,
   ) {
     this.#fileReader = fileReader;
     this.#pdfGateway = pdfGateway;
@@ -534,6 +575,7 @@ export class PdfEditorApplication {
     this.#idGenerator = idGenerator;
     this.#renderGateway = renderGateway;
     this.#dateProvider = dateProvider;
+    this.#compressionGateway = compressionGateway;
   }
 
   public snapshot(): EditorSnapshot {
@@ -1154,7 +1196,7 @@ export class PdfEditorApplication {
     this.#syncState();
     return this.snapshot();
   }
-  public async exportCurrentPdf(): Promise<EditorSnapshot> {
+  public async exportCurrentPdf(options: PdfExportOptions = {}): Promise<EditorSnapshot> {
     const session = this.#session;
     const originalBytes = this.#originalBytes;
     if (session === undefined || originalBytes === undefined) {
@@ -1175,13 +1217,56 @@ export class PdfEditorApplication {
       return this.snapshot();
     }
 
-    const filename = safeExportFilename(this.#state.fileName);
-    try {
-      this.#downloadAdapter.download({
-        bytes: exportResult.bytes,
-        filename,
-        mimeType: "application/pdf",
+    const mode = options.mode ?? "original";
+    let bytes = exportResult.bytes;
+    if (mode === "compressed") {
+      if (this.#compressionGateway === undefined) {
+        this.#state = {
+          ...before,
+          error: {
+            code: "CompressionFailed",
+            message: "PDF compression is not available in this browser.",
+          },
+        };
+        return this.snapshot();
+      }
+      const compressed = await this.#compressionGateway.compress({
+        bytes: cloneBytes(exportResult.bytes),
+        ...(options.onCompressionProgress === undefined
+          ? {}
+          : { onProgress: options.onCompressionProgress }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
+      if (!compressed.ok) {
+        this.#state = {
+          ...before,
+          error: {
+            code: "CompressionFailed",
+            message: compressed.cancelled ? "PDF compression was cancelled." : compressed.message,
+          },
+        };
+        return this.snapshot();
+      }
+      if (compressed.bytes.byteLength >= exportResult.bytes.byteLength) {
+        this.#state = {
+          ...before,
+          error: {
+            code: "CompressionNotBeneficial",
+            message:
+              "Compression didn't reduce this PDF. Export the original-quality version instead.",
+          },
+        };
+        return this.snapshot();
+      }
+      bytes = compressed.bytes;
+    }
+
+    const filename =
+      options.filename === undefined
+        ? safeExportFilename(this.#state.fileName)
+        : exportFilenameFromInput(options.filename);
+    try {
+      this.#downloadAdapter.download({ bytes, filename, mimeType: "application/pdf" });
     } catch {
       this.#state = {
         ...before,
@@ -1195,7 +1280,6 @@ export class PdfEditorApplication {
     this.#syncState({ status: "ready", exportFilename: filename });
     return this.snapshot();
   }
-
   #currentHistoryState(selectedElementId = this.#session?.selectedElementId): HistoryState {
     return cloneHistoryState({
       elements: this.#session?.elements() ?? [],

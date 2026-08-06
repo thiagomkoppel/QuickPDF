@@ -41,13 +41,37 @@ Avoid excessive empty sidebars.
 
 ## Tablet
 
-- increase touch targets to at least `44px`;
-- allow toolbar horizontal scrolling by groups;
-- pin the most important actions: Select, Text, Whiteout, Signature, Image, Undo, Redo, Download;
-- secondary view/page controls may use an overflow menu;
-- inspector may wrap into two compact rows or become an anchored sheet;
-- resize handles must be touch-friendly;
-- pointer gestures must support pen and touch.
+Tablet uses a dedicated **Quick Edit** presentation, shared by portrait and landscape. It deliberately follows the phone PDF-first interaction model instead of compressing the desktop editor into a touch viewport. The editor determines its form factor centrally from the current visual viewport, orientation, shortest viewport edge, and actual touch capability (`pointer: coarse` or touch points). It does not use width alone, so a wide physical tablet remains tablet Quick Edit rather than accidentally becoming desktop.
+
+- touch-capable viewport with a shortest edge below `768px`: Phone Quick Edit;
+- touch-capable viewport with a shortest edge from `768px` through `1024px`: Tablet Quick Edit;
+- non-touch viewports remain desktop, including desktop browser windows at tablet-like CSS widths.
+
+Tablet Quick Edit uses one stable structure in both orientations. It also shows the existing dismissible, session-only Quick Edit notice used on phones; the notice copy is unchanged and directs users to the full toolset on a larger device:
+
+```text
+Compact header
+Primary toolbar
+PDF workspace
+Page / zoom bar
+Temporary contextual sheet
+```
+
+The primary toolbar contains Select, Text, Image, Signature, Checkmark, Date, and More. Whiteout, Initials, and Cross move behind More. Page thumbnails use a temporary drawer, and the contextual inspector is a temporary bottom sheet that opens only when requested or when an element is selected. Both surfaces have explicit close controls and do not permanently consume PDF workspace. Page navigation, zoom, history, export, layers, and privacy behavior remain unchanged; only their permanent presentation changes.
+
+### Light Mode
+
+Phones and tablets expose a session-only **Editor performance profile** with `Automatic`, `Light Mode`, and `Full Quality` choices. Automatic selects Light Mode only for touch devices that report limited hardware capacity; it never downgrades desktop browsers automatically.
+
+Light Mode preserves the same page-space geometry, overlays, interactions, history, export, and privacy behavior. It lowers only presentation cost by rendering visible pages and thumbnails at a 1x backing scale, reducing thumbnail dimensions, and disabling editor-only animation, blur, and shadow effects. Users can switch back to Full Quality at any time, and no preference or document data is persisted.
+Across tablet Quick Edit:
+
+- all editor tools remain available, with secondary tools in More;
+- toolbar controls use at least `48px` touch targets and scroll horizontally instead of wrapping;
+- contextual controls appear only in the temporary inspector sheet;
+- page, zoom, selection, history, tool, layers, and document session remain intact through layout changes;
+- resize handles remain touch-friendly and pointer gestures support pen and touch;
+- sheets and drawers respect safe-area insets and use CSS transforms with reduced-motion fallbacks.
 
 ## Mobile portrait
 

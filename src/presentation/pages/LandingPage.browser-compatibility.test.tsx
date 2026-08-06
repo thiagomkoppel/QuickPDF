@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EditorSnapshot, PdfEditorApplication } from "../../application/editor-application";
+import { PwaInstallProvider } from "../components/use-pwa-install";
 
 import { LandingPage } from "./LandingPage";
 
@@ -25,12 +26,14 @@ const emptySnapshot: EditorSnapshot = {
 describe("LandingPage after bootstrap", () => {
   it("renders the local PDF picker without owning compatibility state", () => {
     render(
-      <LandingPage
-        editor={{ openFile: vi.fn() } as unknown as PdfEditorApplication}
-        snapshot={emptySnapshot}
-        onDocumentOpened={vi.fn()}
-        onSnapshotChange={vi.fn()}
-      />,
+      <PwaInstallProvider>
+        <LandingPage
+          editor={{ openFile: vi.fn() } as unknown as PdfEditorApplication}
+          snapshot={emptySnapshot}
+          onDocumentOpened={vi.fn()}
+          onSnapshotChange={vi.fn()}
+        />
+      </PwaInstallProvider>,
     );
 
     expect(screen.getByLabelText("Choose a PDF file")).toBeInTheDocument();

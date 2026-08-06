@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { EditorSnapshot, PdfEditorApplication } from "../../application/editor-application";
+import { usePwaInstall } from "../components/use-pwa-install";
 
 const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
 const MINIMUM_OPENING_DURATION_MS = 5_000;
@@ -35,6 +36,10 @@ export const LandingPage = ({
   onSnapshotChange,
   onDocumentOpened,
 }: LandingPageProps): React.ReactElement => {
+  const install = usePwaInstall();
+  const showInstallCard = install.availability !== "installed";
+  const canInstall =
+    install.availability === "chromium-prompt" || install.availability === "ios-instructions";
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -263,6 +268,33 @@ export const LandingPage = ({
               Try another PDF
             </button>
           </div>
+        ) : null}
+        {showInstallCard ? (
+          <section aria-labelledby="landing-install-title" className="landing-install-card">
+            <span aria-hidden="true" className="landing-install-card__icon">
+              <svg fill="none" viewBox="0 0 24 24">
+                <path d="M12 3v11" />
+                <path d="m7.75 10.25L12 14.5l4.25-4.25" />
+                <path d="M5 17.5v1.25A2.25 2.25 0 0 0 7.25 21h9.5A2.25 2.25 0 0 0 19 18.75V17.5" />
+              </svg>
+            </span>
+            <div className="landing-install-card__content">
+              <h2 id="landing-install-title">Install QuickPDF</h2>
+              <p>Install QuickPDF for the best experience.</p>
+              <ul>
+                <li>Opens instantly</li>
+                <li>Launches from your home screen</li>
+                <li>Runs like a native application</li>
+                <li>Your PDFs always stay on your device</li>
+              </ul>
+            </div>
+            {canInstall ? (
+              <button type="button" onClick={() => void install.requestInstall()}>
+                Install QuickPDF
+              </button>
+            ) : null}
+            <small>You only need to install it once.</small>
+          </section>
         ) : null}
         <ul aria-label="QuickPDF privacy promises" className="landing-badges">
           <li>

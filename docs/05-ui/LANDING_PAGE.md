@@ -179,6 +179,10 @@ Suggested copy:
 
 > That file could not be opened as a PDF. Choose another file and try again.
 
+## Install onboarding
+
+Show a calm **Install QuickPDF** card directly below the PDF upload surface and before the privacy reassurance row whenever the app is not installed. It explains the local native-app benefit. When a supported browser exposes a genuine install path, its action launches the Chromium browser prompt or the iOS Safari Add to Home Screen instructions. The action is absent when no accurate install action is available; the card itself is absent only in standalone mode or after installation.
+
 ### Multiple files
 
 QuickPDF initially accepts one PDF at a time.

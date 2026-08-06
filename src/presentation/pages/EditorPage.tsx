@@ -12,6 +12,8 @@ import { createPortal } from "react-dom";
 import type {
   EditorSnapshot,
   PdfEditorApplication,
+  PdfCompressionProgress,
+  PdfExportMode,
   ExportElement,
   ImageElementInput,
   InitialElementSize,
@@ -31,6 +33,12 @@ import {
 import type { PdfJsPageRenderer } from "../../infrastructure/pdf/pdfjs-page-renderer";
 import quickPdfMark from "../assets/brand/quickpdf-mark.svg";
 import { calculateViewerFit, type ViewerMode } from "./editor-view-modes";
+import { classifyEditorFormFactor, type EditorFormFactor } from "./editor-form-factor";
+import {
+  renderPixelRatioForProfile,
+  resolveEditorPerformanceProfile,
+  type EditorPerformanceProfile,
+} from "./editor-performance-profile";
 
 interface EditorPageProps {
   readonly editor: PdfEditorApplication;
@@ -583,6 +591,8 @@ interface PageThumbnailProps {
   readonly pageId: string;
   readonly current: boolean;
   readonly onSelect: (pageId: string) => void;
+  readonly maxWidth: number;
+  readonly devicePixelRatio: number;
 }
 
 interface ReleaseColorInputProps {
@@ -633,6 +643,8 @@ const PageThumbnail = ({
   pageId,
   current,
   onSelect,
+  maxWidth,
+  devicePixelRatio,
 }: PageThumbnailProps): React.ReactElement => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<RenderStatus>("loading");
@@ -649,8 +661,8 @@ const PageThumbnail = ({
     const handle = renderer.startRenderThumbnail({
       documentId,
       pageNumber,
-      maxWidth: 126,
-      devicePixelRatio: window.devicePixelRatio,
+      maxWidth,
+      devicePixelRatio,
       canvas,
     });
     void handle.promise.then((result) => {
@@ -664,7 +676,7 @@ const PageThumbnail = ({
       handle.cancel();
       renderer.clearCanvas(canvas);
     };
-  }, [documentId, pageNumber, renderer]);
+  }, [devicePixelRatio, documentId, maxWidth, pageNumber, renderer]);
   return (
     <button
       type="button"
@@ -683,32 +695,79 @@ const PageThumbnail = ({
     </button>
   );
 };
-const MOBILE_EDITOR_MEDIA_QUERY = "(max-width: 767px)";
 
-const useIsCompactEditorViewport = (): boolean => {
-  const getMatches = (): boolean =>
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
-      : false;
-  const [isCompact, setIsCompact] = useState(getMatches);
+const readEditorFormFactor = (): EditorFormFactor => {
+  if (typeof window === "undefined") {
+    return "desktop";
+  }
+
+  if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches) {
+    return "phone";
+  }
+
+  const visualViewport = window.visualViewport;
+  const width = visualViewport?.width ?? window.innerWidth;
+  const height = visualViewport?.height ?? window.innerHeight;
+  const coarsePointer =
+    typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+
+  return classifyEditorFormFactor({
+    width,
+    height,
+    hasCoarsePointer: coarsePointer,
+    maxTouchPoints: navigator.maxTouchPoints,
+  });
+};
+
+const useEditorFormFactor = (): EditorFormFactor => {
+  const [formFactor, setFormFactor] = useState(readEditorFormFactor);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return undefined;
-    }
-    const mediaQuery = window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY);
     const update = (): void => {
-      setIsCompact(mediaQuery.matches);
+      const next = readEditorFormFactor();
+      setFormFactor((current) => (current === next ? current : next));
     };
-    update();
-    mediaQuery.addEventListener("change", update);
+    const coarsePointer = window.matchMedia("(pointer: coarse)");
+    const visualViewport = window.visualViewport;
+
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    coarsePointer.addEventListener("change", update);
+    if (visualViewport) {
+      visualViewport.addEventListener("resize", update);
+    }
     return () => {
-      mediaQuery.removeEventListener("change", update);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      coarsePointer.removeEventListener("change", update);
+      if (visualViewport) {
+        visualViewport.removeEventListener("resize", update);
+      }
     };
   }, []);
 
-  return isCompact;
+  return formFactor;
 };
+
+const readPerformanceDeviceDetails = (): Readonly<{
+  hardwareConcurrency: number | undefined;
+  deviceMemory: number | undefined;
+}> => {
+  const navigatorWithDeviceMemory = navigator as Navigator &
+    Readonly<{ readonly deviceMemory?: number }>;
+  const hardwareConcurrency = navigator.hardwareConcurrency;
+  const deviceMemory = navigatorWithDeviceMemory.deviceMemory;
+
+  return {
+    hardwareConcurrency:
+      Number.isFinite(hardwareConcurrency) && hardwareConcurrency > 0
+        ? hardwareConcurrency
+        : undefined,
+    deviceMemory:
+      Number.isFinite(deviceMemory) && (deviceMemory ?? 0) > 0 ? deviceMemory : undefined,
+  };
+};
+
 export const EditorPage = ({
   editor,
   snapshot,
@@ -716,7 +775,22 @@ export const EditorPage = ({
   pdfRenderer,
   onOpenRequest,
 }: EditorPageProps): React.ReactElement => {
-  const isCompactEditorViewport = useIsCompactEditorViewport();
+  const editorFormFactor = useEditorFormFactor();
+  const isPhoneQuickEditViewport = editorFormFactor === "phone";
+  const isTabletQuickEditViewport =
+    editorFormFactor === "tablet-portrait" || editorFormFactor === "tablet-landscape";
+  const isCompactEditorViewport = isPhoneQuickEditViewport || isTabletQuickEditViewport;
+  const usesInspectorSheet = isCompactEditorViewport;
+  const [performanceProfile, setPerformanceProfile] =
+    useState<EditorPerformanceProfile>("automatic");
+  const effectivePerformanceProfile = resolveEditorPerformanceProfile(performanceProfile, {
+    formFactor: editorFormFactor,
+    ...readPerformanceDeviceDetails(),
+  });
+  const renderPixelRatio = renderPixelRatioForProfile(
+    effectivePerformanceProfile,
+    window.devicePixelRatio,
+  );
   const state = snapshot.state;
   const currentPage = state.currentPage;
   const currentPageId = currentPage?.id;
@@ -734,6 +808,7 @@ export const EditorPage = ({
   const [isPageRailCollapsed, setIsPageRailCollapsed] = useState(false);
   const [isMobilePageRailOpen, setIsMobilePageRailOpen] = useState(false);
   const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
+  const isInspectorSheetOpen = isMobileInspectorOpen;
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [isQuickEditNoticeDismissed, setIsQuickEditNoticeDismissed] = useState(false);
   const zoomRef = useRef(1);
@@ -742,6 +817,13 @@ export const EditorPage = ({
   const lastRenderDocumentIdRef = useRef<string | undefined>(state.renderDocumentId);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
 
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<PdfExportMode>("original");
+  const [exportFilename, setExportFilename] = useState("");
+  const [compressionProgress, setCompressionProgress] = useState<
+    PdfCompressionProgress | undefined
+  >();
+  const exportAbortRef = useRef<AbortController | undefined>(undefined);
   const [dialogType, setDialogType] = useState<SignatureElementType | undefined>();
   const [pendingImage, setPendingImage] = useState<ImageElementInput | undefined>();
   const [imageUploadError, setImageUploadError] = useState<string | undefined>();
@@ -860,6 +942,20 @@ export const EditorPage = ({
     [onSnapshotChange],
   );
 
+  const openInspectorSheet = useCallback((): void => {
+    setIsMobileInspectorOpen(true);
+  }, []);
+
+  const cycleInspectorSheet = useCallback((): void => {
+    setIsMobileInspectorOpen((open) => !open);
+  }, []);
+  const selectElementForInspector = useCallback(
+    (elementId: string): void => {
+      applySnapshot(editor.selectElement(elementId));
+      openInspectorSheet();
+    },
+    [applySnapshot, editor, openInspectorSheet],
+  );
   const handleColorPreview = useCallback((elementId: string, color: string): void => {
     colorPreviewRef.current = { elementId, color };
     setColorPreviewByElementId((current) => {
@@ -1093,7 +1189,7 @@ export const EditorPage = ({
       documentId: state.renderDocumentId,
       pageNumber: state.currentPageNumber,
       scale: zoom,
-      devicePixelRatio: window.devicePixelRatio,
+      devicePixelRatio: renderPixelRatio,
       canvas,
     });
 
@@ -1121,6 +1217,7 @@ export const EditorPage = ({
     currentPageRotation,
     currentPageWidth,
     pdfRenderer,
+    renderPixelRatio,
     state.currentPageNumber,
     state.renderDocumentId,
     zoom,
@@ -1867,7 +1964,7 @@ export const EditorPage = ({
     if (editingTextElementId !== undefined && editingTextElementId !== element.id) {
       setEditingTextElementId(undefined);
     }
-    applySnapshot(editor.selectElement(element.id));
+    selectElementForInspector(element.id);
     const overlayLayer = overlayLayerRef.current;
     if (overlayLayer === null) {
       return;
@@ -1946,7 +2043,7 @@ export const EditorPage = ({
     event.preventDefault();
     event.stopPropagation();
     workspaceGestureModeRef.current = "resizing-overlay";
-    applySnapshot(editor.selectElement(element.id));
+    selectElementForInspector(element.id);
     resizePreviewRef.current = {
       bounds: element.bounds,
       ...(element.textAppearance?.fontSize === undefined
@@ -1975,8 +2072,39 @@ export const EditorPage = ({
     setWhiteoutDraft(undefined);
     applySnapshot(editor.redo());
   };
-  const download = async (): Promise<void> => {
-    applySnapshot(await editor.exportCurrentPdf());
+  const openExportDialog = (): void => {
+    setExportMode("original");
+    setExportFilename(state.fileName ?? "quickpdf-edited.pdf");
+    setCompressionProgress(undefined);
+    setIsExportDialogOpen(true);
+  };
+
+  const exportPdf = async (): Promise<void> => {
+    const abortController = new AbortController();
+    exportAbortRef.current = abortController;
+    setCompressionProgress(undefined);
+    const nextSnapshot = await editor.exportCurrentPdf({
+      mode: exportMode,
+      filename: exportFilename,
+      signal: abortController.signal,
+      onCompressionProgress: setCompressionProgress,
+    });
+    exportAbortRef.current = undefined;
+    applySnapshot(nextSnapshot);
+    if (nextSnapshot.state.error === undefined) {
+      setIsExportDialogOpen(false);
+    }
+  };
+
+  const cancelExport = (): void => {
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = undefined;
+    setCompressionProgress(undefined);
+    setIsExportDialogOpen(false);
+  };
+
+  const download = (): void => {
+    openExportDialog();
   };
 
   const acceptSignatureImage = (image: SignatureImageInput): void => {
@@ -2232,8 +2360,22 @@ export const EditorPage = ({
                   }}
                 >
                   <ToolbarIcon name="cross" /> Cross
-                </button>
+                </button>{" "}
               </div>
+              <label className="mobile-more-sheet__performance">
+                <span>Performance</span>
+                <select
+                  aria-label="Editor performance profile"
+                  value={performanceProfile}
+                  onChange={(event) => {
+                    setPerformanceProfile(event.currentTarget.value as EditorPerformanceProfile);
+                  }}
+                >
+                  <option value="automatic">Automatic</option>
+                  <option value="light">Light Mode</option>
+                  <option value="full">Full Quality</option>
+                </select>
+              </label>
               <button
                 type="button"
                 className="mobile-more-sheet__close"
@@ -2255,18 +2397,16 @@ export const EditorPage = ({
 
   const elementInspector = (
     <aside
-      className={`element-inspector${isMobileInspectorOpen ? " is-mobile-open" : ""}`}
+      className={`element-inspector${isInspectorSheetOpen ? " is-mobile-open" : ""}`}
       aria-label="Selected element actions"
     >
       <button
         type="button"
         className="mobile-inspector-handle"
-        hidden={!isCompactEditorViewport}
-        aria-label={isMobileInspectorOpen ? "Collapse editor inspector" : "Open editor inspector"}
-        aria-expanded={isMobileInspectorOpen}
-        onClick={() => {
-          setIsMobileInspectorOpen((open) => !open);
-        }}
+        hidden={!usesInspectorSheet}
+        aria-label={isInspectorSheetOpen ? "Collapse inspector sheet" : "Expand inspector sheet"}
+        aria-expanded={isInspectorSheetOpen}
+        onClick={cycleInspectorSheet}
       >
         <span aria-hidden="true" />
       </button>
@@ -2766,7 +2906,7 @@ export const EditorPage = ({
           layers={currentPageLayers}
           selectedElementId={selectedElement?.id}
           onSelect={(elementId) => {
-            applySnapshot(editor.selectElement(elementId));
+            selectElementForInspector(elementId);
           }}
           onReorder={(elementId, targetIndex) => {
             applySnapshot(editor.reorderCurrentPageLayers(elementId, targetIndex));
@@ -2779,7 +2919,7 @@ export const EditorPage = ({
   return (
     <section
       ref={editorViewportRef}
-      className={`editor-viewer${isCompactEditorViewport ? ` is-compact-editor${isMobileInspectorOpen ? " is-mobile-inspector-open" : ""}${!isQuickEditNoticeDismissed ? " is-quick-edit-notice-visible" : ""}` : ""}`}
+      className={`editor-viewer is-performance-${effectivePerformanceProfile}${isCompactEditorViewport ? ` is-compact-editor${isInspectorSheetOpen ? " is-mobile-inspector-open" : ""}${!isQuickEditNoticeDismissed ? " is-quick-edit-notice-visible" : ""}` : ""}${isTabletQuickEditViewport ? " is-tablet-quick-edit" : ""}`}
       aria-labelledby="editor-title"
       onPointerDownCapture={(event) => {
         const colorInput =
@@ -2811,6 +2951,7 @@ export const EditorPage = ({
         >
           <button
             type="button"
+            hidden={!usesInspectorSheet}
             aria-label="Open page thumbnails"
             aria-expanded={isMobilePageRailOpen}
             onClick={() => {
@@ -2828,14 +2969,29 @@ export const EditorPage = ({
           <button
             type="button"
             aria-label="Download"
-            onClick={() => void download()}
+            onClick={download}
             disabled={!snapshot.canExport || state.status === "exporting"}
           >
             <ToolbarIcon name="download" />
           </button>
+          {isTabletQuickEditViewport ? (
+            <label className="editor-performance-profile">
+              <span className="visually-hidden">Editor performance profile</span>
+              <select
+                aria-label="Editor performance profile"
+                value={performanceProfile}
+                onChange={(event) => {
+                  setPerformanceProfile(event.currentTarget.value as EditorPerformanceProfile);
+                }}
+              >
+                <option value="automatic">Automatic</option>
+                <option value="light">Light Mode</option>
+                <option value="full">Full Quality</option>
+              </select>
+            </label>
+          ) : null}
         </div>
       </header>
-
       {isCompactEditorViewport && !isQuickEditNoticeDismissed ? (
         <section className="quick-edit-notice" role="status" aria-label="Quick Edit mode">
           <ToolbarIcon name="more" />
@@ -2856,7 +3012,6 @@ export const EditorPage = ({
           </button>
         </section>
       ) : null}
-
       <div className="editor-controls">
         <div
           className="viewer-toolbar editor-toolbar"
@@ -2880,7 +3035,7 @@ export const EditorPage = ({
             <button
               type="button"
               aria-label="Download"
-              onClick={() => void download()}
+              onClick={download}
               disabled={!snapshot.canExport || state.status === "exporting"}
             >
               <ToolbarIcon name="download" />
@@ -3102,7 +3257,7 @@ export const EditorPage = ({
               aria-label="Fit width"
               aria-pressed={viewMode === "fit-width"}
               onClick={() => {
-                applyFit("fit-page");
+                applyFit("fit-width");
               }}
             >
               <ToolbarIcon name="fit" />
@@ -3191,7 +3346,7 @@ export const EditorPage = ({
             <button
               type="button"
               className="mobile-page-rail-close"
-              hidden={!isCompactEditorViewport}
+              hidden={!usesInspectorSheet}
               aria-label="Close page thumbnails"
               onClick={() => {
                 setIsMobilePageRailOpen(false);
@@ -3219,6 +3374,8 @@ export const EditorPage = ({
                 pageNumber={index + 1}
                 pageId={page.id}
                 current={page.id === currentPageId}
+                maxWidth={effectivePerformanceProfile === "light" ? 96 : 126}
+                devicePixelRatio={renderPixelRatio}
                 onSelect={(pageId) => {
                   applySnapshot(editor.selectPage(pageId));
                 }}
@@ -3433,14 +3590,13 @@ export const EditorPage = ({
           </main>
         </div>
 
-        {isCompactEditorViewport ? null : elementInspector}
+        {usesInspectorSheet ? null : elementInspector}
       </div>
-
       <footer className="editor-status-bar" aria-label="Document status">
         <button
           type="button"
           className="mobile-status-page-drawer"
-          hidden={!isCompactEditorViewport}
+          hidden={!usesInspectorSheet}
           aria-label="Open page thumbnails"
           onClick={() => {
             setIsMobilePageRailOpen(true);
@@ -3451,7 +3607,7 @@ export const EditorPage = ({
         <button
           type="button"
           className="mobile-status-previous"
-          hidden={!isCompactEditorViewport}
+          hidden={!usesInspectorSheet}
           aria-label="Previous page"
           disabled={state.currentPageNumber <= 1}
           onClick={() => {
@@ -3462,8 +3618,8 @@ export const EditorPage = ({
         </button>
         <button
           type="button"
-          className="mobile-status-zoom"
-          hidden={!isCompactEditorViewport}
+          className="mobile-status-zoom mobile-status-zoom-out"
+          hidden={!usesInspectorSheet}
           aria-label="Zoom out"
           onClick={() => {
             applyZoom(zoomRef.current - ZOOM_STEP);
@@ -3474,12 +3630,12 @@ export const EditorPage = ({
         <output
           className="mobile-status-zoom-value"
           aria-label="Mobile viewer scale"
-          hidden={!isCompactEditorViewport}
+          hidden={!usesInspectorSheet}
         >{`${String(Math.round(zoom * 100))}%`}</output>
         <button
           type="button"
-          className="mobile-status-zoom"
-          hidden={!isCompactEditorViewport}
+          className="mobile-status-zoom mobile-status-zoom-in"
+          hidden={!usesInspectorSheet}
           aria-label="Zoom in"
           onClick={() => {
             applyZoom(zoomRef.current + ZOOM_STEP);
@@ -3487,10 +3643,11 @@ export const EditorPage = ({
         >
           <ToolbarIcon name="zoom-in" />
         </button>
+
         <button
           type="button"
           className="mobile-status-next"
-          hidden={!isCompactEditorViewport}
+          hidden={!usesInspectorSheet}
           aria-label="Next page"
           disabled={state.currentPageNumber >= state.pageCount}
           onClick={() => {
@@ -3502,12 +3659,10 @@ export const EditorPage = ({
         <button
           type="button"
           className="mobile-status-inspector"
-          hidden={!isCompactEditorViewport}
+          hidden={!usesInspectorSheet}
           aria-label="Open editor inspector"
-          aria-expanded={isMobileInspectorOpen}
-          onClick={() => {
-            setIsMobileInspectorOpen(true);
-          }}
+          aria-expanded={isInspectorSheetOpen}
+          onClick={openInspectorSheet}
         >
           <ToolbarIcon name="fit" />
         </button>
@@ -3515,7 +3670,19 @@ export const EditorPage = ({
         <span className="desktop-status-copy">{`${String(Math.round(zoom * 100))}%`}</span>
         <span className="desktop-status-copy">{state.isDirty ? "Unsaved changes" : "Ready"}</span>
       </footer>
-      {isCompactEditorViewport ? elementInspector : null}
+      {usesInspectorSheet ? elementInspector : null}
+      {isExportDialogOpen ? (
+        <ExportPdfDialog
+          filename={exportFilename}
+          mode={exportMode}
+          progress={compressionProgress}
+          error={state.error?.code === "CompressionNotBeneficial" ? state.error.message : undefined}
+          onFilenameChange={setExportFilename}
+          onModeChange={setExportMode}
+          onCancel={cancelExport}
+          onExport={() => void exportPdf()}
+        />
+      ) : null}{" "}
       {dialogType === undefined ? null : (
         <SignatureDialog
           type={dialogType}
@@ -3530,6 +3697,153 @@ export const EditorPage = ({
   );
 };
 
+interface ExportPdfDialogProps {
+  readonly filename: string;
+  readonly mode: PdfExportMode;
+  readonly progress: PdfCompressionProgress | undefined;
+  readonly error: string | undefined;
+  readonly onFilenameChange: (filename: string) => void;
+  readonly onModeChange: (mode: PdfExportMode) => void;
+  readonly onCancel: () => void;
+  readonly onExport: () => void;
+}
+
+const ExportPdfDialog = ({
+  filename,
+  mode,
+  progress,
+  error,
+  onFilenameChange,
+  onModeChange,
+  onCancel,
+  onExport,
+}: ExportPdfDialogProps): React.ReactElement => {
+  const isCompressing = progress !== undefined;
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape" && !isCompressing) {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isCompressing, onCancel]);
+  return createPortal(
+    <div
+      className="export-dialog-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget && !isCompressing) onCancel();
+      }}
+    >
+      <section
+        aria-labelledby="export-pdf-title"
+        aria-modal="true"
+        className="export-dialog"
+        role="dialog"
+      >
+        <header>
+          <span aria-hidden="true" className="export-dialog__icon">
+            <ToolbarIcon name="download" />
+          </span>
+          <div>
+            <h2 id="export-pdf-title">Export PDF</h2>
+            <p>Choose how you want to export your PDF.</p>
+          </div>
+          <button
+            aria-label="Close export dialog"
+            disabled={isCompressing}
+            type="button"
+            onClick={onCancel}
+          >
+            {"\u00d7"}
+          </button>
+        </header>
+        {isCompressing ? (
+          <section aria-live="polite" className="export-dialog__progress">
+            <strong>Compressing PDF...</strong>
+            <span>
+              Page {progress.currentPage} of {progress.totalPages}
+            </span>
+            <progress max={progress.totalPages} value={progress.currentPage} />
+            <p>Your document remains on this device.</p>
+          </section>
+        ) : (
+          <>
+            <label className="export-dialog__filename">
+              File name
+              <input
+                aria-label="Export filename"
+                value={filename}
+                onChange={(event) => {
+                  onFilenameChange(event.currentTarget.value);
+                }}
+              />
+            </label>
+            <fieldset>
+              <legend>Export option</legend>
+              <label className={mode === "original" ? "is-selected" : ""}>
+                <input
+                  checked={mode === "original"}
+                  name="export-mode"
+                  type="radio"
+                  value="original"
+                  onChange={() => {
+                    onModeChange("original");
+                  }}
+                />
+                <span>
+                  <strong>Original Size (No Compression)</strong>
+                  <small>
+                    Export with the original document quality. QuickPDF edits will be included.
+                  </small>
+                </span>
+              </label>
+              <label className={mode === "compressed" ? "is-selected" : ""}>
+                <input
+                  checked={mode === "compressed"}
+                  name="export-mode"
+                  type="radio"
+                  value="compressed"
+                  onChange={() => {
+                    onModeChange("compressed");
+                  }}
+                />
+                <span>
+                  <strong>
+                    Compress PDF <em>Recommended</em>
+                  </strong>
+                  <small>
+                    Smaller file. Text and page content may be flattened into page images.
+                  </small>
+                </span>
+              </label>
+            </fieldset>
+            {error === undefined ? null : (
+              <p className="error-message" role="alert">
+                {error}
+              </p>
+            )}
+            <p className="export-dialog__privacy">
+              Your files stay in your browser.<small>Private. Secure. Always local.</small>
+            </p>
+          </>
+        )}
+        <footer>
+          <button disabled={isCompressing} type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button disabled={isCompressing} type="button" onClick={onExport}>
+            {isCompressing ? "Compressing..." : "Export PDF"}
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+};
 interface SignatureDialogProps {
   readonly type: SignatureElementType;
   readonly onCancel: () => void;

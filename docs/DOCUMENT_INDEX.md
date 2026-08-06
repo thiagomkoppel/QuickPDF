@@ -74,6 +74,10 @@ Defines implementation conventions, boundaries, naming, TypeScript expectations,
 
 Defines TDD expectations, the test pyramid, privacy checks, rendering/export coverage, and undo/redo coverage.
 
+### `03-engineering/PDF_EXPORT_COMPRESSION.md`
+
+Defines browser-local optional PDF compression, its rasterization tradeoff, size guard, cancellation, and privacy boundary.
+
 ### `03-engineering/ERROR_HANDLING.md`
 
 Defines typed failure handling, application error mapping, user-safe messages, and recovery behavior.

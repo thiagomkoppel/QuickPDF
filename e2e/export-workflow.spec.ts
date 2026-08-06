@@ -346,8 +346,12 @@ const downloadEditedPdf = async (
 ): Promise<void> => {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download" }).click();
+  await page
+    .getByRole("dialog", { name: "Export PDF" })
+    .getByRole("button", { name: "Export PDF" })
+    .click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe(suggestedFilename);
+  expect(download.suggestedFilename()).toBe(suggestedFilename.replace(/-edited(?=\.pdf$)/, ""));
   await download.saveAs(outputPath);
 };
 const expectBoxNear = (
@@ -455,11 +459,15 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
 
   await expect
     .poll(() => wheelListenerRecords(page))
-    .toContainEqual({
-      tagName: "SECTION",
-      className: "editor-viewer",
-      ariaLabel: null,
-    });
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tagName: "SECTION",
+          className: expect.stringContaining("editor-viewer"),
+          ariaLabel: null,
+        }),
+      ]),
+    );
   const pageFrameAtFullZoom = await page.locator(".pdf-page-frame").boundingBox();
   expect(pageFrameAtFullZoom).not.toBeNull();
   if (pageFrameAtFullZoom === null) {
@@ -475,7 +483,9 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   const wheelRecordsAtMin = await wheelEventRecords(page);
   const lastWheelAtMin = wheelRecordsAtMin.at(-1);
   expect(lastWheelAtMin).toBeDefined();
-  expect(lastWheelAtMin?.path).toContain("section.editor-viewer");
+  expect(lastWheelAtMin?.path.some((entry) => entry.startsWith("section.editor-viewer"))).toBe(
+    true,
+  );
   expect(lastWheelAtMin?.pointerInsideEditor).toBe(true);
   expect(lastWheelAtMin?.pointerInsidePageFrame).toBe(false);
   expect(lastWheelAtMin?.editor?.width).toBeGreaterThan(0);
@@ -492,8 +502,12 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   await expect.poll(() => browserScaleSnapshot(page)).toEqual(browserScaleBeforeMaxBoundaryZoom);
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download" }).click();
+  await page
+    .getByRole("dialog", { name: "Export PDF" })
+    .getByRole("button", { name: "Export PDF" })
+    .click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("export-fixture-edited.pdf");
+  expect(download.suggestedFilename()).toBe("export-fixture.pdf");
   const downloadedPath = testInfo.outputPath("export-fixture-edited.pdf");
   await download.saveAs(downloadedPath);
   const downloadedBytes = await import("node:fs/promises").then((fs) =>
@@ -504,7 +518,7 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   expect(exported.getPage(0).getWidth()).toBe(300);
   expect(exported.getPage(0).getHeight()).toBe(400);
   await expect(
-    page.getByText("Downloaded export-fixture-edited.pdf. The editor remains open."),
+    page.getByText("Downloaded export-fixture.pdf. The editor remains open."),
   ).toBeVisible();
 
   await page.goto("/");
@@ -1346,6 +1360,110 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
     }
   }
 });
+test("uses the simplified tablet Quick Edit layout without horizontal overflow", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const fixturePath = testInfo.outputPath("tablet-layout-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  for (const viewport of [
+    { width: 768, height: 1024, mode: "portrait" },
+    { width: 820, height: 1180, mode: "portrait" },
+    { width: 1024, height: 768, mode: "landscape" },
+    { width: 1180, height: 820, mode: "landscape" },
+    { width: 1280, height: 800, mode: "landscape" },
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.evaluate(() => {
+      const nativeMatchMedia = window.matchMedia.bind(window);
+      Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 });
+      window.matchMedia = (query: string) => {
+        if (query === "(pointer: coarse)") {
+          return {
+            addEventListener: () => undefined,
+            addListener: () => undefined,
+            dispatchEvent: () => false,
+            matches: true,
+            media: query,
+            onchange: null,
+            removeEventListener: () => undefined,
+            removeListener: () => undefined,
+          } as MediaQueryList;
+        }
+        return nativeMatchMedia(query);
+      };
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+          maxTouchPoints: navigator.maxTouchPoints,
+        })),
+      )
+      .toEqual({ coarsePointer: true, maxTouchPoints: 5 });
+
+    await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+    await expect(page.getByRole("region", { name: "tablet-layout-fixture.pdf" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+    const editor = page.getByRole("region", { name: "tablet-layout-fixture.pdf" });
+    await expect(editor).toHaveClass(/is-tablet-quick-edit/);
+    await expect(editor).toHaveClass(/is-compact-editor/);
+    await expect(page.getByRole("status", { name: "Quick Edit mode" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Whiteout" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Initials" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Cross" })).not.toBeVisible();
+
+    const performanceProfile = page.getByLabel("Editor performance profile");
+    await performanceProfile.selectOption("light");
+    await expect(editor).toHaveClass(/is-performance-light/);
+    await performanceProfile.selectOption("full");
+    await expect(editor).toHaveClass(/is-performance-full/);
+
+    const layout = await page.evaluate(() => {
+      const inspector = document.querySelector(".element-inspector");
+      const workspace = document.querySelector(".editor-workspace-shell");
+      const editorElement = document.querySelector(".editor-viewer");
+      if (inspector === null || workspace === null || editorElement === null) {
+        throw new Error("Tablet editor layout is incomplete.");
+      }
+      return {
+        classes: editorElement.className,
+        scrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        inspectorInsideWorkspace: workspace.contains(inspector),
+      };
+    });
+
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth + 1);
+    expect(layout.classes).not.toContain("is-tablet-editor");
+    expect(layout.inspectorInsideWorkspace).toBe(false);
+
+    await page.getByRole("button", { name: "Open editor inspector" }).click();
+    await expect(page.locator(".element-inspector")).toHaveClass(/is-mobile-open/);
+    await page.getByRole("button", { name: "Collapse inspector sheet" }).click();
+    await expect(page.locator(".element-inspector")).not.toHaveClass(/is-mobile-open/);
+
+    await page.getByRole("button", { name: "Open page thumbnails" }).first().click();
+    await expect(page.locator(".page-rail")).toHaveClass(/is-mobile-open/);
+    await page.getByRole("button", { name: "Close page thumbnails" }).click();
+    await expect(page.locator(".page-rail")).not.toHaveClass(/is-mobile-open/);
+
+    await page.getByRole("button", { name: "More editor tools" }).click();
+    await expect(page.getByRole("dialog", { name: "More tools" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Whiteout" })).toBeVisible();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+
+    await page.screenshot({
+      path: testInfo.outputPath(`tablet-${String(viewport.width)}x${String(viewport.height)}.png`),
+      fullPage: true,
+    });
+  }
+});
 test("renders the phone landing with an accessible local-first menu", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844, name: "390x844" },
@@ -1361,6 +1479,7 @@ test("renders the phone landing with an accessible local-first menu", async ({ p
     await expect(page.getByText("100% Private")).toBeVisible();
     await expect(page.getByText("No Uploads")).toBeVisible();
     await expect(page.getByText("100% Free")).toBeVisible();
+    await expect(page.locator(".landing-install-card")).toBeVisible();
 
     const menuButton = page.getByRole("button", { name: "Open site menu" });
     await menuButton.click();

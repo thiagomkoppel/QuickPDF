@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -184,6 +184,44 @@ beforeEach(() => {
 });
 
 describe("QuickPDF application shell", () => {
+  it("captures a native install prompt while the startup screen is still visible", async () => {
+    vi.useFakeTimers();
+    try {
+      const prompt = vi.fn(() => Promise.resolve());
+      const installEvent = new Event("beforeinstallprompt", { cancelable: true }) as Event & {
+        prompt: () => Promise<void>;
+        userChoice: Promise<{ readonly outcome: "dismissed" }>;
+      };
+      Object.assign(installEvent, {
+        prompt,
+        userChoice: Promise.resolve({ outcome: "dismissed" }),
+      });
+
+      window.history.pushState({}, "", "/");
+      render(
+        <App
+          compatibilityProbe={() => Promise.resolve(compatiblePreflight)}
+          initialCompatibilityResult={compatiblePreflight}
+          startupMinimumDurationMs={50}
+        />,
+      );
+
+      expect(screen.getByText("Preparing QuickPDF")).toBeInTheDocument();
+      fireEvent(window, installEvent);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+
+      const installButton = screen.getAllByRole("button", { name: "Install QuickPDF" })[0];
+      if (installButton === undefined) throw new Error("Expected the captured install action.");
+      fireEvent.click(installButton);
+      expect(prompt).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders the landing page with the product name, product statement, and accurate privacy promise", () => {
     renderAt("/");
 
@@ -404,17 +442,22 @@ describe("QuickPDF application shell", () => {
     await user.type(textBox, "Replacement");
 
     await user.click(screen.getByRole("button", { name: "Download" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Export PDF" })).getByRole("button", {
+        name: "Export PDF",
+      }),
+    );
 
     await waitFor(() => {
       expect(download).toHaveBeenCalledWith({
         bytes: new Uint8Array([1, 2, 3]),
-        filename: "contract-edited.pdf",
+        filename: "contract.pdf",
         mimeType: "application/pdf",
       });
     });
     expect(screen.getByRole("heading", { name: "contract.pdf" })).toBeInTheDocument();
     expect(
-      screen.getByText("Downloaded contract-edited.pdf. The editor remains open."),
+      screen.getByText("Downloaded contract.pdf. The editor remains open."),
     ).toBeInTheDocument();
     const exportRequest = exportPdf.mock.calls[0]?.[0] as {
       readonly elements: readonly { readonly type: string }[];
@@ -436,6 +479,11 @@ describe("QuickPDF application shell", () => {
     clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
     await screen.findByLabelText("Edit text element");
     await user.click(screen.getByRole("button", { name: "Download" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Export PDF" })).getByRole("button", {
+        name: "Export PDF",
+      }),
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Nope");
     expect(screen.getByRole("heading", { name: "contract.pdf" })).toBeInTheDocument();

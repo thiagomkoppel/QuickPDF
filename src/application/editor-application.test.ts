@@ -8,6 +8,7 @@ import type {
   LocalPdfFile,
   LocalPdfFileReader,
   LocalPdfReadResult,
+  PdfCompressionGateway,
   PdfExportGateway,
   PdfExportRequest,
   PdfExportResult,
@@ -449,6 +450,58 @@ describe("PdfEditorApplication export", () => {
     expect(snapshot.canExport).toBe(true);
   });
 
+  it("downloads compressed final export bytes only when compression reduces the file", async () => {
+    const compress = vi.fn(() =>
+      Promise.resolve({ ok: true as const, bytes: new Uint8Array([1, 2]) }),
+    );
+    const compressionGateway: PdfCompressionGateway = { compress };
+    app = new PdfEditorApplication(
+      reader,
+      gateway,
+      downloader,
+      new TestIds(),
+      undefined,
+      undefined,
+      compressionGateway,
+    );
+    await app.openFile(file);
+    app.addText({ x: 45, y: 55 }, "Replacement");
+
+    const snapshot = await app.exportCurrentPdf({ mode: "compressed", filename: "completed.pdf" });
+
+    expect(compress).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes: new Uint8Array([1, 2, 3]) }),
+    );
+    expect(downloadRequests).toEqual([
+      { bytes: new Uint8Array([1, 2]), filename: "completed.pdf", mimeType: "application/pdf" },
+    ]);
+    expect(snapshot.state.isDirty).toBe(false);
+  });
+
+  it("does not download a compressed export when it is not smaller than the final PDF", async () => {
+    const compressionGateway: PdfCompressionGateway = {
+      compress: vi.fn(() =>
+        Promise.resolve({ ok: true as const, bytes: new Uint8Array([1, 2, 3]) }),
+      ),
+    };
+    app = new PdfEditorApplication(
+      reader,
+      gateway,
+      downloader,
+      new TestIds(),
+      undefined,
+      undefined,
+      compressionGateway,
+    );
+    await app.openFile(file);
+    app.addText({ x: 45, y: 55 }, "Replacement");
+
+    const snapshot = await app.exportCurrentPdf({ mode: "compressed" });
+
+    expect(snapshot.state.error).toMatchObject({ code: "CompressionNotBeneficial" });
+    expect(snapshot.state.isDirty).toBe(true);
+    expect(downloadRequests).toEqual([]);
+  });
   it("skips empty text while preserving stable whiteout-before-text ordering", async () => {
     const emptyTextId = app.addText({ x: 10, y: 10 }, "   ").state.selectedElementId;
     app.addWhiteout({ x: 10, y: 20, width: 90, height: 30 });
@@ -683,7 +736,7 @@ describe("PdfEditorApplication signature and initials overlays", () => {
           }),
         exportPdf: (request) => {
           exportRequests.push(request);
-          return Promise.resolve({ ok: true, bytes: new Uint8Array([1, 2, 3]) });
+          return Promise.resolve({ ok: true as const, bytes: new Uint8Array([1, 2, 3]) });
         },
       },
       { download: vi.fn() },
@@ -1152,7 +1205,7 @@ describe("PdfEditorApplication signature and initials overlays", () => {
       open: vi.fn(() => Promise.resolve(localOpenResult)),
       exportPdf: (request) => {
         exportRequests.push(request);
-        return Promise.resolve({ ok: true, bytes: new Uint8Array([1, 2, 3]) });
+        return Promise.resolve({ ok: true as const, bytes: new Uint8Array([1, 2, 3]) });
       },
     };
     const localDownloader: DownloadAdapter = { download: vi.fn() };

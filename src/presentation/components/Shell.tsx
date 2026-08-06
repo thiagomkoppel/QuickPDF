@@ -9,7 +9,7 @@ import {
 
 import quickPdfMark from "../assets/brand/quickpdf-mark.svg";
 
-import { usePwaInstallController } from "./use-pwa-install";
+import { PwaInstallBoundary, usePwaInstall } from "./use-pwa-install";
 
 const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
 
@@ -30,9 +30,9 @@ const handleInternalNavigation =
     navigate(href);
   };
 
-export const Shell = ({ children, hideHeader = false }: ShellProps): React.ReactElement => {
+const ShellContent = ({ children, hideHeader = false }: ShellProps): React.ReactElement => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const install = usePwaInstallController();
+  const install = usePwaInstall();
   const menuRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const installSheetActionRef = useRef<HTMLButtonElement>(null);
@@ -214,3 +214,9 @@ export const Shell = ({ children, hideHeader = false }: ShellProps): React.React
     </div>
   );
 };
+
+export const Shell = (props: ShellProps): React.ReactElement => (
+  <PwaInstallBoundary>
+    <ShellContent {...props} />
+  </PwaInstallBoundary>
+);

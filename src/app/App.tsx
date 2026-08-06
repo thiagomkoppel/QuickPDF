@@ -13,7 +13,9 @@ import {
 } from "../infrastructure/browser/browser-compatibility";
 import { PdfJsPageRenderer } from "../infrastructure/pdf/pdfjs-page-renderer";
 import { PdfLibExportGateway } from "../infrastructure/pdf/pdf-lib-export-gateway";
+import { PdfRasterCompressionGateway } from "../infrastructure/pdf/pdf-raster-compression-gateway";
 import { Shell } from "../presentation/components/Shell";
+import { PwaInstallProvider } from "../presentation/components/use-pwa-install";
 import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
@@ -100,6 +102,8 @@ const createEditorServices = (): EditorServices => {
       new BrowserDownloadAdapter(),
       new SequentialIdGenerator(),
       pdfRenderer,
+      undefined,
+      new PdfRasterCompressionGateway(),
     ),
   };
 };
@@ -158,7 +162,7 @@ const BrowserCompatibilityPage = ({
   </Shell>
 );
 
-export const App = ({
+const AppContent = ({
   compatibilityProbe = preflightPdfJsCompatibility,
   initialCompatibilityResult,
   startupMinimumDurationMs = STARTUP_MINIMUM_DURATION_MS,
@@ -278,3 +282,9 @@ export const App = ({
       );
   }
 };
+
+export const App = (props: AppProps): React.ReactElement => (
+  <PwaInstallProvider>
+    <AppContent {...props} />
+  </PwaInstallProvider>
+);
