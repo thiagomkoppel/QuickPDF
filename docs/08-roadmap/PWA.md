@@ -36,6 +36,8 @@ Later PWA work must receive a separate privacy review before adding any service 
 
 Production builds now precache only QuickPDF-owned shell assets. User document bytes and editor sessions remain excluded from Cache Storage and remain memory-only.
 
+Each generated production shell receives an immutable `quickpdf-shell-<content-hash>` cache name derived from its final precache contents. Installation populates that new cache atomically, validates expected content types for shell assets, and discards the new cache if any required asset cannot be safely cached. Navigation remains network-first while online and falls back only to the canonical cached `/index.html` when offline. Static assets use exact same-origin, query-free precache path matching and never receive the SPA HTML fallback. Activation deletes only older `quickpdf-shell-*` caches after the new cache has installed successfully.
+
 ## Physical-device offline acceptance
 
 Offline acceptance must use the built production application, never `npm run dev`. Development deliberately does not register the production service worker, so an app installed from a Vite development or plain LAN HTTP origin cannot establish the QuickPDF shell cache required for an offline launch.

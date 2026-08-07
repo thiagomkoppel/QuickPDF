@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -26,13 +27,49 @@ for (const entry of Object.values(manifest)) {
     for (const file of record.assets) if (typeof file === "string") assets.add(`/${file}`);
 }
 
-const cacheName = "quickpdf-shell-v1";
-const source = `const CACHE_PREFIX="quickpdf-shell";
+const precache = [...assets].sort();
+const digest = createHash("sha256");
+for (const asset of precache) {
+  const file = asset === "/" ? "index.html" : asset.slice(1);
+  digest.update(asset);
+  digest.update(await readFile(join(dist, file)));
+}
+const cacheName = `quickpdf-shell-${digest.digest("hex").slice(0, 16)}`;
+
+const source = `const CACHE_PREFIX="quickpdf-shell-";
 const CACHE_NAME="${cacheName}";
 const APP_SHELL_URL="/index.html";
-const PRECACHE=${JSON.stringify([...assets].sort())};
-const isShell=url=>url.origin===self.location.origin&&PRECACHE.includes(url.pathname);
-self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(PRECACHE))));
+const PRECACHE=${JSON.stringify(precache)};
+const expectedContentType=(pathname)=>{
+  if(pathname==="/"||pathname.endsWith(".html"))return ["text/html"];
+  if(/\\.(?:js|mjs)$/i.test(pathname))return ["javascript","ecmascript"];
+  if(/\\.css$/i.test(pathname))return ["text/css"];
+  if(/\\.webmanifest$/i.test(pathname))return ["application/manifest+json","application/json"];
+  if(/\\.(?:ttf|woff2?)$/i.test(pathname))return ["font/","application/font","application/octet-stream"];
+  if(/\\.(?:png|ico)$/i.test(pathname))return ["image/"];
+  return [];
+};
+const hasExpectedContentType=(pathname,response)=>{
+  const expected=expectedContentType(pathname);
+  if(expected.length===0)return true;
+  const contentType=response.headers.get("content-type")?.toLowerCase()??"";
+  return expected.some((value)=>contentType.includes(value));
+};
+const isExactPrecacheRequest=(request,url)=>url.origin===self.location.origin&&PRECACHE.includes(url.pathname)&&url.search==="";
+const populateCache=async()=>{
+  const cache=await caches.open(CACHE_NAME);
+  try{
+    await Promise.all(PRECACHE.map(async(pathname)=>{
+      const response=await fetch(new Request(pathname,{cache:"reload"}));
+      if(!response.ok||!hasExpectedContentType(pathname,response))throw new Error("QuickPDF shell asset could not be safely cached");
+      await cache.put(pathname,response);
+    }));
+  }catch(error){
+    await caches.delete(CACHE_NAME);
+    throw error;
+  }
+};
+self.addEventListener("install",event=>event.waitUntil(populateCache()));
 self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith(CACHE_PREFIX)&&key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener("message",event=>{if(event.data?.type==="SKIP_WAITING")self.skipWaiting()});
 self.addEventListener("fetch",event=>{
@@ -41,14 +78,14 @@ self.addEventListener("fetch",event=>{
   if(request.method!=="GET"||url.protocol==="blob:"||url.protocol==="data:"||url.origin!==self.location.origin||url.pathname.endsWith(".pdf"))return;
   if(request.mode==="navigate"){
     event.respondWith((async()=>{
-      const cache=await caches.open(CACHE_NAME);
-      const shell=await cache.match(APP_SHELL_URL);
-      if(shell!==undefined)return shell;
-      try{return await fetch(request)}catch{return Response.error()}
+      try{return await fetch(request)}catch{
+        const cache=await caches.open(CACHE_NAME);
+        return(await cache.match(APP_SHELL_URL))??Response.error();
+      }
     })());
     return;
   }
-  if(isShell(url)){
+  if(isExactPrecacheRequest(request,url)){
     event.respondWith((async()=>{
       const cache=await caches.open(CACHE_NAME);
       return(await cache.match(url.pathname))??fetch(request);

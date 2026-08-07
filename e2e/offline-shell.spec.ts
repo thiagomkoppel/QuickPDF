@@ -73,6 +73,94 @@ const expectNoDocumentDataInShellCache = (cachedUrls: readonly string[]): void =
   ).toBe(true);
 };
 
+interface OwnedResponse {
+  readonly url: string;
+  readonly status: number;
+  readonly contentType: string | null;
+  readonly contentLength: string | null;
+  readonly fromServiceWorker: boolean;
+}
+
+const isQuickPdfOwnedRequest = (url: string, origin: string): boolean => {
+  const parsed = new URL(url);
+  return (
+    parsed.origin === origin &&
+    (parsed.pathname === "/" ||
+      parsed.pathname === "/index.html" ||
+      parsed.pathname === "/manifest.webmanifest" ||
+      parsed.pathname.startsWith("/assets/") ||
+      parsed.pathname.endsWith(".png") ||
+      parsed.pathname.endsWith(".ico"))
+  );
+};
+
+const expectNoControlledLoadFailures = (
+  pageErrors: readonly string[],
+  consoleErrors: readonly string[],
+  failedRequests: readonly string[],
+): void => {
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(failedRequests).toEqual([]);
+};
+
+test("keeps the production shell working across controlled online reloads", async ({ page }) => {
+  test.setTimeout(45_000);
+  const ownedResponses: OwnedResponse[] = [];
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const origin = "http://127.0.0.1:4173";
+
+  page.on("response", (response) => {
+    if (!isQuickPdfOwnedRequest(response.url(), origin)) return;
+    ownedResponses.push({
+      url: response.url(),
+      status: response.status(),
+      contentType: response.headers()["content-type"] ?? null,
+      contentLength: response.headers()["content-length"] ?? null,
+      fromServiceWorker: response.fromServiceWorker(),
+    });
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("requestfailed", (request) => failedRequests.push(request.url()));
+
+  await page.goto("/");
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+  await page.evaluate(async () => navigator.serviceWorker.ready);
+
+  await page.reload();
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+  expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+
+  await page.reload();
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+  expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  expectNoControlledLoadFailures(pageErrors, consoleErrors, failedRequests);
+
+  expect(ownedResponses.length).toBeGreaterThan(0);
+  for (const response of ownedResponses) {
+    expect(response.status, response.url).toBe(200);
+    expect(response.contentType, response.url).not.toBeNull();
+  }
+  expect(ownedResponses.some((response) => response.fromServiceWorker)).toBe(true);
+  expect(
+    ownedResponses.some(
+      (response) =>
+        response.url.includes("/assets/") &&
+        /(?:javascript|ecmascript)/i.test(response.contentType ?? ""),
+    ),
+  ).toBe(true);
+  expect(
+    ownedResponses.some(
+      (response) => response.url.includes(".css") && /text\/css/i.test(response.contentType ?? ""),
+    ),
+  ).toBe(true);
+});
+
 test("uses the production shell to open and render a local PDF offline", async ({
   page,
   context,

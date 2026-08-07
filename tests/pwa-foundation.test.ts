@@ -76,4 +76,23 @@ describe("PWA foundation assets", () => {
     expect(styles).toContain("env(safe-area-inset-top");
     expect(styles).toContain("env(safe-area-inset-bottom");
   });
+
+  it("generates an immutable, validated shell cache with navigation-only fallback", async () => {
+    const generator = await readFile(
+      resolve(root, "scripts", "generate-service-worker.mjs"),
+      "utf8",
+    );
+
+    expect(generator).toContain('createHash("sha256")');
+    expect(generator).toContain('quickpdf-shell-${digest.digest("hex").slice(0, 16)}');
+    expect(generator).not.toContain('const cacheName = "quickpdf-shell-v1"');
+    expect(generator).toContain('fetch(new Request(pathname,{cache:"reload"}))');
+    expect(generator).toContain("hasExpectedContentType(pathname,response)");
+    expect(generator).toContain("await caches.delete(CACHE_NAME)");
+    expect(generator).toContain('if(request.mode==="navigate")');
+    expect(generator).toContain("try{return await fetch(request)}catch{");
+    expect(generator).toContain("cache.match(APP_SHELL_URL)");
+    expect(generator).toContain("cache.match(url.pathname)");
+    expect(generator).toContain('url.search===""');
+  });
 });
