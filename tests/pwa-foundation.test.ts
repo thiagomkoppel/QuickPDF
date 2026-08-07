@@ -18,12 +18,14 @@ describe("PWA foundation assets", () => {
       background_color: string;
       theme_color: string;
       orientation: string;
+      id: string;
       icons: readonly { src: string; sizes: string; purpose: string }[];
     };
 
     expect(manifest).toMatchObject({
       name: "QuickPDF",
       short_name: "QuickPDF",
+      id: "/",
       description: "Private browser-based PDF editor",
       display: "standalone",
       start_url: "/",
@@ -61,6 +63,8 @@ describe("PWA foundation assets", () => {
     expect(document).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
     expect(document).toContain('href="/favicon.ico"');
     expect(document).not.toMatch(/serviceWorker|service-worker/i);
+    expect(document).toContain('id="quickpdf-boot-fallback"');
+    expect(document).toContain("Starting QuickPDF...");
   });
 
   it("uses dynamic viewport units and safe-area insets in the application shell", async () => {

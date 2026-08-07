@@ -1,6 +1,7 @@
 {
   "name": "QuickPDF",
   "short_name": "QuickPDF",
+  "id": "/",
   "description": "Private browser-based PDF editor",
   "display": "standalone",
   "start_url": "/",

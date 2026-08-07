@@ -180,6 +180,10 @@ const AppContent = ({
       : { status: "checking", stage: "initializing" },
   );
 
+  useEffect(() => {
+    document.getElementById("quickpdf-boot-fallback")?.remove();
+  }, []);
+
   useEffect(
     () => () => {
       editor.closeDocument();

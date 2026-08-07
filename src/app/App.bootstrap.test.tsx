@@ -102,6 +102,16 @@ describe("QuickPDF bootstrap compatibility screen", () => {
     expect(screen.queryByLabelText("Choose a PDF file")).not.toBeInTheDocument();
   });
 
+  it("removes the static boot fallback after React mounts", () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<section id="quickpdf-boot-fallback">Starting QuickPDF...</section>',
+    );
+
+    render(<App initialCompatibilityResult={compatible} startupMinimumDurationMs={0} />);
+
+    expect(document.getElementById("quickpdf-boot-fallback")).toBeNull();
+  });
   it("continues to the requested route after an indeterminate preflight", () => {
     window.history.replaceState({}, "", "/privacy");
     render(

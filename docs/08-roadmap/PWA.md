@@ -35,3 +35,13 @@ Later PWA work must receive a separate privacy review before adding any service 
 ## Part 2: Offline application shell
 
 Production builds now precache only QuickPDF-owned shell assets. User document bytes and editor sessions remain excluded from Cache Storage and remain memory-only.
+
+## Physical-device offline acceptance
+
+Offline acceptance must use the built production application, never `npm run dev`. Development deliberately does not register the production service worker, so an app installed from a Vite development or plain LAN HTTP origin cannot establish the QuickPDF shell cache required for an offline launch.
+
+Use a production HTTPS deployment or an equivalent locally trusted HTTPS server that exposes the generated `dist/` directory to the device. A plain address such as `http://10.0.0.50:4173` is not a secure context on a separate phone or tablet and is not a valid service-worker/PWA offline test path. `npm run preview` is useful for local desktop checks; its default `127.0.0.1` binding is not reachable from a separate device.
+
+Before installing, verify in the physical browser's remote debugging tools that `navigator.serviceWorker.controller` is non-null, the registration scope is the application's root scope, and the `quickpdf-shell-*` cache contains the shell assets. Then install the app, launch it once online, close it, disable Wi-Fi and mobile data, and launch it from the home screen. Confirm the landing page, local PDF rendering, editing, Original Size export, and Compress PDF export work without network access. Clear the installed app and site data for the exact test origin before retesting a new build.
+
+The static `Starting QuickPDF...` boot surface in `index.html` is visible before the React bundle mounts. It is removed only after a successful React mount, so a cached HTML document with a missing or failing bootstrap asset shows a recovery message rather than a featureless black screen. It does not diagnose PDF compatibility and does not enable caching in development.
