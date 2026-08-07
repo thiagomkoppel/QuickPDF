@@ -244,7 +244,10 @@ const AppContent = ({
     return <BrowserCompatibilityPage compatibility={bootstrap.result} />;
   }
 
-  if (new URLSearchParams(window.location.search).get("pwa-debug") === "1") {
+  if (
+    pathname === "/pwa-diagnostics" ||
+    new URLSearchParams(window.location.search).get("pwa-debug") === "1"
+  ) {
     return (
       <Shell>
         <PwaDiagnosticsPage bootstrapStatus={bootstrap.status} />

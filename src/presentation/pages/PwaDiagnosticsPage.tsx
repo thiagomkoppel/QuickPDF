@@ -91,7 +91,17 @@ export const PwaDiagnosticsPage = ({
             {isTextVisible ? <pre aria-label="Diagnostics text">{diagnosticsText}</pre> : null}
           </>
         )}
-        <a href="/">Return to QuickPDF</a>
+        <a
+          className="pwa-diagnostics-page__back"
+          href="/"
+          onClick={(event) => {
+            event.preventDefault();
+            window.history.pushState({}, "", "/");
+            window.dispatchEvent(new Event("quickpdf:navigation"));
+          }}
+        >
+          Back to QuickPDF
+        </a>
       </div>
     </section>
   );

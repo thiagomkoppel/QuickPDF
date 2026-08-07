@@ -304,8 +304,8 @@ test("cold-starts the standalone manifest route from the production shell while 
     await context.setOffline(false);
   }
 });
-test("shows only non-sensitive shell diagnostics when explicitly requested", async ({ page }) => {
-  await page.goto("/?pwa-debug=1");
+test("shows only non-sensitive shell diagnostics from its canonical route", async ({ page }) => {
+  await page.goto("/pwa-diagnostics");
 
   await expect(page.getByRole("heading", { name: "QuickPDF diagnostics" })).toBeVisible({
     timeout: 9_000,
@@ -315,6 +315,25 @@ test("shows only non-sensitive shell diagnostics when explicitly requested", asy
   await expect(page.getByText("Cached PDF.js worker", { exact: true })).toBeVisible();
   await expect(page.getByText("No document or user data is shown.")).toBeVisible();
   await expect(page.getByLabel("Choose a PDF file")).toHaveCount(0);
+});
+test("opens the diagnostics SPA route from the cached shell while offline", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+  await waitForControl(page);
+  await context.setOffline(true);
+  try {
+    await page.goto("/pwa-diagnostics");
+    await expect(page.getByRole("heading", { name: "QuickPDF diagnostics" })).toBeVisible({
+      timeout: 9_000,
+    });
+    await expect(page.getByText("Cached PDF.js worker", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Choose a PDF file")).toHaveCount(0);
+  } finally {
+    await context.setOffline(false);
+  }
 });
 test.describe("offline responsive shell", () => {
   for (const viewport of [

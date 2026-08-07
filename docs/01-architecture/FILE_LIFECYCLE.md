@@ -4,14 +4,14 @@
 
 ```text
 Local file selected
-â†’ bytes read into browser memory
-â†’ PDF parsed locally
-â†’ pages rendered locally
-â†’ edits stored as local session state
-â†’ completed PDF generated locally
-â†’ browser download triggered
-â†’ session closed
-â†’ object URLs revoked and references released
+-> bytes read into browser memory
+-> PDF parsed locally
+-> pages rendered locally
+-> edits stored as local session state
+-> completed PDF generated locally
+-> browser download triggered
+-> session closed
+-> object URLs revoked and references released
 ```
 
 ## Rules

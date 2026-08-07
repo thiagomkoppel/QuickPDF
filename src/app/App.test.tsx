@@ -295,6 +295,22 @@ describe("QuickPDF application shell", () => {
       screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
     ).toBeInTheDocument();
   });
+  it("renders diagnostics from the canonical internal route and returns to the landing page", async () => {
+    const user = userEvent.setup();
+    renderAt("/pwa-diagnostics");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "QuickPDF diagnostics" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Choose a PDF file")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Back to QuickPDF" }));
+
+    expect(window.location.pathname).toBe("/");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+    ).toBeInTheDocument();
+  });
   it("opens the accessible local picker from the complete drop zone", () => {
     renderAt("/");
     const input = screen.getByLabelText("Choose a PDF file");

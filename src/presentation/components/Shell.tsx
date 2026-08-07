@@ -152,16 +152,17 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
                 Install QuickPDF
               </button>
             ) : null}
-            <button
+            <a
               className="primary-nav__diagnostics"
-              type="button"
-              onClick={() => {
-                navigate("/?pwa-debug=1");
+              href="/pwa-diagnostics"
+              onClick={(event) => {
+                event.preventDefault();
+                navigate("/pwa-diagnostics");
                 setIsMobileMenuOpen(false);
               }}
             >
               PWA Diagnostics
-            </button>
+            </a>
             <a
               className="primary-nav__privacy"
               href="/privacy"
@@ -205,12 +206,12 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
               <li>
                 Tap the{" "}
                 <span aria-hidden="true" className="ios-install-sheet__share-icon">
-                  ↑
+                  {"\u2191"}
                 </span>{" "}
                 Share button in Safari.
               </li>
-              <li>Choose “Add to Home Screen.”</li>
-              <li>Tap “Add.”</li>
+              <li>Choose "Add to Home Screen."</li>
+              <li>Tap "Add."</li>
             </ol>
             <button ref={installSheetActionRef} type="button" onClick={install.dismissInstructions}>
               Got it

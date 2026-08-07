@@ -353,8 +353,8 @@ export const LandingPage = ({
       </div>
       <footer className="landing-footer" id="privacy">
         <span>
-          <strong className="landing-footer-desktop">QuickPDF � Browser-Based PDF Editor</strong>
-          <strong className="landing-footer-mobile">?&nbsp; Made with privacy in mind</strong>
+          <strong className="landing-footer-desktop">QuickPDF - Browser-Based PDF Editor</strong>
+          <strong className="landing-footer-mobile">Made with privacy in mind</strong>
         </span>
         <span>
           <a href="/privacy" onClick={navigateToPrivacy}>

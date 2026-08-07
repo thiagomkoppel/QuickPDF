@@ -49,7 +49,7 @@ describe("Shell PWA presentation", () => {
 
     expect(screen.getByRole("dialog", { name: "Install QuickPDF" })).toBeInTheDocument();
     expect(screen.getByText("Tap the Share button in Safari.")).toBeInTheDocument();
-    expect(screen.getByText("Choose “Add to Home Screen.”")).toBeInTheDocument();
+    expect(screen.getByText(/Add to Home Screen/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Got it" }));
     expect(screen.queryByRole("dialog", { name: "Install QuickPDF" })).not.toBeInTheDocument();
   });
@@ -133,8 +133,9 @@ describe("Shell PWA presentation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Open site menu" }));
-    await user.click(screen.getByRole("button", { name: "PWA Diagnostics" }));
+    await user.click(screen.getByRole("link", { name: "PWA Diagnostics" }));
 
-    expect(window.location.search).toBe("?pwa-debug=1");
+    expect(window.location.pathname).toBe("/pwa-diagnostics");
+    expect(window.location.search).toBe("");
   });
 });
