@@ -152,6 +152,16 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
                 Install QuickPDF
               </button>
             ) : null}
+            <button
+              className="primary-nav__diagnostics"
+              type="button"
+              onClick={() => {
+                navigate("/?pwa-debug=1");
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              PWA Diagnostics
+            </button>
             <a
               className="primary-nav__privacy"
               href="/privacy"

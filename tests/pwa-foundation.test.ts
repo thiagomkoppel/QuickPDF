@@ -65,6 +65,7 @@ describe("PWA foundation assets", () => {
     expect(document).not.toMatch(/serviceWorker|service-worker/i);
     expect(document).toContain('id="quickpdf-boot-fallback"');
     expect(document).toContain("Starting QuickPDF...");
+    expect(document).toContain("QuickPDF couldn't finish starting.");
   });
 
   it("uses dynamic viewport units and safe-area insets in the application shell", async () => {

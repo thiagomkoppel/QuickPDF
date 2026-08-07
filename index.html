@@ -70,11 +70,11 @@
     <script>
       window.addEventListener("error", function () {
         var status = document.getElementById("quickpdf-boot-status");
-        if (status) status.textContent = "QuickPDF could not start. Reconnect and try again.";
+        if (status) status.textContent = "QuickPDF couldn't finish starting.";
       });
       window.addEventListener("unhandledrejection", function () {
         var status = document.getElementById("quickpdf-boot-status");
-        if (status) status.textContent = "QuickPDF could not start. Reconnect and try again.";
+        if (status) status.textContent = "QuickPDF couldn't finish starting.";
       });
     </script>
     <script type="module" src="/src/app/main.tsx"></script>

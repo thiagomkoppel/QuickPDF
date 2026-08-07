@@ -122,4 +122,19 @@ describe("Shell PWA presentation", () => {
     expect(document.querySelector(".app-shell")).toHaveAttribute("data-standalone", "true");
     expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
   });
+
+  it("opens the temporary PWA diagnostics route from the existing menu", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/");
+    render(
+      <Shell>
+        <div>Landing content</div>
+      </Shell>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open site menu" }));
+    await user.click(screen.getByRole("button", { name: "PWA Diagnostics" }));
+
+    expect(window.location.search).toBe("?pwa-debug=1");
+  });
 });

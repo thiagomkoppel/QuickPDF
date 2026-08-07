@@ -2555,12 +2555,12 @@ body {
   font-weight: 700;
 }
 .app-shell:has(.landing-page) .primary-nav a:first-child::before {
-  content: "◇";
+  content: "â—‡";
   margin-right: 0.45rem;
   color: #44dce0;
 }
 .app-shell:has(.landing-page) .primary-nav a:last-child::before {
-  content: "◉";
+  content: "â—‰";
   margin-right: 0.45rem;
   color: #d8e3e7;
 }
@@ -2686,7 +2686,7 @@ body {
   background: #0b2932;
 }
 .file-drop-button::before {
-  content: "□";
+  content: "â–¡";
   margin-right: 0.65rem;
   color: #44e1e4;
   font-size: 1.25rem;
@@ -4247,11 +4247,11 @@ body {
     border-bottom: 0;
   }
   .app-shell:has(.landing-page) .primary-nav a:first-child::before {
-    content: "⌑";
+    content: "âŒ‘";
     font-size: 1.65rem;
   }
   .app-shell:has(.landing-page) .primary-nav a:last-child::before {
-    content: "◉";
+    content: "â—‰";
     font-size: 1.2rem;
   }
 
@@ -4307,7 +4307,7 @@ body {
   }
 
   .landing-eyebrow::before {
-    content: "⌑";
+    content: "âŒ‘";
     margin-right: 0.5rem;
     font-size: 1rem;
   }
@@ -4866,6 +4866,10 @@ body,
   cursor: pointer;
 }
 
+/* Temporary, opt-in installed-app diagnostics stay out of the desktop navigation. */
+.primary-nav__diagnostics {
+  display: none;
+}
 .ios-install-sheet-backdrop {
   position: fixed;
   z-index: 100;
@@ -4932,6 +4936,17 @@ body,
 }
 
 @media (max-width: 767px) {
+  .app-shell:has(.landing-page) .primary-nav__diagnostics {
+    display: inline-flex;
+    align-items: center;
+    min-height: 3.25rem;
+    padding: 0 1.35rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgb(230 237 243 / 58%);
+    font: 700 0.76rem / 1 var(--qp-font-display);
+  }
   .app-shell:has(.landing-page) .primary-nav__install {
     min-height: 4.25rem;
     justify-content: flex-start;
@@ -4946,20 +4961,20 @@ body,
   }
 
   .app-shell:has(.landing-page) .primary-nav__install::before {
-    content: "↓";
+    content: "â†“";
     color: #44dce0;
     font-size: 1.55rem;
   }
 
   .app-shell:has(.landing-page) .primary-nav__privacy::before {
-    content: "⌑";
+    content: "âŒ‘";
     margin-right: 0.45rem;
     color: #44dce0;
     font-size: 1.65rem;
   }
 
   .app-shell:has(.landing-page) .primary-nav__github::before {
-    content: "◉";
+    content: "â—‰";
     margin-right: 0.45rem;
     color: #e6edf3;
     font-size: 1.2rem;
@@ -6154,7 +6169,7 @@ body,
 }
 
 .landing-install-card li::before {
-  content: "�";
+  content: "ï¿½";
   margin-right: 0.35rem;
   color: #45dce0;
 }
@@ -6483,4 +6498,19 @@ body,
 .pwa-diagnostics-page a {
   color: #55dade;
   font-weight: 700;
+}
+.pwa-diagnostics-page pre {
+  margin: 16px 0;
+  padding: 14px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid #2d4a53;
+  border-radius: 12px;
+  background: #0b1d23;
+  color: #dceff2;
+  font:
+    0.8rem / 1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
 }

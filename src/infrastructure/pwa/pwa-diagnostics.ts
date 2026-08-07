@@ -1,4 +1,4 @@
-import { isStandaloneMode } from "../browser/standalone-mode";
+import { detectStandaloneMode } from "../browser/standalone-mode";
 
 interface ManifestConfiguration {
   readonly id?: string;
@@ -7,10 +7,16 @@ interface ManifestConfiguration {
   readonly display?: string;
 }
 
+interface NavigatorWithStandalone extends Navigator {
+  readonly standalone?: boolean;
+}
+
 export interface QuickPdfPwaDiagnostics {
   readonly location: string;
   readonly online: boolean;
   readonly standalone: boolean;
+  readonly navigatorStandalone: boolean;
+  readonly displayModeStandalone: boolean;
   readonly serviceWorkerSupported: boolean;
   readonly controllerScriptUrl?: string;
   readonly registrationScope?: string;
@@ -18,6 +24,7 @@ export interface QuickPdfPwaDiagnostics {
   readonly waitingWorkerState?: string;
   readonly installingWorkerState?: string;
   readonly cacheNames: readonly string[];
+  readonly shellCacheName?: string;
   readonly shellHasIndex: boolean;
   readonly shellHasMainScript: boolean;
   readonly shellHasMainStylesheet: boolean;
@@ -55,13 +62,16 @@ const readCachedManifest = async (
 
 /** Reads only shell and runtime metadata for an opt-in physical-device diagnosis. */
 export const collectQuickPdfPwaDiagnostics = async (): Promise<QuickPdfPwaDiagnostics> => {
+  const displayModeStandalone = window.matchMedia("(display-mode: standalone)").matches;
+  const navigatorStandalone = (navigator as NavigatorWithStandalone).standalone === true;
   const serviceWorkerSupported = "serviceWorker" in navigator;
   const controller = serviceWorkerSupported ? navigator.serviceWorker.controller : null;
   const registration = serviceWorkerSupported
     ? await navigator.serviceWorker.getRegistration("/").catch(() => undefined)
     : undefined;
   const cacheNames = typeof caches === "undefined" ? [] : await caches.keys().catch(() => []);
-  const shellCacheName = cacheNames.find((name) => name.startsWith("quickpdf-shell-"));
+  const shellCacheNames = cacheNames.filter((name) => name.startsWith("quickpdf-shell-"));
+  const shellCacheName = shellCacheNames.length === 1 ? shellCacheNames[0] : undefined;
   const shellCache =
     shellCacheName === undefined || typeof caches === "undefined"
       ? undefined
@@ -82,7 +92,12 @@ export const collectQuickPdfPwaDiagnostics = async (): Promise<QuickPdfPwaDiagno
   return {
     location: window.location.href,
     online: navigator.onLine,
-    standalone: isStandaloneMode(),
+    standalone: detectStandaloneMode({
+      displayModeMatches: displayModeStandalone,
+      navigatorStandalone,
+    }),
+    navigatorStandalone,
+    displayModeStandalone,
     serviceWorkerSupported,
     ...(controller === null ? {} : { controllerScriptUrl: controller.scriptURL }),
     ...(registration === undefined ? {} : { registrationScope: registration.scope }),
@@ -90,6 +105,7 @@ export const collectQuickPdfPwaDiagnostics = async (): Promise<QuickPdfPwaDiagno
     ...(waitingWorkerState === undefined ? {} : { waitingWorkerState }),
     ...(installingWorkerState === undefined ? {} : { installingWorkerState }),
     cacheNames,
+    ...(shellCacheName === undefined ? {} : { shellCacheName }),
     shellHasIndex: includesPath("/index.html") || cachedPaths.includes("/"),
     shellHasMainScript: includesPath("/assets/index-") && includesPath(".js"),
     shellHasMainStylesheet: includesPath("/assets/index-") && includesPath(".css"),
