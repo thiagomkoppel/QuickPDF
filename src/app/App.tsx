@@ -20,6 +20,7 @@ import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
 import { PrivacyPolicyPage } from "../presentation/pages/PrivacyPolicyPage";
+import { PwaDiagnosticsPage } from "../presentation/pages/PwaDiagnosticsPage";
 import { StartupScreen, type StartupStage } from "../presentation/pages/StartupScreen";
 
 declare global {
@@ -241,6 +242,14 @@ const AppContent = ({
 
   if (bootstrap.status === "incompatible") {
     return <BrowserCompatibilityPage compatibility={bootstrap.result} />;
+  }
+
+  if (new URLSearchParams(window.location.search).get("pwa-debug") === "1") {
+    return (
+      <Shell>
+        <PwaDiagnosticsPage bootstrapStatus={bootstrap.status} />
+      </Shell>
+    );
   }
 
   switch (pathname) {

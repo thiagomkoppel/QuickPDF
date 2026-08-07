@@ -156,6 +156,78 @@ test("uses the production shell to open and render a local PDF offline", async (
   }
 });
 
+test("cold-starts the standalone manifest route from the production shell while offline", async ({
+  page,
+  context,
+}) => {
+  await context.addInitScript(() => {
+    const originalMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query: string): MediaQueryList =>
+      query.includes("display-mode: standalone")
+        ? ({
+            matches: true,
+            media: query,
+            onchange: null,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            dispatchEvent: () => false,
+          } as MediaQueryList)
+        : originalMatchMedia(query);
+  });
+
+  await page.goto("/");
+  await expect(page.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+  const launchConfiguration = await page.evaluate(async () => {
+    const response = await fetch("/manifest.webmanifest");
+    return (await response.json()) as {
+      readonly id: string;
+      readonly start_url: string;
+      readonly scope: string;
+      readonly display: string;
+    };
+  });
+  expect(launchConfiguration).toMatchObject({
+    id: "/",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+  });
+  await waitForControl(page);
+  await page.close();
+  await context.setOffline(true);
+
+  const coldPage = await context.newPage();
+  try {
+    await coldPage.goto(launchConfiguration.start_url);
+    await expect(coldPage.getByLabel("Choose a PDF file")).toBeVisible({ timeout: 9_000 });
+    expect(
+      await coldPage.evaluate(() => window.matchMedia("(display-mode: standalone)").matches),
+    ).toBe(true);
+    expect(await coldPage.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+    expect(
+      await coldPage.evaluate(
+        async () => (await navigator.serviceWorker.getRegistration("/"))?.scope,
+      ),
+    ).toBe(`${new URL(coldPage.url()).origin}/`);
+  } finally {
+    await coldPage.close();
+    await context.setOffline(false);
+  }
+});
+test("shows only non-sensitive shell diagnostics when explicitly requested", async ({ page }) => {
+  await page.goto("/?pwa-debug=1");
+
+  await expect(page.getByRole("heading", { name: "QuickPDF diagnostics" })).toBeVisible({
+    timeout: 9_000,
+  });
+  await expect(page.getByText("Service worker supported", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manifest start URL", { exact: true })).toBeVisible();
+  await expect(page.getByText("Cached PDF.js worker", { exact: true })).toBeVisible();
+  await expect(page.getByText("No document or user data is shown.")).toBeVisible();
+  await expect(page.getByLabel("Choose a PDF file")).toHaveCount(0);
+});
 test.describe("offline responsive shell", () => {
   for (const viewport of [
     { width: 390, height: 844 },
