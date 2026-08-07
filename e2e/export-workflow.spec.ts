@@ -1481,6 +1481,11 @@ test("renders the phone landing with an accessible local-first menu", async ({ p
     await expect(page.getByText("100% Free")).toBeVisible();
     await expect(page.locator(".landing-install-card")).toBeVisible();
 
+    const deferUpdate = page.getByRole("button", { name: "Later" });
+    if (await deferUpdate.isVisible()) {
+      await deferUpdate.click();
+    }
+
     const menuButton = page.getByRole("button", { name: "Open site menu" });
     await menuButton.click();
     await expect(menuButton).toHaveAttribute("aria-expanded", "true");

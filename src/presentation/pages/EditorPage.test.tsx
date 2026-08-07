@@ -3496,6 +3496,121 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(exportCurrentPdf).not.toHaveBeenCalled();
   });
+  it("restores export controls after compression is not beneficial", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const exportCurrentPdf = (editor as unknown as { readonly exportCurrentPdf: Mock })
+      .exportCurrentPdf;
+    const nonBeneficialSnapshot = baseSnapshot({
+      error: {
+        code: "CompressionNotBeneficial",
+        message: "Compression didn't reduce this PDF. Export the original-quality version instead.",
+      },
+    });
+    exportCurrentPdf
+      .mockResolvedValueOnce(nonBeneficialSnapshot)
+      .mockResolvedValueOnce(baseSnapshot());
+    const onSnapshotChange = vi.fn();
+    const { rerender } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await user.click(screen.getByRole("radio", { name: /Compress PDF/ }));
+    await user.click(screen.getByRole("button", { name: "Export PDF" }));
+    await waitFor(() => {
+      expect(onSnapshotChange).toHaveBeenCalledWith(nonBeneficialSnapshot);
+    });
+
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={nonBeneficialSnapshot}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    for (const alert of screen.getAllByRole("alert")) {
+      expect(alert).toHaveTextContent(
+        "Compression didn't reduce this PDF. Export the original-quality version instead.",
+      );
+    }
+    expect(screen.queryByText("Compressing PDF...")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled();
+
+    await user.click(screen.getByRole("radio", { name: /Original Size/ }));
+    await user.click(screen.getByRole("button", { name: "Export PDF" }));
+    expect(screen.queryByRole("dialog", { name: "Export PDF" })).not.toBeInTheDocument();
+    expect(exportCurrentPdf).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ mode: "original" }),
+    );
+  });
+  it("closes the export dialog after a successful compressed export", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const exportCurrentPdf = (editor as unknown as { readonly exportCurrentPdf: Mock })
+      .exportCurrentPdf;
+    exportCurrentPdf.mockResolvedValueOnce(baseSnapshot());
+
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await user.click(screen.getByRole("radio", { name: /Compress PDF/ }));
+    await user.click(screen.getByRole("button", { name: "Export PDF" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Export PDF" })).not.toBeInTheDocument();
+    });
+  });
+  it.each([
+    ["a compression error", "PDF compression could not be completed."],
+    ["a cancelled compression", "PDF compression was cancelled."],
+  ])("restores export controls after %s", async (_terminalState, message) => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const exportCurrentPdf = (editor as unknown as { readonly exportCurrentPdf: Mock })
+      .exportCurrentPdf;
+    const failedSnapshot = baseSnapshot({
+      error: { code: "CompressionFailed", message },
+    });
+    exportCurrentPdf.mockResolvedValueOnce(failedSnapshot);
+    const onSnapshotChange = vi.fn();
+
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await user.click(screen.getByRole("radio", { name: /Compress PDF/ }));
+    await user.click(screen.getByRole("button", { name: "Export PDF" }));
+
+    await waitFor(() => {
+      expect(onSnapshotChange).toHaveBeenCalledWith(failedSnapshot);
+    });
+    expect(screen.queryByText("Compressing PDF...")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled();
+  });
   it("keeps the full editor inspector and toolset outside the phone breakpoint", () => {
     const mediaQuery = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
     vi.stubGlobal(

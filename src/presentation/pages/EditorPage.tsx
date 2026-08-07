@@ -818,6 +818,7 @@ export const EditorPage = ({
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [exportMode, setExportMode] = useState<PdfExportMode>("original");
   const [exportFilename, setExportFilename] = useState("");
   const [compressionProgress, setCompressionProgress] = useState<
@@ -2083,16 +2084,22 @@ export const EditorPage = ({
     const abortController = new AbortController();
     exportAbortRef.current = abortController;
     setCompressionProgress(undefined);
-    const nextSnapshot = await editor.exportCurrentPdf({
-      mode: exportMode,
-      filename: exportFilename,
-      signal: abortController.signal,
-      onCompressionProgress: setCompressionProgress,
-    });
-    exportAbortRef.current = undefined;
-    applySnapshot(nextSnapshot);
-    if (nextSnapshot.state.error === undefined) {
-      setIsExportDialogOpen(false);
+    setIsExporting(true);
+    try {
+      const nextSnapshot = await editor.exportCurrentPdf({
+        mode: exportMode,
+        filename: exportFilename,
+        signal: abortController.signal,
+        onCompressionProgress: setCompressionProgress,
+      });
+      applySnapshot(nextSnapshot);
+      if (nextSnapshot.state.error === undefined) {
+        setIsExportDialogOpen(false);
+      }
+    } finally {
+      exportAbortRef.current = undefined;
+      setCompressionProgress(undefined);
+      setIsExporting(false);
     }
   };
 
@@ -2100,6 +2107,7 @@ export const EditorPage = ({
     exportAbortRef.current?.abort();
     exportAbortRef.current = undefined;
     setCompressionProgress(undefined);
+    setIsExporting(false);
     setIsExportDialogOpen(false);
   };
 
@@ -3675,6 +3683,7 @@ export const EditorPage = ({
         <ExportPdfDialog
           filename={exportFilename}
           mode={exportMode}
+          isExporting={isExporting}
           progress={compressionProgress}
           error={state.error?.code === "CompressionNotBeneficial" ? state.error.message : undefined}
           onFilenameChange={setExportFilename}
@@ -3700,6 +3709,7 @@ export const EditorPage = ({
 interface ExportPdfDialogProps {
   readonly filename: string;
   readonly mode: PdfExportMode;
+  readonly isExporting: boolean;
   readonly progress: PdfCompressionProgress | undefined;
   readonly error: string | undefined;
   readonly onFilenameChange: (filename: string) => void;
@@ -3711,6 +3721,7 @@ interface ExportPdfDialogProps {
 const ExportPdfDialog = ({
   filename,
   mode,
+  isExporting,
   progress,
   error,
   onFilenameChange,
@@ -3718,10 +3729,10 @@ const ExportPdfDialog = ({
   onCancel,
   onExport,
 }: ExportPdfDialogProps): React.ReactElement => {
-  const isCompressing = progress !== undefined;
+  const isCompressing = isExporting && mode === "compressed";
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && !isCompressing) {
+      if (event.key === "Escape" && !isExporting) {
         event.preventDefault();
         onCancel();
       }
@@ -3730,12 +3741,12 @@ const ExportPdfDialog = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isCompressing, onCancel]);
+  }, [isExporting, onCancel]);
   return createPortal(
     <div
       className="export-dialog-backdrop"
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget && !isCompressing) onCancel();
+        if (event.target === event.currentTarget && !isExporting) onCancel();
       }}
     >
       <section
@@ -3754,7 +3765,7 @@ const ExportPdfDialog = ({
           </div>
           <button
             aria-label="Close export dialog"
-            disabled={isCompressing}
+            disabled={isExporting}
             type="button"
             onClick={onCancel}
           >
@@ -3765,9 +3776,11 @@ const ExportPdfDialog = ({
           <section aria-live="polite" className="export-dialog__progress">
             <strong>Compressing PDF...</strong>
             <span>
-              Page {progress.currentPage} of {progress.totalPages}
+              {progress === undefined
+                ? "Preparing compression..."
+                : `Page ${String(progress.currentPage)} of ${String(progress.totalPages)}`}
             </span>
-            <progress max={progress.totalPages} value={progress.currentPage} />
+            <progress max={progress?.totalPages ?? 1} value={progress?.currentPage ?? 0} />
             <p>Your document remains on this device.</p>
           </section>
         ) : (
@@ -3832,10 +3845,10 @@ const ExportPdfDialog = ({
           </>
         )}
         <footer>
-          <button disabled={isCompressing} type="button" onClick={onCancel}>
+          <button disabled={isExporting} type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button disabled={isCompressing} type="button" onClick={onExport}>
+          <button disabled={isExporting} type="button" onClick={onExport}>
             {isCompressing ? "Compressing..." : "Export PDF"}
           </button>
         </footer>

@@ -502,6 +502,63 @@ describe("PdfEditorApplication export", () => {
     expect(snapshot.state.isDirty).toBe(true);
     expect(downloadRequests).toEqual([]);
   });
+  it("keeps the editor ready when compression reports an error", async () => {
+    const compressionGateway: PdfCompressionGateway = {
+      compress: vi.fn(() =>
+        Promise.resolve({ ok: false as const, cancelled: false, message: "Compression failed." }),
+      ),
+    };
+    app = new PdfEditorApplication(
+      reader,
+      gateway,
+      downloader,
+      new TestIds(),
+      undefined,
+      undefined,
+      compressionGateway,
+    );
+    await app.openFile(file);
+
+    const snapshot = await app.exportCurrentPdf({ mode: "compressed" });
+
+    expect(snapshot.state).toMatchObject({
+      status: "ready",
+      error: { code: "CompressionFailed", message: "Compression failed." },
+    });
+    expect(snapshot.canExport).toBe(true);
+    expect(downloadRequests).toEqual([]);
+  });
+
+  it("keeps the editor ready when compression is cancelled", async () => {
+    const compressionGateway: PdfCompressionGateway = {
+      compress: vi.fn(() =>
+        Promise.resolve({
+          ok: false as const,
+          cancelled: true,
+          message: "Ignored cancellation detail.",
+        }),
+      ),
+    };
+    app = new PdfEditorApplication(
+      reader,
+      gateway,
+      downloader,
+      new TestIds(),
+      undefined,
+      undefined,
+      compressionGateway,
+    );
+    await app.openFile(file);
+
+    const snapshot = await app.exportCurrentPdf({ mode: "compressed" });
+
+    expect(snapshot.state).toMatchObject({
+      status: "ready",
+      error: { code: "CompressionFailed", message: "PDF compression was cancelled." },
+    });
+    expect(snapshot.canExport).toBe(true);
+    expect(downloadRequests).toEqual([]);
+  });
   it("skips empty text while preserving stable whiteout-before-text ordering", async () => {
     const emptyTextId = app.addText({ x: 10, y: 10 }, "   ").state.selectedElementId;
     app.addWhiteout({ x: 10, y: 20, width: 90, height: 30 });
