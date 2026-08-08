@@ -51,6 +51,40 @@ const waitForControl = async (page: import("@playwright/test").Page): Promise<st
   });
 };
 
+interface CachedNavigationShell {
+  readonly key: string;
+  readonly url: string;
+  readonly status: number;
+  readonly type: string;
+  readonly redirected: boolean;
+  readonly contentType: string | null;
+}
+
+const inspectCachedNavigationShell = async (
+  page: import("@playwright/test").Page,
+): Promise<readonly CachedNavigationShell[]> =>
+  page.evaluate(async () => {
+    const names = await caches.keys();
+    const name = names.find((value) => value.startsWith("quickpdf-shell-"));
+    if (name === undefined) return [];
+    const cache = await caches.open(name);
+    const entries = await Promise.all(
+      ["/", "/index.html"].map(async (key) => {
+        const response = await cache.match(key);
+        return response === undefined
+          ? undefined
+          : {
+              key,
+              url: response.url,
+              status: response.status,
+              type: response.type,
+              redirected: response.redirected,
+              contentType: response.headers.get("content-type"),
+            };
+      }),
+    );
+    return entries.filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+  });
 const expectValidPdfDownload = async (
   download: import("@playwright/test").Download,
 ): Promise<number> => {
@@ -173,6 +207,17 @@ test("uses the production shell to open and render a local PDF offline", async (
   expect(cachedUrls.some((url) => url.includes("PatrickHand"))).toBe(true);
   expect(cachedUrls.some((url) => url.endsWith("manifest.webmanifest"))).toBe(true);
   expectNoDocumentDataInShellCache(cachedUrls);
+  const cachedNavigationShell = await inspectCachedNavigationShell(page);
+  expect(cachedNavigationShell).toHaveLength(1);
+  expect(cachedNavigationShell).toEqual([
+    expect.objectContaining({
+      key: "/",
+      status: 200,
+      redirected: false,
+      contentType: expect.stringContaining("text/html"),
+    }),
+  ]);
+  expect(cachedNavigationShell[0]?.type).not.toBe("opaqueredirect");
 
   const failedRequests: string[] = [];
   page.on("requestfailed", (request) => failedRequests.push(request.url()));

@@ -7,6 +7,15 @@ interface ManifestConfiguration {
   readonly display?: string;
 }
 
+interface CachedNavigationResponse {
+  readonly cacheKey: string;
+  readonly responseUrl: string;
+  readonly status: number;
+  readonly type: ResponseType;
+  readonly redirected: boolean;
+  readonly contentType?: string;
+}
+
 interface NavigatorWithStandalone extends Navigator {
   readonly standalone?: boolean;
 }
@@ -31,6 +40,7 @@ export interface QuickPdfPwaDiagnostics {
   readonly shellHasPdfWorker: boolean;
   readonly shellHasPatrickHand: boolean;
   readonly shellHasManifest: boolean;
+  readonly cachedNavigationResponse?: CachedNavigationResponse;
   readonly manifest?: ManifestConfiguration;
 }
 
@@ -55,6 +65,27 @@ const readCachedManifest = async (
   try {
     const response = await cache.match("/manifest.webmanifest");
     return response === undefined ? undefined : safeManifest((await response.json()) as unknown);
+  } catch {
+    return undefined;
+  }
+};
+
+const readCachedNavigationResponse = async (
+  cache: Cache | undefined,
+): Promise<CachedNavigationResponse | undefined> => {
+  if (cache === undefined) return undefined;
+  try {
+    const response = await cache.match("/");
+    if (response === undefined) return undefined;
+    const contentType = response.headers.get("content-type");
+    return {
+      cacheKey: "/",
+      responseUrl: response.url || "Synthetic local response",
+      status: response.status,
+      type: response.type,
+      redirected: response.redirected,
+      ...(contentType === null ? {} : { contentType }),
+    };
   } catch {
     return undefined;
   }
@@ -88,6 +119,7 @@ export const collectQuickPdfPwaDiagnostics = async (): Promise<QuickPdfPwaDiagno
   const waitingWorkerState = workerState(registration?.waiting);
   const installingWorkerState = workerState(registration?.installing);
   const manifest = await readCachedManifest(shellCache);
+  const cachedNavigationResponse = await readCachedNavigationResponse(shellCache);
 
   return {
     location: window.location.href,
@@ -112,6 +144,7 @@ export const collectQuickPdfPwaDiagnostics = async (): Promise<QuickPdfPwaDiagno
     shellHasPdfWorker: includesPath("pdf.worker"),
     shellHasPatrickHand: includesPath("PatrickHand"),
     shellHasManifest: includesPath("/manifest.webmanifest"),
+    ...(cachedNavigationResponse === undefined ? {} : { cachedNavigationResponse }),
     ...(manifest === undefined ? {} : { manifest }),
   };
 };

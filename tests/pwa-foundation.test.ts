@@ -89,6 +89,9 @@ describe("PWA foundation assets", () => {
     expect(generator).not.toContain('const cacheName = "quickpdf-shell-v1"');
     expect(generator).toContain('fetch(new Request(pathname,{cache:"reload"}))');
     expect(generator).toContain("hasExpectedContentType(pathname,response)");
+    expect(generator).toContain('const APP_SHELL_URL="/"');
+    expect(generator).toContain("normalizeNavigationResponse");
+    expect(generator).toContain("new Response(await response.arrayBuffer()");
     expect(generator).toContain("await caches.delete(CACHE_NAME)");
     expect(generator).toContain('if(request.mode==="navigate")');
     expect(generator).toContain("try{return await fetch(request)}catch{");

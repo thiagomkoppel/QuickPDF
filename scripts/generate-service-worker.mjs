@@ -7,7 +7,6 @@ const dist = join(root, "dist");
 const manifest = JSON.parse(await readFile(join(dist, ".vite", "manifest.json"), "utf8"));
 const assets = new Set([
   "/",
-  "/index.html",
   "/manifest.webmanifest",
   "/apple-touch-icon.png",
   "/favicon.ico",
@@ -38,7 +37,7 @@ const cacheName = `quickpdf-shell-${digest.digest("hex").slice(0, 16)}`;
 
 const source = `const CACHE_PREFIX="quickpdf-shell-";
 const CACHE_NAME="${cacheName}";
-const APP_SHELL_URL="/index.html";
+const APP_SHELL_URL="/";
 const PRECACHE=${JSON.stringify(precache)};
 const expectedContentType=(pathname)=>{
   if(pathname==="/"||pathname.endsWith(".html"))return ["text/html"];
@@ -55,6 +54,14 @@ const hasExpectedContentType=(pathname,response)=>{
   const contentType=response.headers.get("content-type")?.toLowerCase()??"";
   return expected.some((value)=>contentType.includes(value));
 };
+const normalizeNavigationResponse=async(response)=>{
+  const headers=new Headers();
+  for(const name of ["content-type","content-language"]){
+    const value=response.headers.get(name);
+    if(value!==null)headers.set(name,value);
+  }
+  return new Response(await response.arrayBuffer(),{status:200,statusText:"OK",headers});
+};
 const isExactPrecacheRequest=(request,url)=>url.origin===self.location.origin&&PRECACHE.includes(url.pathname)&&url.search==="";
 const populateCache=async()=>{
   const cache=await caches.open(CACHE_NAME);
@@ -62,7 +69,7 @@ const populateCache=async()=>{
     await Promise.all(PRECACHE.map(async(pathname)=>{
       const response=await fetch(new Request(pathname,{cache:"reload"}));
       if(!response.ok||!hasExpectedContentType(pathname,response))throw new Error("QuickPDF shell asset could not be safely cached");
-      await cache.put(pathname,response);
+      await cache.put(pathname,pathname===APP_SHELL_URL?await normalizeNavigationResponse(response):response);
     }));
   }catch(error){
     await caches.delete(CACHE_NAME);

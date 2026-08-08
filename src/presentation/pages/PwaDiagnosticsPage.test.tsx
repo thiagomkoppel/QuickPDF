@@ -31,6 +31,14 @@ beforeEach(() => {
     shellHasPdfWorker: true,
     shellHasPatrickHand: true,
     shellHasManifest: true,
+    cachedNavigationResponse: {
+      cacheKey: "/",
+      responseUrl: "Synthetic local response",
+      status: 200,
+      type: "default",
+      redirected: false,
+      contentType: "text/html; charset=utf-8",
+    },
     manifest: { id: "/", start_url: "/", scope: "/" },
   });
 });
@@ -45,10 +53,12 @@ describe("PWA diagnostics page", () => {
     expect(screen.getByText("Current shell cache")).toBeInTheDocument();
     expect(screen.getAllByText("quickpdf-shell-1234")).toHaveLength(2);
     expect(screen.getByText("Cached main script")).toBeInTheDocument();
+    expect(screen.getByText("Cached navigation redirected")).toBeInTheDocument();
     expect(screen.queryByText(/contract\.pdf/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show diagnostics text" }));
     expect(screen.getByText(/Navigator standalone: Yes/)).toBeInTheDocument();
     expect(screen.getByText(/Current shell cache: quickpdf-shell-1234/)).toBeInTheDocument();
+    expect(screen.getByText(/Cached navigation redirected: No/)).toBeInTheDocument();
   });
 });

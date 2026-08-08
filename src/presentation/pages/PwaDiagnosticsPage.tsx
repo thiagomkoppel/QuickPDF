@@ -31,6 +31,25 @@ const toRows = (
   ["Installing worker", diagnostics.installingWorkerState ?? unavailable],
   ["Shell caches", diagnostics.cacheNames.join(", ") || unavailable],
   ["Current shell cache", diagnostics.shellCacheName ?? unavailable],
+  ["Cached navigation key", diagnostics.cachedNavigationResponse?.cacheKey ?? unavailable],
+  ["Cached navigation URL", diagnostics.cachedNavigationResponse?.responseUrl ?? unavailable],
+  [
+    "Cached navigation status",
+    diagnostics.cachedNavigationResponse?.status.toString() ?? unavailable,
+  ],
+  ["Cached navigation type", diagnostics.cachedNavigationResponse?.type ?? unavailable],
+  [
+    "Cached navigation redirected",
+    diagnostics.cachedNavigationResponse === undefined
+      ? unavailable
+      : diagnostics.cachedNavigationResponse.redirected
+        ? "Yes"
+        : "No",
+  ],
+  [
+    "Cached navigation content type",
+    diagnostics.cachedNavigationResponse?.contentType ?? unavailable,
+  ],
   ["Cached index", diagnostics.shellHasIndex ? "Yes" : "No"],
   ["Cached main script", diagnostics.shellHasMainScript ? "Yes" : "No"],
   ["Cached stylesheet", diagnostics.shellHasMainStylesheet ? "Yes" : "No"],
