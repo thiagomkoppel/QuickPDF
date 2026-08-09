@@ -231,6 +231,7 @@ describe("QuickPDF application shell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Your files never leave your browser.")).toBeInTheDocument();
     expect(screen.getByText("100% Private")).toBeInTheDocument();
+    expect(screen.getByLabelText("QuickPDF build")).toBeInTheDocument();
     expect(screen.getByText("Fast & Simple")).toBeInTheDocument();
     expect(screen.getByText("Your Control")).toBeInTheDocument();
     expect(screen.getByLabelText("Choose a PDF file")).toHaveAttribute(

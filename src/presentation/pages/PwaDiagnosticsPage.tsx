@@ -4,6 +4,7 @@ import {
   collectQuickPdfPwaDiagnostics,
   type QuickPdfPwaDiagnostics,
 } from "../../infrastructure/pwa/pwa-diagnostics";
+import { QUICKPDF_BUILD } from "../../infrastructure/pwa/build-info";
 
 interface PwaDiagnosticsPageProps {
   readonly bootstrapStatus: "compatible" | "indeterminate";
@@ -11,12 +12,19 @@ interface PwaDiagnosticsPageProps {
 
 const unavailable = "Unavailable";
 
+const describeBuild = (build: typeof QUICKPDF_BUILD | undefined): string =>
+  build === undefined ? unavailable : `${build.version} / ${build.sha}`;
+
 type DiagnosticRow = readonly [label: string, value: string];
 
 const toRows = (
   diagnostics: QuickPdfPwaDiagnostics,
   bootstrapStatus: PwaDiagnosticsPageProps["bootstrapStatus"],
 ): readonly DiagnosticRow[] => [
+  ["App version", QUICKPDF_BUILD.version],
+  ["Build SHA", QUICKPDF_BUILD.sha],
+  ["Build branch", QUICKPDF_BUILD.branch],
+  ["Build mode", QUICKPDF_BUILD.mode],
   ["Location", diagnostics.location],
   ["Bootstrap", bootstrapStatus],
   ["Standalone", diagnostics.standalone ? "Yes" : "No"],
@@ -27,8 +35,11 @@ const toRows = (
   ["Controller", diagnostics.controllerScriptUrl ?? unavailable],
   ["Registration scope", diagnostics.registrationScope ?? unavailable],
   ["Active worker", diagnostics.activeWorkerState ?? unavailable],
+  ["Active worker build", describeBuild(diagnostics.activeWorkerBuild)],
   ["Waiting worker", diagnostics.waitingWorkerState ?? unavailable],
+  ["Waiting worker build", describeBuild(diagnostics.waitingWorkerBuild)],
   ["Installing worker", diagnostics.installingWorkerState ?? unavailable],
+  ["Installing worker build", describeBuild(diagnostics.installingWorkerBuild)],
   ["Shell caches", diagnostics.cacheNames.join(", ") || unavailable],
   ["Current shell cache", diagnostics.shellCacheName ?? unavailable],
   ["Cached navigation key", diagnostics.cachedNavigationResponse?.cacheKey ?? unavailable],

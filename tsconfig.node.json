@@ -27,6 +27,7 @@
     "eslint.config.js",
     "playwright.config.ts",
     "tests",
-    "e2e"
+    "e2e",
+    "scripts/**/*.d.mts"
   ]
 }

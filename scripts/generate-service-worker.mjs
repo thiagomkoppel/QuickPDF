@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { resolveQuickPdfBuildMetadata } from "./build-metadata.mjs";
+
 const root = process.cwd();
+const build = resolveQuickPdfBuildMetadata({
+  mode: process.env.QUICKPDF_BUILD_MODE ?? "production",
+});
 const dist = join(root, "dist");
 const manifest = JSON.parse(await readFile(join(dist, ".vite", "manifest.json"), "utf8"));
 const assets = new Set([
@@ -35,7 +40,8 @@ for (const asset of precache) {
 }
 const cacheName = `quickpdf-shell-${digest.digest("hex").slice(0, 16)}`;
 
-const source = `const CACHE_PREFIX="quickpdf-shell-";
+const source = `const QUICKPDF_BUILD=${JSON.stringify(build)};
+const CACHE_PREFIX="quickpdf-shell-";
 const CACHE_NAME="${cacheName}";
 const APP_SHELL_URL="/";
 const PRECACHE=${JSON.stringify(precache)};
@@ -78,7 +84,10 @@ const populateCache=async()=>{
 };
 self.addEventListener("install",event=>event.waitUntil(populateCache()));
 self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith(CACHE_PREFIX)&&key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
-self.addEventListener("message",event=>{if(event.data?.type==="SKIP_WAITING")self.skipWaiting()});
+self.addEventListener("message",event=>{
+  if(event.data?.type==="SKIP_WAITING")self.skipWaiting();
+  if(event.data?.type==="QUICKPDF_BUILD_METADATA")event.ports[0]?.postMessage(QUICKPDF_BUILD);
+});
 self.addEventListener("fetch",event=>{
   const request=event.request;
   const url=new URL(request.url);

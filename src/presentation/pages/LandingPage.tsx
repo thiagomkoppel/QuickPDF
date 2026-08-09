@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import type { EditorSnapshot, PdfEditorApplication } from "../../application/editor-application";
+import { formatQuickPdfBuildLabel } from "../../infrastructure/pwa/build-info";
 import { usePwaInstall } from "../components/use-pwa-install";
 
 const GITHUB_URL = "https:" + "//github.com/thiagomkoppel/QuickPDF";
@@ -378,6 +379,9 @@ export const LandingPage = ({
         <span>
           <strong className="landing-footer-desktop">QuickPDF - Browser-Based PDF Editor</strong>
           <strong className="landing-footer-mobile">Made with privacy in mind</strong>
+          <small aria-label="QuickPDF build" className="landing-version">
+            {formatQuickPdfBuildLabel()}
+          </small>
         </span>
         <span>
           <a href="/privacy" onClick={navigateToPrivacy}>

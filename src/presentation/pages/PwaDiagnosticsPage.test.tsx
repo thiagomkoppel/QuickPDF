@@ -23,6 +23,7 @@ beforeEach(() => {
     controllerScriptUrl: "https://quickpdf.example/service-worker.js",
     registrationScope: "https://quickpdf.example/",
     activeWorkerState: "activated: https://quickpdf.example/service-worker.js",
+    activeWorkerBuild: { version: "0.0.0", sha: "abc1234", branch: "main", mode: "production" },
     cacheNames: ["quickpdf-shell-1234"],
     shellCacheName: "quickpdf-shell-1234",
     shellHasIndex: true,
@@ -54,6 +55,11 @@ describe("PWA diagnostics page", () => {
     expect(screen.getAllByText("quickpdf-shell-1234")).toHaveLength(2);
     expect(screen.getByText("Cached main script")).toBeInTheDocument();
     expect(screen.getByText("Cached navigation redirected")).toBeInTheDocument();
+    expect(screen.getByText("App version")).toBeInTheDocument();
+    expect(screen.getByText("Build SHA")).toBeInTheDocument();
+    expect(screen.getByText("Build branch")).toBeInTheDocument();
+    expect(screen.getByText("Build mode")).toBeInTheDocument();
+    expect(screen.getByText("0.0.0 / abc1234")).toBeInTheDocument();
     expect(screen.queryByText(/contract\.pdf/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show diagnostics text" }));

@@ -24,6 +24,7 @@ const writeBuild = async (directory: string, html: string): Promise<void> => {
   await mkdir(join(dist, ".vite"), { recursive: true });
   await mkdir(join(dist, "assets"), { recursive: true });
   await writeFile(join(dist, "index.html"), html);
+  await writeFile(join(directory, "package.json"), JSON.stringify({ version: "0.0.0" }));
   await writeFile(join(dist, "manifest.webmanifest"), "{}");
   for (const file of staticFiles) await writeFile(join(dist, file), file);
   await writeFile(join(dist, "assets", "app-123.js"), "export {};");
@@ -72,6 +73,9 @@ describe("service-worker generator", () => {
     expect(firstCacheName).toMatch(/^quickpdf-shell-[a-f0-9]{16}$/);
     expect(secondCacheName).toMatch(/^quickpdf-shell-[a-f0-9]{16}$/);
     expect(secondCacheName).not.toBe(firstCacheName);
+    expect(source).toContain("const QUICKPDF_BUILD=");
+    expect(source).toContain('"version":"0.0.0"');
+    expect(source).toContain("QUICKPDF_BUILD_METADATA");
     expect(source).toContain("await caches.delete(CACHE_NAME)");
     expect(source).toContain("try{return await fetch(request)}catch{");
     expect(source).toContain("cache.match(APP_SHELL_URL)");

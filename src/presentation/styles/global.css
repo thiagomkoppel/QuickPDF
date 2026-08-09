@@ -6579,3 +6579,11 @@ body,
   outline: 3px solid #ff9a00;
   outline-offset: 2px;
 }
+
+.landing-version {
+  display: block;
+  margin-top: 0.25rem;
+  color: #9fb5bb;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
