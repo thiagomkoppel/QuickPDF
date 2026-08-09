@@ -1663,4 +1663,54 @@ describe("PdfEditorApplication signature and initials overlays", () => {
       validateSignatureImageFile({ name: "sig.jpg", size: 3 * 1024 * 1024, type: "image/jpeg" }),
     ).toMatchObject({ code: "SignatureImageTooLarge" });
   });
+  it("applies mixed visibility and lock state as single undoable page-level commands", async () => {
+    const first = app.addText({ x: 10, y: 20 }, "Visible").state.selectedElementId;
+    const second = app.addCheckmark({ x: 70, y: 80 }).state.selectedElementId;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
+
+    app.setElementVisibility(second, false);
+    app.setElementLocked(first, true);
+    await app.exportCurrentPdf();
+    const hidden = app.setAllCurrentPageElementsVisibility(false);
+
+    expect(hidden.state.visibleElements).toEqual([]);
+    expect(hidden.state.selectedElementId).toBeUndefined();
+    expect(hidden.state.isDirty).toBe(true);
+    expect(hidden.canUndo).toBe(true);
+    expect(app.undo().state.elements).toMatchObject([
+      { id: first, visible: true, locked: true },
+      { id: second, visible: false, locked: false },
+    ]);
+    expect(app.redo().state.visibleElements).toEqual([]);
+
+    const locked = app.setAllCurrentPageElementsLocked(true);
+    expect(locked.state.elements).toMatchObject([
+      { id: first, locked: true },
+      { id: second, locked: true },
+    ]);
+    expect(app.previewMoveElement(first, { x: 120, y: 120 }).state.error?.code).toBe(
+      "OperationRejected",
+    );
+    expect(app.undo().state.elements).toMatchObject([
+      { id: first, locked: true },
+      { id: second, locked: false },
+    ]);
+  });
+
+  it("excludes hidden elements from export while locked visible elements export normally", async () => {
+    const visible = app.addText({ x: 10, y: 20 }, "Visible").state.selectedElementId;
+    const hidden = app.addText({ x: 10, y: 60 }, "Hidden").state.selectedElementId;
+    expect(visible).toBeDefined();
+    expect(hidden).toBeDefined();
+    if (visible === undefined || hidden === undefined) return;
+
+    app.setElementLocked(visible, true);
+    app.setElementVisibility(hidden, false);
+    await app.exportCurrentPdf();
+
+    expect(exportRequests.at(-1)?.elements).toMatchObject([{ id: visible, locked: true }]);
+    expect(exportRequests.at(-1)?.elements.map((element) => element.id)).not.toContain(hidden);
+  });
 });

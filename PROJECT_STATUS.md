@@ -26,6 +26,7 @@ Implemented proof-of-concept behavior:
 - add checkmark, cross, and captured-date annotation overlays as one-shot placements;
 - select, move, resize, duplicate, delete, and session-local copy/paste text, whiteout, signature, initials, image, checkmark, cross, and date overlays;
 - reorder current-page overlay layers through the inspector with canvas/export synchronization and Undo/Redo;
+- hide/show and lock/unlock all current-page overlays through Layer Actions; hidden layers remain session-local list entries but do not render or export, while locked layers remain visible/exportable and reject editing commands; bulk changes are individually undoable;
 - undo and redo overlay add, paste, duplicate, delete, move, resize, text/date font-size, text/date resize, and image/annotation lifecycle commands with revision-based dirty state;
 - export the current PDF with text, whiteout, signature, initials, image, checkmark, cross, and date overlays embedded;
 - preserve original page count, page dimensions, page order, and untouched content during export;

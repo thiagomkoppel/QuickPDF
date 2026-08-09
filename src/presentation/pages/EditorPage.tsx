@@ -430,11 +430,22 @@ interface LayersPanelProps {
   readonly selectedElementId?: string | undefined;
   readonly onSelect: (elementId: string) => void;
   readonly onReorder: (elementId: string, targetIndex: number) => void;
+  readonly onSetAllVisible: (visible: boolean) => void;
+  readonly onSetAllLocked: (locked: boolean) => void;
 }
 
-const LayersPanel = ({ layers, selectedElementId, onSelect, onReorder }: LayersPanelProps) => {
+const LayersPanel = ({
+  layers,
+  selectedElementId,
+  onSelect,
+  onReorder,
+  onSetAllVisible,
+  onSetAllLocked,
+}: LayersPanelProps) => {
   const [draggedLayerId, setDraggedLayerId] = useState<string | undefined>();
   const selectedIndex = layers.findIndex((element) => element.id === selectedElementId);
+  const hasVisibleLayer = layers.some((element) => element.visible ?? true);
+  const hasUnlockedLayer = layers.some((element) => !element.locked);
 
   return (
     <div className="element-inspector__layers-region" data-testid="inspector-layers-region">
@@ -533,11 +544,23 @@ const LayersPanel = ({ layers, selectedElementId, onSelect, onReorder }: LayersP
         </ol>
         <h3 className="layers-actions-heading">Layer Actions</h3>
         <div className="layers-bulk-actions">
-          <button type="button" disabled>
-            Hide All
+          <button
+            type="button"
+            disabled={layers.length === 0}
+            onClick={() => {
+              onSetAllVisible(!hasVisibleLayer);
+            }}
+          >
+            {layers.length === 0 || hasVisibleLayer ? "Hide All" : "Show All"}
           </button>
-          <button type="button" disabled>
-            Lock All
+          <button
+            type="button"
+            disabled={layers.length === 0}
+            onClick={() => {
+              onSetAllLocked(hasUnlockedLayer);
+            }}
+          >
+            {layers.length === 0 || hasUnlockedLayer ? "Lock All" : "Unlock All"}
           </button>
         </div>
         <div className="layers-help">
@@ -799,7 +822,9 @@ export const EditorPage = ({
   const currentPageWidth = currentPage?.width;
   const currentPageHeight = currentPage?.height;
   const currentPageRotation = currentPage?.rotation;
-  const currentPageLayers = [...state.visibleElements].reverse();
+  const currentPageLayers = state.elements
+    .filter((element) => element.pageId === currentPage?.id)
+    .reverse();
   const editorViewportRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1344,6 +1369,7 @@ export const EditorPage = ({
         state.selectedElementId !== undefined &&
         event.key === "Enter" &&
         !isEditingKeyboardTarget(event.target) &&
+        state.selectedElement?.locked !== true &&
         (state.selectedElement?.type === "text" || state.selectedElement?.type === "date")
       ) {
         event.preventDefault();
@@ -1949,6 +1975,10 @@ export const EditorPage = ({
     element: ExportElement,
     event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
   ): void => {
+    if (element.locked) {
+      selectElementForInspector(element.id);
+      return;
+    }
     if (
       event.target instanceof HTMLTextAreaElement ||
       (event.target as HTMLElement).dataset.resizeHandle === "true"
@@ -2043,6 +2073,9 @@ export const EditorPage = ({
     element: ExportElement,
     event: PointerEvent<HTMLButtonElement>,
   ): void => {
+    if (element.locked) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     workspaceGestureModeRef.current = "resizing-overlay";
@@ -2931,6 +2964,12 @@ export const EditorPage = ({
           onReorder={(elementId, targetIndex) => {
             applySnapshot(editor.reorderCurrentPageLayers(elementId, targetIndex));
           }}
+          onSetAllVisible={(visible) => {
+            applySnapshot(editor.setAllCurrentPageElementsVisibility(visible));
+          }}
+          onSetAllLocked={(locked) => {
+            applySnapshot(editor.setAllCurrentPageElementsLocked(locked));
+          }}
         />
       </div>
     </aside>
@@ -3538,6 +3577,9 @@ export const EditorPage = ({
                                 : "none",
                             }}
                             onDoubleClick={(event) => {
+                              if (element.locked) {
+                                return;
+                              }
                               event.stopPropagation();
                               setEditingTextElementId(element.id);
                             }}
@@ -3598,7 +3640,7 @@ export const EditorPage = ({
                           <img src={element.image.dataUrl} alt="" draggable={false} />
                         )
                       ) : null}
-                      {state.selectedElementId === element.id ? (
+                      {state.selectedElementId === element.id && !element.locked ? (
                         <button
                           type="button"
                           className="resize-handle"

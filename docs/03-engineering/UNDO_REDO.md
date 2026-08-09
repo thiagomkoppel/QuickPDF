@@ -26,6 +26,8 @@ The initial implementation covers:
 | Move an element       | Yes  | Yes  |
 | Resize an element     | Yes  | Yes  |
 | Reorder page layers   | Yes  | Yes  |
+| Bulk layer visibility | Yes  | Yes  |
+| Bulk layer locking    | Yes  | Yes  |
 | Duplicate an element  | Yes  | Yes  |
 | Delete an element     | Yes  | Yes  |
 

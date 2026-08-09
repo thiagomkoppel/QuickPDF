@@ -737,6 +737,89 @@ test("undoes and redoes overlay add/delete history and exports the final state",
     .poll(() => canvasRegionIsMostlyWhite(page, { x: 40, y: 50, width: 120, height: 48 }))
     .toBe(false);
 });
+test("hides, restores, locks, and unlocks current-page layers through Layer Actions", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("layer-actions-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "layer-actions-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 90, overlayBox.y + 130);
+  await page.getByLabel("Edit text element").fill("Layer text");
+  await page.getByLabel("Edit text element").press("Escape");
+
+  await page.getByRole("button", { name: "Checkmark" }).click();
+  await page.mouse.click(overlayBox.x + 180, overlayBox.y + 200);
+  await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Hide All" }).click();
+  await expect(page.getByRole("button", { name: "Show All" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "checkmark element" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Hide All" }).click();
+  await page.getByRole("button", { name: "Show All" }).click();
+  await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Text layer" }).click();
+  const textElement = page.getByRole("group", { name: "text element" });
+  const startBounds = await textElement.boundingBox();
+  expect(startBounds).not.toBeNull();
+  if (startBounds === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Lock All" }).click();
+  await expect(page.getByRole("button", { name: "Unlock All" })).toBeVisible();
+  await page.mouse.move(
+    startBounds.x + startBounds.width / 2,
+    startBounds.y + startBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    startBounds.x + startBounds.width / 2 + 48,
+    startBounds.y + startBounds.height / 2 + 24,
+  );
+  await page.mouse.up();
+  expectBoxNear(await textElement.boundingBox(), startBounds);
+
+  await page.getByRole("button", { name: "Unlock All" }).click();
+  await page.mouse.move(
+    startBounds.x + startBounds.width / 2,
+    startBounds.y + startBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    startBounds.x + startBounds.width / 2 + 48,
+    startBounds.y + startBounds.height / 2 + 24,
+  );
+  await page.mouse.up();
+  const movedBounds = await textElement.boundingBox();
+  expect(movedBounds).not.toBeNull();
+  if (movedBounds === null) {
+    return;
+  }
+  expect(movedBounds.x).toBeGreaterThan(startBounds.x + 30);
+  expect(movedBounds.y).toBeGreaterThan(startBounds.y + 10);
+});
 test("deletes every selected overlay type and excludes deleted overlays from export", async ({
   page,
 }, testInfo) => {

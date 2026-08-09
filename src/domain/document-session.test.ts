@@ -20,6 +20,8 @@ const element = (id: string, pageId: string, x = 12): EditorElement => ({
   type: "text",
   bounds: { x, y: 24, width: 120, height: 32 },
   content: { text: "Example" },
+  visible: true,
+  locked: false,
 });
 
 const expectDomainError = (result: DomainResult, code: string): void => {
@@ -290,5 +292,36 @@ describe("DocumentSession", () => {
     expect(session.pages()).toEqual([]);
     expect(session.elements()).toEqual([]);
     expect(session.currentPageId).toBeUndefined();
+  });
+  it("materializes visible and unlocked defaults for legacy element input", () => {
+    const session = DocumentSession.create({ id: "session-1", pages: [page("page-1")] });
+
+    const legacyElement: EditorElement = {
+      id: "element-1",
+      pageId: "page-1",
+      type: "text",
+      bounds: { x: 12, y: 24, width: 120, height: 32 },
+      content: { text: "Example" },
+    };
+
+    expect(session.addElement(legacyElement)).toEqual({ ok: true });
+    expect(session.element("element-1")).toMatchObject({ visible: true, locked: false });
+  });
+
+  it("updates a batch of elements atomically", () => {
+    const session = DocumentSession.create({ id: "session-1", pages: [page("page-1")] });
+    session.addElement(element("element-1", "page-1"));
+    session.addElement(element("element-2", "page-1", 24));
+
+    expect(
+      session.updateElements([
+        { ...element("element-1", "page-1"), visible: false, locked: true },
+        { ...element("element-2", "page-1", 24), visible: true, locked: true },
+      ]),
+    ).toEqual({ ok: true });
+    expect(session.elements()).toMatchObject([
+      { id: "element-1", visible: false, locked: true },
+      { id: "element-2", visible: true, locked: true },
+    ]);
   });
 });

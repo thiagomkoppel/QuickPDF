@@ -132,6 +132,8 @@ export interface ExportElement {
   readonly image?: ImageAppearance;
   readonly source?: SignatureSource;
   readonly color?: string;
+  readonly visible?: boolean;
+  readonly locked?: boolean;
 }
 
 export interface PdfExportRequest {
@@ -327,12 +329,14 @@ const formatLocalDate = (date: Date): string => {
   return `${month}/${day}/${year}`;
 };
 const toExportElement = (element: EditorElement): ExportElement => {
+  const layerState = { visible: element.visible ?? true, locked: element.locked ?? false };
   if (element.type === "whiteout") {
     return {
       id: element.id,
       pageId: element.pageId,
       type: "whiteout",
       bounds: cloneBounds(element.bounds),
+      ...layerState,
     };
   }
   if (element.type === "checkmark" || element.type === "cross") {
@@ -342,6 +346,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
       type: element.type,
       bounds: cloneBounds(element.bounds),
       color: elementColor(element),
+      ...layerState,
     };
   }
   if (element.type === "image") {
@@ -351,6 +356,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
       pageId: element.pageId,
       type: "image",
       bounds: cloneBounds(element.bounds),
+      ...layerState,
       ...(content === undefined
         ? {}
         : {
@@ -378,6 +384,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
           fontFamily: content.fontFamily,
         },
         source: "type",
+        ...layerState,
       };
     }
     if (content?.kind === "image") {
@@ -391,6 +398,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
           mimeType: content.mimeType,
         },
         source: content.source,
+        ...layerState,
       };
     }
   }
@@ -418,6 +426,7 @@ const toExportElement = (element: EditorElement): ExportElement => {
           }
         : {}),
     },
+    ...layerState,
   };
 };
 export const exportFilenameFromInput = (fileName: string): string => {
@@ -526,6 +535,8 @@ const elementsMatch = (left: EditorElement, right: EditorElement): boolean =>
   left.id === right.id &&
   left.pageId === right.pageId &&
   left.type === right.type &&
+  (left.visible ?? true) === (right.visible ?? true) &&
+  (left.locked ?? false) === (right.locked ?? false) &&
   left.color === right.color &&
   left.bounds.x === right.bounds.x &&
   left.bounds.y === right.bounds.y &&
@@ -1146,10 +1157,28 @@ export class PdfEditorApplication {
     this.#syncState();
     return this.snapshot();
   }
+  public setElementVisibility(elementId: string, visible: boolean): EditorSnapshot {
+    return this.#setElementState(elementId, { visible });
+  }
+
+  public setElementLocked(elementId: string, locked: boolean): EditorSnapshot {
+    return this.#setElementState(elementId, { locked });
+  }
+
+  public setAllCurrentPageElementsVisibility(visible: boolean): EditorSnapshot {
+    return this.#setCurrentPageElementState({ visible });
+  }
+
+  public setAllCurrentPageElementsLocked(locked: boolean): EditorSnapshot {
+    return this.#setCurrentPageElementState({ locked });
+  }
   public deleteElement(elementId: string): EditorSnapshot {
     const element = this.#session?.element(elementId);
     if (element === undefined) {
       return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    if (element.locked === true) {
+      return this.#operationError("OperationRejected", "Unlock this element before deleting it.");
     }
     const before = this.#currentHistoryState(elementId);
     const result = this.#session?.deleteElement(elementId);
@@ -1532,11 +1561,69 @@ export class PdfEditorApplication {
     this.#syncState();
     return this.snapshot();
   }
+  #setElementState(
+    elementId: string,
+    state: Pick<EditorElement, "visible" | "locked">,
+  ): EditorSnapshot {
+    const element = this.#session?.element(elementId);
+    if (element === undefined) {
+      return this.#operationError("MissingElement", "The element no longer exists.");
+    }
+    return this.#setCurrentPageElementState(state, [element]);
+  }
+
+  #setCurrentPageElementState(
+    state: Pick<EditorElement, "visible" | "locked">,
+    targets?: readonly EditorElement[],
+  ): EditorSnapshot {
+    const session = this.#session;
+    const pageId = session?.currentPageId;
+    if (session === undefined || pageId === undefined) {
+      return this.#operationError("NoActiveDocument", "Open a PDF before editing layers.");
+    }
+    const pageElements =
+      targets ?? session.elements().filter((element) => element.pageId === pageId);
+    if (pageElements.length === 0) {
+      return this.snapshot();
+    }
+    const nextElements = pageElements.map((element) => ({ ...element, ...state }));
+    if (
+      nextElements.every((element, index) => {
+        const previousElement = pageElements[index];
+        return previousElement !== undefined && elementsMatch(element, previousElement);
+      })
+    ) {
+      return this.snapshot();
+    }
+    const before = this.#currentHistoryState(session.selectedElementId);
+    const result = session.updateElements(nextElements);
+    if (!result.ok) {
+      return this.#operationError("OperationRejected", "The layer state could not be updated.");
+    }
+    const selected = session.selectedElementId;
+    if (
+      state.visible === false &&
+      selected !== undefined &&
+      nextElements.some((element) => element.id === selected)
+    ) {
+      session.clearSelection();
+    }
+    this.#recordHistory(
+      "update-element",
+      before,
+      this.#currentHistoryState(session.selectedElementId),
+    );
+    this.#syncState();
+    return this.snapshot();
+  }
   #replaceElement(element: EditorElement): EditorSnapshot {
     return this.#commitElementUpdate(element);
   }
 
   #previewElementUpdate(element: EditorElement): EditorSnapshot {
+    if (this.#session?.element(element.id)?.locked === true) {
+      return this.#operationError("OperationRejected", "Unlock this element before editing it.");
+    }
     const result = this.#session?.updateElement(element);
     if (result?.ok !== true) {
       return this.#operationError("OperationRejected", "The element could not be updated.");
@@ -1550,6 +1637,9 @@ export class PdfEditorApplication {
     const session = this.#session;
     if (session === undefined) {
       return this.#operationError("NoActiveDocument", "Open a PDF before editing.");
+    }
+    if (session.element(element.id)?.locked === true) {
+      return this.#operationError("OperationRejected", "Unlock this element before editing it.");
     }
     const before = this.#currentHistoryState(element.id);
     const result = session.updateElement(element);
@@ -1584,6 +1674,9 @@ export class PdfEditorApplication {
     element: EditorElement,
     before = this.#currentHistoryState(element.id),
   ): EditorSnapshot {
+    if (this.#session?.element(element.id)?.locked === true) {
+      return this.#operationError("OperationRejected", "Unlock this element before editing it.");
+    }
     const result = this.#session?.updateElement(element);
     if (result?.ok !== true) {
       return this.#operationError("OperationRejected", "The element could not be updated.");
@@ -1600,8 +1693,9 @@ export class PdfEditorApplication {
   #orderedExportElements(): readonly ExportElement[] {
     return (this.#session?.elements().map(toExportElement) ?? []).filter(
       (element) =>
-        (element.type !== "text" && element.type !== "date") ||
-        (element.text ?? "").trim().length > 0,
+        (element.visible ?? true) &&
+        ((element.type !== "text" && element.type !== "date") ||
+          (element.text ?? "").trim().length > 0),
     );
   }
 
@@ -1656,7 +1750,9 @@ export class PdfEditorApplication {
       tool: this.#state.tool,
       isDirty: this.#currentRevision !== this.#cleanRevision,
       elements,
-      visibleElements: elements.filter((element) => element.pageId === session.currentPageId),
+      visibleElements: elements.filter(
+        (element) => element.pageId === session.currentPageId && (element.visible ?? true),
+      ),
       ...(originalFileName === undefined ? {} : { fileName: originalFileName }),
       ...(currentPage === undefined ? {} : { currentPage }),
       ...(this.#renderDocumentId === undefined ? {} : { renderDocumentId: this.#renderDocumentId }),

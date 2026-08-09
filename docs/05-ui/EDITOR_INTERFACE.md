@@ -236,6 +236,9 @@ For selected overlays, the inspector keeps tabs, element properties, and layers 
 - Reordering updates the canvas immediately, is undoable and redoable, and exports in the identical back-to-front drawing order.
 - New, duplicated, and pasted overlays are inserted at the front of the current page stack.
 - Layer order is session-only and never persists outside the active browser session.
+- Layer Actions apply only to the current page. `Hide All` hides every current-page overlay in one undoable command; `Show All` restores them. Hidden overlays remain listed but are neither rendered nor exported.
+- `Lock All` locks every current-page overlay in one undoable command; `Unlock All` restores editing. Locked overlays remain visible and export normally, may remain selected, but cannot be moved, resized, edited, or deleted.
+- Mixed visibility and lock states are restored exactly by Undo and Redo. Hiding the selected overlay clears selection safely.
 
 ## Move and resize
 

@@ -68,6 +68,8 @@ export interface EditorElement {
   readonly bounds: Bounds;
   readonly color?: string;
   readonly content?: EditorElementContent;
+  readonly visible?: boolean;
+  readonly locked?: boolean;
 }
 
 export interface TemporaryPersonalInfo {
@@ -159,6 +161,8 @@ const cloneElement = (element: EditorElement): EditorElement => ({
   bounds: { ...element.bounds },
   ...(element.color === undefined ? {} : { color: element.color }),
   ...(element.content === undefined ? {} : { content: { ...element.content } }),
+  visible: element.visible ?? true,
+  locked: element.locked ?? false,
 });
 
 const validRotations: ReadonlySet<number> = new Set([0, 90, 180, 270]);
@@ -428,6 +432,38 @@ export class DocumentSession {
     }
   }
 
+  public updateElements(elements: readonly EditorElement[]): DomainResult {
+    const disposed = this.#rejectDisposed();
+    if (disposed !== undefined) {
+      return disposed;
+    }
+
+    try {
+      const validatedElements = elements.map(validateElement);
+      const updates = new Map(validatedElements.map((element) => [element.id, element]));
+      for (const element of validatedElements) {
+        if (!this.#elementsById.has(element.id)) {
+          return fail("ElementNotFound", "Cannot update a missing element.");
+        }
+        if (!this.#pagesById.has(element.pageId)) {
+          return fail("PageNotFound", "Element page must exist in the session.");
+        }
+      }
+      this.#elementsById = new Map(
+        Array.from(this.#elementsById.values(), (element) => [
+          element.id,
+          updates.get(element.id) ?? element,
+        ]),
+      );
+      this.#isDirty = true;
+      return success;
+    } catch (error) {
+      if (isDomainError(error)) {
+        return fail(error.code, error.message);
+      }
+      throw error;
+    }
+  }
   public reorderPageElements(pageId: string, nextElementOrder: readonly string[]): DomainResult {
     const disposed = this.#rejectDisposed();
     if (disposed !== undefined) {

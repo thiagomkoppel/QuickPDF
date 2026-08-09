@@ -59,6 +59,8 @@ interface TestEditor extends PdfEditorApplication {
   readonly previousPage: Mock;
   readonly nextPage: Mock;
   readonly reorderCurrentPageLayers: Mock;
+  readonly setAllCurrentPageElementsVisibility: Mock;
+  readonly setAllCurrentPageElementsLocked: Mock;
 }
 
 const documentPages = [
@@ -199,6 +201,8 @@ const createEditor = (): TestEditor =>
     previousPage: vi.fn(() => baseSnapshot()),
     nextPage: vi.fn(() => baseSnapshot()),
     reorderCurrentPageLayers: vi.fn(() => baseSnapshot()),
+    setAllCurrentPageElementsVisibility: vi.fn(() => baseSnapshot()),
+    setAllCurrentPageElementsLocked: vi.fn(() => baseSnapshot()),
     addUploadedSignature: vi.fn(() => baseSnapshot()),
     addTypedInitials: vi.fn(() => baseSnapshot()),
     addDrawnInitials: vi.fn(() => baseSnapshot()),
@@ -1698,6 +1702,51 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.getByLabelText("Layers")).toHaveTextContent("Checkmark");
     await user.click(screen.getByRole("button", { name: "Move up" }));
     expect(editor.reorderCurrentPageLayers).toHaveBeenCalledWith("text-1", 0);
+  });
+  it("enables bulk layer actions for real layers and derives mixed-state labels", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const visibleText = selectedElementForType("text");
+    const hiddenCheckmark = {
+      ...selectedElementForType("checkmark"),
+      visible: false,
+      locked: true,
+    };
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          elements: [visibleText, hiddenCheckmark],
+          visibleElements: [visibleText],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const hideAll = screen.getByRole("button", { name: "Hide All" });
+    const lockAll = screen.getByRole("button", { name: "Lock All" });
+    expect(hideAll).toBeEnabled();
+    expect(lockAll).toBeEnabled();
+    await user.click(hideAll);
+    await user.click(lockAll);
+    expect(editor.setAllCurrentPageElementsVisibility).toHaveBeenCalledWith(false);
+    expect(editor.setAllCurrentPageElementsLocked).toHaveBeenCalledWith(true);
+    expect(screen.queryByLabelText("checkmark element")).toBeNull();
+  });
+
+  it("disables bulk layer actions when the current page has no overlays", () => {
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Hide All" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock All" })).toBeDisabled();
   });
   it("keeps inspector tabs, properties, and layers in stable sibling regions", async () => {
     const user = userEvent.setup();
