@@ -47,6 +47,7 @@ interface EditorPageProps {
   readonly pdfRenderer: Pick<PdfJsPageRenderer, "startRenderPage" | "clearCanvas"> &
     Partial<Pick<PdfJsPageRenderer, "startRenderThumbnail">>;
   readonly onOpenRequest?: () => void;
+  readonly onHomeRequest?: () => void;
 }
 
 type RenderStatus = "idle" | "loading" | "ready" | "error";
@@ -774,6 +775,7 @@ export const EditorPage = ({
   onSnapshotChange,
   pdfRenderer,
   onOpenRequest,
+  onHomeRequest,
 }: EditorPageProps): React.ReactElement => {
   const editorFormFactor = useEditorFormFactor();
   const isPhoneQuickEditViewport = editorFormFactor === "phone";
@@ -2343,6 +2345,16 @@ export const EditorPage = ({
               <div className="mobile-more-sheet__tools">
                 <button
                   type="button"
+                  disabled={onOpenRequest === undefined}
+                  onClick={() => {
+                    setIsMobileMoreOpen(false);
+                    onOpenRequest?.();
+                  }}
+                >
+                  <ToolbarIcon name="open" /> Open PDF
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     applySnapshot(editor.setTool("whiteout"));
                     setIsMobileMoreOpen(false);
@@ -2938,10 +2950,17 @@ export const EditorPage = ({
       }}
     >
       <header className="editor-header">
-        <div className="editor-header-identity">
+        <button
+          type="button"
+          className="editor-header-identity editor-home-link"
+          aria-label="Go to QuickPDF home"
+          onClick={() => {
+            onHomeRequest?.();
+          }}
+        >
           <img src={quickPdfMark} alt="" aria-hidden="true" />
-          <span>QuickPDF</span>
-        </div>
+          <span aria-hidden="true">QuickPDF</span>
+        </button>
         <div className="editor-document-meta">
           <h1 id="editor-title">{state.fileName ?? "Open PDF"}</h1>
           <p className="editor-subtitle" role="status">

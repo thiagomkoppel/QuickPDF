@@ -46,7 +46,7 @@ Prove that the application can safely and reliably:
 1. open a local PDF without uploading it; Done for proof of concept.
 2. add text, visual whiteout, signatures, initials, images, checkmarks, crosses, and dates as overlay elements; Done for current page.
 3. export a valid PDF containing those additions; Done for text, whiteout, signature, initials, image, checkmark, cross, and date overlays.
-4. discard the document and editing state when the session ends; Started; full warning lifecycle remains future work.
+4. discard the document and editing state when the session ends; Done for intentional navigation, replacement, browser history, and browser-native unload protection.
 
 ## Blocking decisions
 

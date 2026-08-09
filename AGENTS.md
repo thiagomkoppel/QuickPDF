@@ -27,6 +27,7 @@ Do not turn the product into a cloud document platform, account system, collabor
 6. Closing or refreshing the page may discard the document. The application must clearly warn about unsaved work.
 7. Visual whiteout is not secure redaction and must never be described as such.
 8. Existing arbitrary PDF text editing is outside the initial scope unless explicitly approved in a later architectural decision.
+9. The approved QuickPDF logo is immutable: every product route, viewport, and state uses the repository mark with the white QuickPDF wordmark. Do not recolor, resize, restyle, or replace it as part of unrelated UI work.
 
 ## 3. Development method
 

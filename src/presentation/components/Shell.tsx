@@ -119,7 +119,7 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
           <a
             className="brand-link"
             href="/"
-            aria-label="QuickPDF"
+            aria-label="Go to QuickPDF home"
             onClick={handleInternalNavigation("/")}
           >
             <img src={quickPdfMark} alt="QuickPDF" />

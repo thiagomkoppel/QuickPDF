@@ -643,6 +643,8 @@ p {
   --qp-shadow-subtle: 0 1px 2px rgb(16 42 48 / 8%);
   --qp-shadow-panel: 0 14px 34px rgb(16 42 48 / 13%);
   --qp-focus: 0 0 0 3px rgb(68 161 164 / 38%);
+  /* Immutable product identity: the QuickPDF wordmark is always white. */
+  --qp-brand-wordmark: #f4fbfc;
   --qp-duration: 180ms;
   --qp-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -4543,7 +4545,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  color: #f4fbfc;
+  color: var(--qp-brand-wordmark);
   font: 800 clamp(1.35rem, 2vw, 1.7rem) / 1 var(--qp-font-display);
   letter-spacing: 0;
   text-decoration: none;
@@ -4756,7 +4758,7 @@ body {
 }
 
 .app-shell:has(.landing-page) .brand-link span {
-  color: #f4fbfc;
+  color: var(--qp-brand-wordmark);
   font: 800 1.45rem / 1 var(--qp-font-display);
   letter-spacing: 0;
 }
@@ -5017,7 +5019,7 @@ body,
 }
 
 .startup-screen__brand > span > span {
-  color: #44dce0;
+  color: var(--qp-brand-wordmark);
 }
 
 .startup-screen h1 {
@@ -6517,4 +6519,63 @@ body,
     SFMono-Regular,
     Consolas,
     monospace;
+}
+
+.editor-home-link {
+  color: var(--qp-brand-wordmark);
+  text-decoration: none;
+}
+
+/* The editor brand is a guarded home action, not a raw browser navigation link. */
+.editor-header > .editor-home-link {
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--qp-brand-wordmark);
+  padding-block: 0;
+  padding-left: 0;
+  cursor: pointer;
+  text-align: left;
+  /* Match the approved landing-page logo exactly; interaction adds no visual chrome. */
+  gap: 0.65rem !important;
+  padding: 0 !important;
+  border-right: 0;
+  font: 800 1.45rem / 1 var(--qp-font-display) !important;
+}
+
+.editor-header > .editor-home-link img {
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+}
+
+.editor-home-link:focus-visible {
+  outline: 2px solid #44a1a4;
+  outline-offset: 4px;
+}
+
+.leave-without-saving-dialog {
+  width: min(100%, 38rem);
+}
+
+.leave-without-saving-dialog header {
+  grid-template-columns: auto 1fr;
+}
+
+.leave-without-saving-dialog__icon {
+  color: #ffbf52;
+  background: #3a2d16;
+  font: 800 2rem/1 var(--qp-font-display);
+}
+
+.leave-without-saving-dialog__leave {
+  color: #fff7e9 !important;
+  border-color: #e78b25 !important;
+  background: #8c4c12 !important;
+}
+
+.leave-without-saving-dialog button:focus-visible {
+  outline: 3px solid #ff9a00;
+  outline-offset: 2px;
 }

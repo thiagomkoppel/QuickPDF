@@ -24,6 +24,10 @@ QuickPDF combines:
 - Apple-like restraint, spacing, clarity, and softness;
 - Linear-like precision, compact controls, and crisp interaction states.
 
+## Brand Identity Invariant
+
+The approved QuickPDF mark and wordmark are immutable across all routes, form factors, and states. Use the repository `quickpdf-mark.svg` with the `QuickPDF` wordmark rendered in the shared white brand token. Do not recolor the wordmark per page, theme, dialog, header, or interaction state. Navigation semantics may change, but the logo visual treatment must not.
+
 Avoid:
 
 - dashboard-heavy layouts;

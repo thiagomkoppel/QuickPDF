@@ -118,7 +118,7 @@ describe("Shell PWA presentation", () => {
       </Shell>,
     );
 
-    expect(screen.getByRole("link", { name: "QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to QuickPDF home" })).toBeInTheDocument();
     expect(document.querySelector(".app-shell")).toHaveAttribute("data-standalone", "true");
     expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
   });

@@ -225,7 +225,7 @@ describe("QuickPDF application shell", () => {
   it("renders the landing page with the product name, product statement, and accurate privacy promise", () => {
     renderAt("/");
 
-    expect(screen.getByRole("link", { name: "QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to QuickPDF home" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
     ).toBeInTheDocument();
@@ -249,7 +249,7 @@ describe("QuickPDF application shell", () => {
       screen.getByText("QuickPDF does not upload or store your document on its own servers."),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to QuickPDF" })).toHaveAttribute("href", "/");
-    const privacyBrand = screen.getByRole("link", { name: "QuickPDF" });
+    const privacyBrand = screen.getByRole("link", { name: "Go to QuickPDF home" });
     expect(privacyBrand.querySelector("img")).toHaveAttribute(
       "src",
       expect.stringContaining("quickpdf-mark"),
@@ -431,6 +431,176 @@ describe("QuickPDF application shell", () => {
     });
     Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
   });
+  it("navigates home immediately from a clean editor through the QuickPDF logo", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByLabelText("Choose a PDF file")).toBeInTheDocument();
+  });
+
+  it("guards dirty editor logo navigation and disposes through the standard close path only after confirmation", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
+    await screen.findByLabelText("Edit text element");
+    expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+    expect(window.location.pathname).toBe("/editor");
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+    expect(screen.getByText(/You have unsaved changes in this PDF\./)).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Leave without saving?" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "contract.pdf" })).toBeInTheDocument();
+    expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
+    expect(disposeRenderDocument).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+    await user.click(screen.getByRole("button", { name: "Leave without saving" }));
+
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByLabelText("Choose a PDF file")).toBeInTheDocument();
+    expect(disposeRenderDocument).toHaveBeenCalledWith("render-1");
+  });
+  it("guards every same-tab link and the Open action while a session is dirty", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
+    await screen.findByLabelText("Edit text element");
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    expect(window.location.pathname).toBe("/editor");
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
+
+    const navigationLink = document.createElement("a");
+    navigationLink.href = "/privacy";
+    navigationLink.textContent = "Open privacy";
+    document.body.append(navigationLink);
+    await user.click(navigationLink);
+
+    expect(window.location.pathname).toBe("/editor");
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Leave without saving" }));
+    expect(window.location.pathname).toBe("/privacy");
+    expect(disposeRenderDocument).toHaveBeenCalledWith("render-1");
+    navigationLink.remove();
+  }, 10_000);
+  it("guards dirty browser history and unload attempts without disposing the session", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
+    await screen.findByLabelText("Edit text element");
+
+    act(() => {
+      window.history.pushState({}, "", "/privacy");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(window.location.pathname).toBe("/editor");
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+    expect(disposeRenderDocument).not.toHaveBeenCalled();
+  }, 10_000);
+  it("opens the replacement picker immediately for a clean document", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    const replacementPicker = screen.getByLabelText("Choose a replacement PDF file");
+    const openPicker = vi.fn();
+    Object.defineProperty(replacementPicker, "click", {
+      configurable: true,
+      value: openPicker,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.queryByRole("dialog", { name: "Leave without saving?" })).toBeNull();
+    expect(openPicker).toHaveBeenCalledTimes(1);
+    expect(disposeRenderDocument).toHaveBeenCalledWith("render-1");
+  }, 10_000);
+
+  it("keeps a dirty document when replacement is cancelled and opens the picker only after discard confirmation", async () => {
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    const replacementPicker = screen.getByLabelText("Choose a replacement PDF file");
+    const openPicker = vi.fn();
+    Object.defineProperty(replacementPicker, "click", {
+      configurable: true,
+      value: openPicker,
+    });
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
+    await screen.findByLabelText("Edit text element");
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+    expect(openPicker).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
+    expect(openPicker).not.toHaveBeenCalled();
+    expect(disposeRenderDocument).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Leave without saving" }));
+    expect(openPicker).toHaveBeenCalledTimes(1);
+    expect(disposeRenderDocument).toHaveBeenCalledWith("render-1");
+  }, 10_000);
+
+  it("guards external new-tab links before disposing a dirty editor session", async () => {
+    const user = userEvent.setup();
+    const openExternal = vi.spyOn(window, "open").mockReturnValue(null);
+    renderAt("/");
+
+    await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
+    await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    clickOverlay(screen.getByLabelText("PDF overlay"), 45, 55);
+    await screen.findByLabelText("Edit text element");
+
+    const externalLink = document.createElement("a");
+    externalLink.href = GITHUB_URL;
+    externalLink.target = "_blank";
+    externalLink.textContent = "Open GitHub";
+    document.body.append(externalLink);
+    await user.click(externalLink);
+
+    expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
+    expect(openExternal).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Leave without saving" }));
+    expect(openExternal).toHaveBeenCalledWith(GITHUB_URL, "_blank", "noopener");
+    externalLink.remove();
+  }, 10_000);
   it("opens a local PDF, renders the current page, adds overlays, downloads, and keeps the editor open", async () => {
     const user = userEvent.setup();
     renderAt("/");

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -25,6 +26,8 @@ interface LandingPageProps {
   readonly snapshot: EditorSnapshot;
   readonly onSnapshotChange: (snapshot: EditorSnapshot) => void;
   readonly onDocumentOpened: () => void;
+  readonly replacementFile?: File;
+  readonly onReplacementFileConsumed?: () => void;
 }
 
 const sleep = (duration: number): Promise<void> =>
@@ -35,12 +38,15 @@ export const LandingPage = ({
   snapshot,
   onSnapshotChange,
   onDocumentOpened,
+  replacementFile,
+  onReplacementFileConsumed,
 }: LandingPageProps): React.ReactElement => {
   const install = usePwaInstall();
   const showInstallCard = install.availability !== "installed";
   const canInstall =
     install.availability === "chromium-prompt" || install.availability === "ios-instructions";
   const inputRef = useRef<HTMLInputElement>(null);
+  const consumedReplacementFileRef = useRef<File | undefined>(undefined);
   const dragDepthRef = useRef(0);
   const [isDragActive, setIsDragActive] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
@@ -87,26 +93,43 @@ export const LandingPage = ({
     };
   }, [isOpening, prefersReducedMotion]);
 
-  const openFile = async (file: File | undefined): Promise<void> => {
-    if (file === undefined || isOpening) return;
-    dragDepthRef.current = 0;
-    setIsDragActive(false);
-    setOpeningFileName(file.name);
-    setOpeningStage(0);
-    setIsOpening(true);
-    const startedAt = performance.now();
-    try {
-      const nextSnapshot = await editor.openFile(file);
-      onSnapshotChange(nextSnapshot);
-      if (nextSnapshot.state.status !== "ready") return;
-      const remaining = Math.max(0, MINIMUM_OPENING_DURATION_MS - (performance.now() - startedAt));
-      if (remaining > 0) await sleep(remaining);
-      setOpeningStage(3);
-      onDocumentOpened();
-    } finally {
-      setIsOpening(false);
+  const openFile = useCallback(
+    async (file: File | undefined): Promise<void> => {
+      if (file === undefined || isOpening) return;
+      dragDepthRef.current = 0;
+      setIsDragActive(false);
+      setOpeningFileName(file.name);
+      setOpeningStage(0);
+      setIsOpening(true);
+      const startedAt = performance.now();
+      try {
+        const nextSnapshot = await editor.openFile(file);
+        onSnapshotChange(nextSnapshot);
+        if (nextSnapshot.state.status !== "ready") return;
+        const remaining = Math.max(
+          0,
+          MINIMUM_OPENING_DURATION_MS - (performance.now() - startedAt),
+        );
+        if (remaining > 0) await sleep(remaining);
+        setOpeningStage(3);
+        onDocumentOpened();
+      } finally {
+        setIsOpening(false);
+      }
+    },
+    [editor, isOpening, onDocumentOpened, onSnapshotChange],
+  );
+  useEffect(() => {
+    if (replacementFile === undefined) {
+      consumedReplacementFileRef.current = undefined;
+      return;
     }
-  };
+    if (consumedReplacementFileRef.current === replacementFile) return;
+
+    consumedReplacementFileRef.current = replacementFile;
+    onReplacementFileConsumed?.();
+    void openFile(replacementFile);
+  }, [onReplacementFileConsumed, openFile, replacementFile]);
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     void openFile(event.currentTarget.files?.[0]);
     event.currentTarget.value = "";

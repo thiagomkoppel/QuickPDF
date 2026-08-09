@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  type ChangeEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import {
   PdfEditorApplication,
@@ -14,8 +23,10 @@ import {
 import { PdfJsPageRenderer } from "../infrastructure/pdf/pdfjs-page-renderer";
 import { PdfLibExportGateway } from "../infrastructure/pdf/pdf-lib-export-gateway";
 import { PdfRasterCompressionGateway } from "../infrastructure/pdf/pdf-raster-compression-gateway";
+import { LeaveWithoutSavingDialog } from "../presentation/components/LeaveWithoutSavingDialog";
 import { Shell } from "../presentation/components/Shell";
 import { PwaInstallProvider } from "../presentation/components/use-pwa-install";
+import { useUnsavedChangesBeforeUnload } from "../presentation/navigation/use-unsaved-changes-before-unload";
 import { EditorPage } from "../presentation/pages/EditorPage";
 import { LandingPage } from "../presentation/pages/LandingPage";
 import { NotFoundPage } from "../presentation/pages/NotFoundPage";
@@ -87,6 +98,17 @@ interface AppProps {
   /** Explicit test seam; production uses the required five-second minimum. */
   readonly startupMinimumDurationMs?: number;
 }
+
+interface NavigationDestination {
+  readonly href: string;
+  readonly isExternal: boolean;
+  readonly openInNewWindow: boolean;
+}
+
+type PendingExitAction =
+  | { readonly type: "home" }
+  | { readonly type: "open" }
+  | { readonly type: "navigate"; readonly destination: NavigationDestination };
 
 interface EditorServices {
   readonly editor: PdfEditorApplication;
@@ -171,6 +193,9 @@ const AppContent = ({
   const pathname = useSyncExternalStore(subscribeToNavigation, getPathname, getServerPathname);
   const { editor, pdfRenderer } = useMemo(() => createEditorServices(), []);
   const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => editor.snapshot());
+  const [pendingExitAction, setPendingExitAction] = useState<PendingExitAction>();
+  const [replacementFile, setReplacementFile] = useState<File>();
+  const replacementPickerRef = useRef<HTMLInputElement>(null);
   const resolvedInitialCompatibilityResult =
     initialCompatibilityResult ?? window.__quickpdfCompatibilityResult__;
   const compatibilityProbeRef = useRef(compatibilityProbe);
@@ -184,6 +209,9 @@ const AppContent = ({
   useEffect(() => {
     document.getElementById("quickpdf-boot-fallback")?.remove();
   }, []);
+  const hasUnsavedEditorSession =
+    pathname === "/editor" && snapshot.state.status !== "empty" && snapshot.state.isDirty;
+  useUnsavedChangesBeforeUnload(hasUnsavedEditorSession);
 
   useEffect(
     () => () => {
@@ -236,69 +264,230 @@ const AppContent = ({
     navigate("/editor");
   };
 
+  const handleReplacementFileChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file === undefined) return;
+    setReplacementFile(file);
+    navigate("/");
+  }, []);
+
+  const performNavigation = useCallback((destination: NavigationDestination): void => {
+    if (!destination.isExternal) {
+      navigate(destination.href);
+      return;
+    }
+    if (destination.openInNewWindow) {
+      window.open(destination.href, "_blank", "noopener");
+      return;
+    }
+    window.location.assign(destination.href);
+  }, []);
+
+  const executeExitAction = useCallback(
+    (action: PendingExitAction): void => {
+      switch (action.type) {
+        case "home":
+          navigate("/");
+          return;
+        case "open":
+          replacementPickerRef.current?.click();
+          return;
+        case "navigate":
+          performNavigation(action.destination);
+          return;
+      }
+    },
+    [performNavigation],
+  );
+
+  const discardAndExecuteExitAction = useCallback(
+    (action: PendingExitAction): void => {
+      if (editor.snapshot().state.status !== "empty") {
+        setSnapshot(editor.closeDocument());
+      }
+      executeExitAction(action);
+    },
+    [editor, executeExitAction],
+  );
+
+  const requestExit = useCallback(
+    (action: PendingExitAction): void => {
+      const currentState = editor.snapshot().state;
+      if (currentState.status !== "empty" && currentState.isDirty) {
+        setPendingExitAction(action);
+        return;
+      }
+      discardAndExecuteExitAction(action);
+    },
+    [discardAndExecuteExitAction, editor],
+  );
+
+  const requestNavigation = useCallback(
+    (destination: NavigationDestination): void => {
+      requestExit({ type: "navigate", destination });
+    },
+    [requestExit],
+  );
+
+  const requestHomeNavigation = useCallback((): void => {
+    requestExit({ type: "home" });
+  }, [requestExit]);
+
+  const requestOpenDocument = useCallback((): void => {
+    requestExit({ type: "open" });
+  }, [requestExit]);
+
+  const leaveWithoutSaving = (): void => {
+    if (pendingExitAction === undefined) return;
+    const action = pendingExitAction;
+    setPendingExitAction(undefined);
+    discardAndExecuteExitAction(action);
+  };
+
+  const stayInEditor = (): void => {
+    setPendingExitAction(undefined);
+  };
+
+  useEffect(() => {
+    if (pathname !== "/editor") return undefined;
+
+    const guardSameTabLink = (event: MouseEvent): void => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const link = target.closest<HTMLAnchorElement>("a[href]");
+      if (link === null || link.download) return;
+
+      const destinationUrl = new URL(link.href, window.location.href);
+      if (destinationUrl.protocol === "javascript:") return;
+      const currentUrl = new URL(window.location.href);
+      if (destinationUrl.href === currentUrl.href) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestNavigation({
+        href:
+          destinationUrl.origin === currentUrl.origin
+            ? `${destinationUrl.pathname}${destinationUrl.search}${destinationUrl.hash}`
+            : destinationUrl.href,
+        isExternal: destinationUrl.origin !== currentUrl.origin,
+        openInNewWindow: link.target === "_blank",
+      });
+    };
+
+    document.addEventListener("click", guardSameTabLink, true);
+    return () => {
+      document.removeEventListener("click", guardSameTabLink, true);
+    };
+  }, [pathname, requestNavigation]);
+
+  useEffect(() => {
+    if (pathname !== "/editor") return undefined;
+
+    const guardHistoryNavigation = (): void => {
+      const destination = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.history.replaceState({}, "", "/editor");
+      window.dispatchEvent(new Event("quickpdf:navigation"));
+      requestNavigation({ href: destination, isExternal: false, openInNewWindow: false });
+    };
+
+    window.addEventListener("popstate", guardHistoryNavigation);
+    return () => {
+      window.removeEventListener("popstate", guardHistoryNavigation);
+    };
+  }, [pathname, requestNavigation]);
+  const withReplacementPicker = (page: React.ReactElement): React.ReactElement => (
+    <>
+      <input
+        ref={replacementPickerRef}
+        aria-label="Choose a replacement PDF file"
+        className="visually-hidden"
+        type="file"
+        accept="application/pdf,.pdf"
+        onChange={handleReplacementFileChange}
+      />
+      {page}
+    </>
+  );
+
   if (bootstrap.status === "checking") {
-    return <StartupScreen stage={bootstrap.stage} />;
+    return withReplacementPicker(<StartupScreen stage={bootstrap.stage} />);
   }
 
   if (bootstrap.status === "incompatible") {
-    return <BrowserCompatibilityPage compatibility={bootstrap.result} />;
+    return withReplacementPicker(<BrowserCompatibilityPage compatibility={bootstrap.result} />);
   }
 
   if (
     pathname === "/pwa-diagnostics" ||
     new URLSearchParams(window.location.search).get("pwa-debug") === "1"
   ) {
-    return (
+    return withReplacementPicker(
       <Shell>
         <PwaDiagnosticsPage bootstrapStatus={bootstrap.status} />
-      </Shell>
+      </Shell>,
     );
   }
 
   switch (pathname) {
     case "/":
-      return (
+      return withReplacementPicker(
         <Shell>
           <LandingPage
             editor={editor}
             snapshot={snapshot}
             onSnapshotChange={setSnapshot}
             onDocumentOpened={openEditor}
+            onReplacementFileConsumed={() => {
+              setReplacementFile(undefined);
+            }}
+            {...(replacementFile === undefined ? {} : { replacementFile })}
           />
-        </Shell>
+        </Shell>,
       );
     case "/privacy":
-      return (
+      return withReplacementPicker(
         <Shell hideHeader>
           <PrivacyPolicyPage />
-        </Shell>
+        </Shell>,
       );
     case "/editor":
       if (snapshot.state.status === "empty") {
-        return <RedirectToLanding />;
+        return withReplacementPicker(<RedirectToLanding />);
       }
-      return (
+      return withReplacementPicker(
         <Shell hideHeader>
           <EditorPage
             editor={editor}
             snapshot={snapshot}
             onSnapshotChange={setSnapshot}
             pdfRenderer={pdfRenderer}
-            onOpenRequest={() => {
-              navigate("/");
-            }}
+            onHomeRequest={requestHomeNavigation}
+            onOpenRequest={requestOpenDocument}
           />
-        </Shell>
+          {pendingExitAction !== undefined ? (
+            <LeaveWithoutSavingDialog onLeave={leaveWithoutSaving} onStay={stayInEditor} />
+          ) : null}
+        </Shell>,
       );
     default:
-      return (
+      return withReplacementPicker(
         <Shell>
           <NotFoundPage />
-        </Shell>
+        </Shell>,
       );
   }
 };
-
 export const App = (props: AppProps): React.ReactElement => (
   <PwaInstallProvider>
     <AppContent {...props} />

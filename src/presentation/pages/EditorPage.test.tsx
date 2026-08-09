@@ -999,6 +999,24 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByRole("button", { name: "Fit page" }));
     expect(screen.getByRole("button", { name: "Fit page" })).toBeEnabled();
   });
+  it("routes the keyboard-accessible editor logo through the supplied home navigation boundary", async () => {
+    const user = userEvent.setup();
+    const onHomeRequest = vi.fn();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        onHomeRequest={onHomeRequest}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    await user.tab();
+    await user.keyboard("{Enter}");
+
+    expect(onHomeRequest).toHaveBeenCalledTimes(1);
+  });
   it("routes the toolbar Open action through the supplied navigation boundary", async () => {
     const user = userEvent.setup();
     const onOpenRequest = vi.fn();

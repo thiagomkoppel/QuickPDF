@@ -196,7 +196,7 @@ export const PrivacyPolicyPage = (): React.ReactElement => (
     <div className="privacy-policy-page__content">
       <header className="privacy-policy-page__header">
         <a
-          aria-label="QuickPDF"
+          aria-label="Go to QuickPDF home"
           className="privacy-policy-page__brand"
           href="/"
           onClick={handleInternalNavigation("/")}

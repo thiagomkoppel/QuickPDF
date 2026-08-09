@@ -1304,6 +1304,7 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
       timeout: 15_000,
     });
     await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Go to QuickPDF home" })).toBeVisible();
 
     const layout = await page.evaluate(() => {
       const rectFor = (selector: string): DOMRect => {
@@ -1409,6 +1410,7 @@ test("uses the simplified tablet Quick Edit layout without horizontal overflow",
       timeout: 15_000,
     });
     await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+    await expect(page.getByRole("button", { name: "Go to QuickPDF home" })).toBeVisible();
 
     const editor = page.getByRole("region", { name: "tablet-layout-fixture.pdf" });
     await expect(editor).toHaveClass(/is-tablet-quick-edit/);
@@ -1524,4 +1526,134 @@ test("returns to the landing page after reloading a memory-only editor session",
   await expect(page.getByRole("button", { name: "Open a PDF file" })).toBeVisible();
   await expect(page.getByText("Open a PDF first")).toHaveCount(0);
   await expect(page.getByRole("group", { name: /element$/ })).toHaveCount(0);
+});
+
+test("guards dirty Open before launching the replacement picker", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const currentPath = testInfo.outputPath("current-document.pdf");
+  const replacementPath = testInfo.outputPath("replacement-document.pdf");
+  await import("node:fs/promises").then(async (fs) => {
+    await fs.writeFile(currentPath, await createPdf());
+    await fs.writeFile(replacementPath, await createPdf());
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(currentPath);
+  await expect(page.getByLabel("PDF workspace")).toBeVisible({ timeout: 15_000 });
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) return;
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 70, overlayBox.y + 90);
+  await expect(page.getByLabel("Edit text element")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open" }).click();
+  await expect(page).toHaveURL(/\/editor$/);
+  await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeVisible();
+  await page.getByRole("button", { name: "Stay here" }).click();
+  await expect(page.getByLabel("PDF workspace")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open" }).click();
+  const fileChooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Leave without saving" }).click();
+  const replacementChooser = await fileChooserPromise;
+  await replacementChooser.setFiles(replacementPath);
+
+  await expect(page.getByRole("heading", { name: "replacement-document.pdf" })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByLabel("PDF workspace")).toBeVisible();
+});
+test("guards dirty editor logo navigation before discarding the browser-memory session", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const fixturePath = testInfo.outputPath("guarded-logo-navigation.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "phone", width: 390, height: 844 },
+    { name: "tablet", width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    if (viewport.name === "tablet") {
+      await page.evaluate(() => {
+        const nativeMatchMedia = window.matchMedia.bind(window);
+        Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 });
+        window.matchMedia = (query: string) => {
+          if (query === "(pointer: coarse)") {
+            return {
+              addEventListener: () => undefined,
+              addListener: () => undefined,
+              dispatchEvent: () => false,
+              matches: true,
+              media: query,
+              onchange: null,
+              removeEventListener: () => undefined,
+              removeListener: () => undefined,
+            } as MediaQueryList;
+          }
+          return nativeMatchMedia(query);
+        };
+      });
+    }
+    await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+    await expect(page.getByLabel("PDF workspace")).toBeVisible({ timeout: 15_000 });
+
+    const overlayBox = await page.locator(".overlay-layer").boundingBox();
+    expect(overlayBox).not.toBeNull();
+    if (overlayBox === null) return;
+    await page.getByRole("button", { name: "Text" }).click();
+    await page.mouse.click(overlayBox.x + 70, overlayBox.y + 90);
+    await expect(page.getByLabel("Edit text element")).toBeVisible();
+    await expect(page.locator(".editor-subtitle")).toHaveText("Unsaved temporary edits");
+    await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+    const logo = page.getByRole("button", { name: "Go to QuickPDF home" });
+    await expect(logo).toHaveAttribute("type", "button");
+    await expect(logo).not.toHaveAttribute("href");
+    await expect
+      .poll(() =>
+        logo.evaluate((element) => {
+          const styles = window.getComputedStyle(element);
+          return {
+            backgroundColor: styles.backgroundColor,
+            color: styles.color,
+            borderTopWidth: styles.borderTopWidth,
+            borderRadius: styles.borderRadius,
+          };
+        }),
+      )
+      .toEqual({
+        backgroundColor: "rgba(0, 0, 0, 0)",
+        color: "rgb(244, 251, 252)",
+        borderTopWidth: "0px",
+        borderRadius: "0px",
+      });
+
+    await logo.click();
+    await expect(page).toHaveURL(/\/editor$/);
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeHidden();
+    await expect(page.getByLabel("PDF workspace")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+    if (viewport.name === "desktop") {
+      await page.getByRole("button", { name: "Open" }).click();
+    } else {
+      await page.getByRole("button", { name: "More editor tools" }).click();
+      await page.getByRole("button", { name: "Open PDF" }).click();
+    }
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeVisible();
+    await page.getByRole("button", { name: "Stay here" }).click();
+
+    await logo.click();
+    await page.getByRole("button", { name: "Leave without saving" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByLabel("Choose a PDF file")).toBeVisible();
+  }
 });
