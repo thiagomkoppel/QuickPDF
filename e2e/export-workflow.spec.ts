@@ -820,6 +820,118 @@ test("hides, restores, locks, and unlocks current-page layers through Layer Acti
   expect(movedBounds.x).toBeGreaterThan(startBounds.x + 30);
   expect(movedBounds.y).toBeGreaterThan(startBounds.y + 10);
 });
+test("toggles individual layer visibility and locks through the real Layers controls", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("individual-layer-actions-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(
+    page.getByRole("heading", { name: "individual-layer-actions-fixture.pdf" }),
+  ).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+  const overlayBox = await page.locator(".overlay-layer").boundingBox();
+  expect(overlayBox).not.toBeNull();
+  if (overlayBox === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Text" }).click();
+  await page.mouse.click(overlayBox.x + 90, overlayBox.y + 130);
+  await page.getByLabel("Edit text element").fill("Layer text");
+  await page.getByLabel("Edit text element").press("Escape");
+  await page.getByRole("button", { name: "Checkmark" }).click();
+  await page.mouse.click(overlayBox.x + 180, overlayBox.y + 200);
+
+  const textElement = page.getByRole("group", { name: "text element" });
+  const checkmarkElement = page.getByRole("group", { name: "checkmark element" });
+  await expect(textElement).toBeVisible();
+  await expect(checkmarkElement).toBeVisible();
+
+  await page.getByRole("button", { name: "Hide Text layer" }).click();
+  await expect(textElement).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Text layer", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show Text layer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hide All" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Show Text layer" }).click();
+  await expect(textElement).toBeVisible();
+  await page.getByRole("button", { name: "Hide Text layer" }).click();
+  await expect(textElement).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Hide Checkmark layer" }).click();
+  await expect(checkmarkElement).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show All" })).toBeVisible();
+  await page.getByRole("button", { name: "Show Checkmark layer" }).click();
+  await expect(checkmarkElement).toBeVisible();
+  await page.getByRole("button", { name: "Show Text layer" }).click();
+  await expect(textElement).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hide All" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Text layer", exact: true }).click();
+  const unlockedBounds = await textElement.boundingBox();
+  expect(unlockedBounds).not.toBeNull();
+  if (unlockedBounds === null) {
+    return;
+  }
+
+  await page.getByRole("button", { name: "Lock Text layer" }).click();
+  await expect(page.getByRole("button", { name: "Unlock Text layer" })).toBeVisible();
+  await expect(textElement).toHaveAttribute("data-locked", "true");
+  await expect(page.getByLabel("Resize text element")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lock All" })).toBeVisible();
+  const lockedBoundsBeforeDrag = await textElement.boundingBox();
+  expect(lockedBoundsBeforeDrag).not.toBeNull();
+  if (lockedBoundsBeforeDrag === null) {
+    return;
+  }
+  await page.mouse.move(
+    lockedBoundsBeforeDrag.x + lockedBoundsBeforeDrag.width / 2,
+    lockedBoundsBeforeDrag.y + lockedBoundsBeforeDrag.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    lockedBoundsBeforeDrag.x + lockedBoundsBeforeDrag.width / 2 + 48,
+    lockedBoundsBeforeDrag.y + lockedBoundsBeforeDrag.height / 2 + 24,
+  );
+  await page.mouse.up();
+  const lockedBoundsAfterDrag = await textElement.boundingBox();
+  expectBoxNear(lockedBoundsAfterDrag, lockedBoundsBeforeDrag);
+
+  await page.getByRole("button", { name: "Unlock Text layer" }).click();
+  const unlockedBoundsAfterUnlock = await textElement.boundingBox();
+  expect(unlockedBoundsAfterUnlock).not.toBeNull();
+  if (unlockedBoundsAfterUnlock === null) {
+    return;
+  }
+  await page.mouse.move(
+    unlockedBoundsAfterUnlock.x + unlockedBoundsAfterUnlock.width / 2,
+    unlockedBoundsAfterUnlock.y + unlockedBoundsAfterUnlock.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    unlockedBoundsAfterUnlock.x + unlockedBoundsAfterUnlock.width / 2 + 48,
+    unlockedBoundsAfterUnlock.y + unlockedBoundsAfterUnlock.height / 2 + 24,
+  );
+  await page.mouse.up();
+  const movedBounds = await textElement.boundingBox();
+  expect(movedBounds).not.toBeNull();
+  if (movedBounds === null) {
+    return;
+  }
+  expect(movedBounds.x).toBeGreaterThan(unlockedBoundsAfterUnlock.x + 30);
+
+  await page.getByRole("button", { name: "Lock Checkmark layer" }).click();
+  await expect(page.getByRole("button", { name: "Lock All" })).toBeVisible();
+  await page.getByRole("button", { name: "Lock Text layer" }).click();
+  await expect(page.getByRole("button", { name: "Unlock All" })).toBeVisible();
+  await page.getByRole("button", { name: "Unlock Checkmark layer" }).click();
+  await expect(page.getByRole("button", { name: "Lock All" })).toBeVisible();
+});
 test("deletes every selected overlay type and excludes deleted overlays from export", async ({
   page,
 }, testInfo) => {

@@ -156,7 +156,11 @@ type ToolbarIconName =
   | "previous"
   | "next"
   | "more"
-  | "menu";
+  | "menu"
+  | "eye"
+  | "eye-off"
+  | "lock"
+  | "unlock";
 
 const ToolbarIcon = ({ name }: { readonly name: ToolbarIconName }): React.ReactElement => {
   const svg = (children: React.ReactNode): React.ReactElement => (
@@ -182,6 +186,36 @@ const ToolbarIcon = ({ name }: { readonly name: ToolbarIconName }): React.ReactE
           <path d="M4 6.5h16" />
           <path d="M4 12h16" />
           <path d="M4 17.5h16" />
+        </>,
+      );
+    case "eye":
+      return svg(
+        <>
+          <path d="M2.75 12s3.3-5 9.25-5 9.25 5 9.25 5-3.3 5-9.25 5S2.75 12 2.75 12Z" />
+          <circle cx="12" cy="12" r="2.25" />
+        </>,
+      );
+    case "eye-off":
+      return svg(
+        <>
+          <path d="M3.3 3.3 20.7 20.7" />
+          <path d="M6.2 6.1C4.05 7.55 2.75 9.55 2.75 12c0 0 3.3 5 9.25 5 1.35 0 2.58-.26 3.67-.7" />
+          <path d="M9.7 7.25A5.64 5.64 0 0 1 12 7c5.95 0 9.25 5 9.25 5a10.83 10.83 0 0 1-3.37 3.53" />
+          <path d="M9.93 9.93A3 3 0 0 0 14.07 14.07" />
+        </>,
+      );
+    case "lock":
+      return svg(
+        <>
+          <rect x="5" y="10" width="14" height="10" rx="2" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+        </>,
+      );
+    case "unlock":
+      return svg(
+        <>
+          <rect x="5" y="10" width="14" height="10" rx="2" />
+          <path d="M8 10V7a4 4 0 0 1 7.15-2.45" />
         </>,
       );
     case "open":
@@ -432,6 +466,8 @@ interface LayersPanelProps {
   readonly onReorder: (elementId: string, targetIndex: number) => void;
   readonly onSetAllVisible: (visible: boolean) => void;
   readonly onSetAllLocked: (locked: boolean) => void;
+  readonly onSetVisible: (elementId: string, visible: boolean) => void;
+  readonly onSetLocked: (elementId: string, locked: boolean) => void;
 }
 
 const LayersPanel = ({
@@ -441,6 +477,8 @@ const LayersPanel = ({
   onReorder,
   onSetAllVisible,
   onSetAllLocked,
+  onSetVisible,
+  onSetLocked,
 }: LayersPanelProps) => {
   const [draggedLayerId, setDraggedLayerId] = useState<string | undefined>();
   const selectedIndex = layers.findIndex((element) => element.id === selectedElementId);
@@ -514,12 +552,19 @@ const LayersPanel = ({
                 setDraggedLayerId(undefined);
               }}
             >
-              <button
-                type="button"
-                className="layer-row-select"
+              <div
+                role="button"
+                tabIndex={0}
+                className="layer-row-content"
                 aria-label={`${elementLabel(element)} layer`}
                 onClick={() => {
                   onSelect(element.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(element.id);
+                  }
                 }}
               >
                 <span className="layer-row-grip" aria-hidden="true">
@@ -538,7 +583,45 @@ const LayersPanel = ({
                   <strong>{element.text?.split(/\r?\n/)[0] ?? elementLabel(element)}</strong>
                   <small>{elementLabel(element)}</small>
                 </span>
-              </button>
+              </div>
+              <div className="layer-row-actions" aria-label={`${elementLabel(element)} layer actions`}>
+                <button
+                  type="button"
+                  className={`layer-row-action${element.visible ?? true ? "" : " is-hidden"}`}
+                  aria-label={`${element.visible ?? true ? "Hide" : "Show"} ${elementLabel(element)} layer`}
+                  title={`${element.visible ?? true ? "Hide" : "Show"} layer`}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onDragStart={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetVisible(element.id, !(element.visible ?? true));
+                  }}
+                >
+                  <ToolbarIcon name={element.visible ?? true ? "eye" : "eye-off"} />
+                </button>
+                <button
+                  type="button"
+                  className={`layer-row-action${element.locked ? " is-locked" : ""}`}
+                  aria-label={`${element.locked ? "Unlock" : "Lock"} ${elementLabel(element)} layer`}
+                  title={`${element.locked ? "Unlock" : "Lock"} layer`}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onDragStart={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetLocked(element.id, !element.locked);
+                  }}
+                >
+                  <ToolbarIcon name={element.locked ? "lock" : "unlock"} />
+                </button>
+              </div>
             </li>
           ))}
         </ol>
@@ -1976,6 +2059,9 @@ export const EditorPage = ({
     event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
   ): void => {
     if (element.locked) {
+      event.preventDefault();
+      event.stopPropagation();
+      moveCancelRef.current?.();
       selectElementForInspector(element.id);
       return;
     }
@@ -2970,6 +3056,12 @@ export const EditorPage = ({
           onSetAllLocked={(locked) => {
             applySnapshot(editor.setAllCurrentPageElementsLocked(locked));
           }}
+          onSetVisible={(elementId, visible) => {
+            applySnapshot(editor.setElementVisibility(elementId, visible));
+          }}
+          onSetLocked={(elementId, locked) => {
+            applySnapshot(editor.setElementLocked(elementId, locked));
+          }}
         />
       </div>
     </aside>
@@ -3501,6 +3593,7 @@ export const EditorPage = ({
                       style={boundsStyle(elementBounds, zoom)}
                       role="group"
                       aria-label={`${element.type} element`}
+                      data-locked={element.locked ? "true" : "false"}
                       aria-description={
                         element.type === "text" || element.type === "date"
                           ? "Press Enter to edit selected text."

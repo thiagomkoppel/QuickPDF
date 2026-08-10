@@ -61,6 +61,8 @@ interface TestEditor extends PdfEditorApplication {
   readonly reorderCurrentPageLayers: Mock;
   readonly setAllCurrentPageElementsVisibility: Mock;
   readonly setAllCurrentPageElementsLocked: Mock;
+  readonly setElementVisibility: Mock;
+  readonly setElementLocked: Mock;
 }
 
 const documentPages = [
@@ -203,6 +205,8 @@ const createEditor = (): TestEditor =>
     reorderCurrentPageLayers: vi.fn(() => baseSnapshot()),
     setAllCurrentPageElementsVisibility: vi.fn(() => baseSnapshot()),
     setAllCurrentPageElementsLocked: vi.fn(() => baseSnapshot()),
+    setElementVisibility: vi.fn(() => baseSnapshot()),
+    setElementLocked: vi.fn(() => baseSnapshot()),
     addUploadedSignature: vi.fn(() => baseSnapshot()),
     addTypedInitials: vi.fn(() => baseSnapshot()),
     addDrawnInitials: vi.fn(() => baseSnapshot()),
@@ -1735,6 +1739,63 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByLabelText("checkmark element")).toBeNull();
   });
 
+  it("uses accessible per-layer visibility and lock actions without selecting the layer", async () => {
+    const user = userEvent.setup();
+    const editor = createEditor();
+    const text = selectedElementForType("text");
+    const hiddenLockedCheckmark = {
+      ...selectedElementForType("checkmark"),
+      visible: false,
+      locked: true,
+    };
+    const { rerender } = render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          elements: [text, hiddenLockedCheckmark],
+          visibleElements: [text],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Hide Text layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Lock Text layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Show Checkmark layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Unlock Checkmark layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Checkmark layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Hide All" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Lock All" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Hide Text layer" }));
+    await user.click(screen.getByRole("button", { name: "Lock Text layer" }));
+    expect(editor.setElementVisibility).toHaveBeenCalledWith(text.id, false);
+    expect(editor.setElementLocked).toHaveBeenCalledWith(text.id, true);
+    expect(editor.selectElement).not.toHaveBeenCalled();
+
+    screen.getByRole("button", { name: "Unlock Checkmark layer" }).focus();
+    await user.keyboard("{Enter}");
+    expect(editor.setElementLocked).toHaveBeenLastCalledWith(hiddenLockedCheckmark.id, false);
+
+    const hiddenLockedText = { ...text, visible: false, locked: true };
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          elements: [hiddenLockedText, hiddenLockedCheckmark],
+          visibleElements: [],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Show Text layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Unlock Text layer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Show All" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Unlock All" })).toBeVisible();
+  });
   it("disables bulk layer actions when the current page has no overlays", () => {
     render(
       <EditorPage
