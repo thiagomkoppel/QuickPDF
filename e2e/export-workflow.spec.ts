@@ -1614,10 +1614,14 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
 test("keeps the phone editor inside the viewport with a collapsed full-width inspector", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000);
   const fixturePath = testInfo.outputPath("mobile-layout-fixture.pdf");
   await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
 
   for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 360, height: 640 },
+    { width: 375, height: 667 },
     { width: 390, height: 844 },
     { width: 430, height: 932 },
   ]) {
@@ -1649,17 +1653,73 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
         })
         .sort((first, second) => first.left - second.left);
       const workspace = rectFor('[aria-label="PDF workspace"]');
+      const toolbarElement = document.querySelector<HTMLElement>(".viewer-toolbar");
+      const toolsElement = document.querySelector<HTMLElement>(".toolbar-tools-group");
+      if (toolbarElement === null || toolsElement === null) {
+        throw new Error("Missing mobile toolbar");
+      }
       const pageFrame = rectFor(".pdf-page-frame");
       const inspector = rectFor(".element-inspector");
       const viewBar = rectFor(".editor-status-bar");
+      const actionRect = (
+        label: string,
+      ): { bottom: number; height: number; left: number; right: number; top: number; width: number } => {
+        const action = document.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+        if (action === null) {
+          throw new Error(`Missing ${label}`);
+        }
+        const rect = action.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          height: rect.height,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          width: rect.width,
+        };
+      };
+      const header = rectFor(".editor-header");
+      const brand = rectFor(".editor-header > .editor-home-link");
+      const brandMark = rectFor(".editor-header > .editor-home-link img");
+      const moreTool = document.querySelector<HTMLElement>(".mobile-tools-overflow > button");
+      if (moreTool === null) throw new Error("Missing More editor tools button");
+      const toolActions = [
+        ...toolsElement.querySelectorAll<HTMLElement>('button[data-mobile-primary="true"]'),
+        moreTool,
+      ].map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          height: rect.height,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          width: rect.width,
+        };
+      });
       return {
         innerWidth: window.innerWidth,
         scrollWidth: document.documentElement.scrollWidth,
         inspector: { left: inspector.left, right: inspector.right, width: inspector.width },
         viewBar: { left: viewBar.left, right: viewBar.right },
         workspace: { width: workspace.width },
+        toolbar: {
+          clientWidth: toolbarElement.clientWidth,
+          scrollWidth: toolbarElement.scrollWidth,
+        },
+        tools: { clientWidth: toolsElement.clientWidth, scrollWidth: toolsElement.scrollWidth },
         pageFrame: { width: pageFrame.width },
+        criticalActions: [
+          actionRect("Open page thumbnails"),
+          actionRect("Undo"),
+          actionRect("Redo"),
+          actionRect("Download"),
+        ],
+        brand: { height: brand.height, left: brand.left, right: brand.right, width: brand.width },
+        brandMarkWidth: brandMark.width,
+        header: { bottom: header.bottom, left: header.left, right: header.right, top: header.top },
         labels,
+        toolActions,
         inspectorBodyDisplay: (() => {
           const properties = document.querySelector(".element-inspector__properties-region");
           if (properties === null) {
@@ -1671,18 +1731,64 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
     });
 
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
+    expect(layout.header.left).toBeGreaterThanOrEqual(-1);
+    expect(layout.header.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+    expect(layout.brand.width).toBeGreaterThan(0);
+    expect(layout.brand.height).toBeGreaterThan(0);
+    expect(layout.brand.left).toBeGreaterThanOrEqual(-1);
+    expect(layout.brand.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+    expect(layout.brandMarkWidth).toBeLessThanOrEqual(26.5);
     expect(layout.inspector.left).toBeGreaterThanOrEqual(-1);
     expect(layout.inspector.right).toBeLessThanOrEqual(layout.innerWidth + 1);
     expect(layout.inspector.width).toBeGreaterThanOrEqual(layout.innerWidth - 1);
     expect(layout.viewBar.left).toBeGreaterThanOrEqual(-1);
     expect(layout.viewBar.right).toBeLessThanOrEqual(layout.innerWidth + 1);
     expect(layout.pageFrame.width).toBeLessThanOrEqual(layout.workspace.width + 1);
+    expect(layout.toolbar.scrollWidth).toBeLessThanOrEqual(layout.toolbar.clientWidth);
+    expect(layout.tools.scrollWidth).toBeLessThanOrEqual(layout.tools.clientWidth);
     expect(layout.inspectorBodyDisplay).toBe("none");
+    for (const action of layout.criticalActions) {
+      expect(action.width).toBeGreaterThanOrEqual(44);
+      expect(action.height).toBeGreaterThanOrEqual(44);
+      expect(action.left).toBeGreaterThanOrEqual(-1);
+      expect(action.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+      expect(action.top).toBeGreaterThanOrEqual(layout.header.top - 1);
+      expect(action.bottom).toBeLessThanOrEqual(layout.header.bottom + 1);
+    }
+    expect(layout.toolActions).toHaveLength(7);
+    for (const action of layout.toolActions) {
+      expect(action.width).toBeGreaterThanOrEqual(44);
+      expect(action.height).toBeGreaterThanOrEqual(44);
+      expect(action.left).toBeGreaterThanOrEqual(-1);
+      expect(action.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+    }
     for (let index = 1; index < layout.labels.length; index += 1) {
       expect(layout.labels[index - 1]?.right ?? 0).toBeLessThanOrEqual(
         (layout.labels[index]?.left ?? 0) + 1,
       );
     }
+
+    await page.getByRole("button", { name: "More editor tools" }).click();
+    const moreSheet = page.getByRole("dialog", { name: "More tools" });
+    await expect(moreSheet).toBeVisible();
+    const moreLayout = await moreSheet.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: rect.bottom,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(moreLayout.documentScrollWidth).toBeLessThanOrEqual(moreLayout.viewportWidth);
+    expect(moreLayout.left).toBeGreaterThanOrEqual(0);
+    expect(moreLayout.right).toBeLessThanOrEqual(moreLayout.viewportWidth);
+    expect(moreLayout.top).toBeGreaterThanOrEqual(0);
+    expect(moreLayout.bottom).toBeLessThanOrEqual(moreLayout.viewportHeight);
+    await page.getByRole("button", { name: "Close", exact: true }).click();
   }
 });
 test("uses the simplified tablet Quick Edit layout without horizontal overflow", async ({
@@ -1792,6 +1898,9 @@ test("uses the simplified tablet Quick Edit layout without horizontal overflow",
 });
 test("renders the phone landing with an accessible local-first menu", async ({ page }) => {
   for (const viewport of [
+    { width: 320, height: 568, name: "320x568" },
+    { width: 360, height: 640, name: "360x640" },
+    { width: 375, height: 667, name: "375x667" },
     { width: 390, height: 844, name: "390x844" },
     { width: 430, height: 932, name: "430x932" },
   ]) {
