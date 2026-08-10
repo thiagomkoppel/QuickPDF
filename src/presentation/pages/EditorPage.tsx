@@ -1816,6 +1816,11 @@ export const EditorPage = ({
     reader.readAsDataURL(file);
   };
   const handleOverlayClick = (event: MouseEvent<HTMLDivElement>): void => {
+    if (suppressWorkspaceClickRef.current) {
+      suppressWorkspaceClickRef.current = false;
+      event.stopPropagation();
+      return;
+    }
     if (currentPage === undefined) {
       return;
     }
@@ -1893,7 +1898,7 @@ export const EditorPage = ({
     }
   };
 
-  const isEmptyWorkspaceTouchTarget = (target: EventTarget | null): boolean =>
+  const isWorkspacePanSurface = (target: EventTarget | null): boolean =>
     target instanceof HTMLElement &&
     target.closest(
       ".overlay-element, button, input, textarea, select, [contenteditable='true']",
@@ -1901,7 +1906,7 @@ export const EditorPage = ({
 
   const startWorkspacePan = (event: PointerEvent<HTMLElement>): void => {
     if (isCompactEditorViewport && event.pointerType === "touch") {
-      if (state.tool !== "select" || !isEmptyWorkspaceTouchTarget(event.target)) {
+      if (state.tool !== "select" || !isWorkspacePanSurface(event.target)) {
         return;
       }
       const workspace = event.currentTarget;
@@ -1933,7 +1938,7 @@ export const EditorPage = ({
       };
       return;
     }
-    if (event.button !== 0 || state.tool !== "select" || event.target !== event.currentTarget) {
+    if (event.button !== 0 || state.tool !== "select" || !isWorkspacePanSurface(event.target)) {
       return;
     }
     const workspace = event.currentTarget;

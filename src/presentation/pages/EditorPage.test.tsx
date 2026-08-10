@@ -961,6 +961,47 @@ describe("EditorPage PDF rendering", () => {
     expect(workspace.scrollTop).toBe(120);
     expect(onSnapshotChange).not.toHaveBeenCalled();
   });
+
+  it("pans plain PDF page area through the workspace gesture", () => {
+    const onSnapshotChange = vi.fn();
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={onSnapshotChange}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    const pageArea = screen.getByLabelText("PDF overlay");
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+    });
+
+    const dispatchPagePointer = (type: string, clientX: number, clientY: number): void => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        button: { value: 0 },
+        pointerId: { value: 10 },
+        clientX: { value: clientX },
+        clientY: { value: clientY },
+      });
+      act(() => {
+        pageArea.dispatchEvent(event);
+      });
+    };
+
+    dispatchPagePointer("pointerdown", 200, 180);
+    dispatchPagePointer("pointermove", 150, 140);
+    dispatchPagePointer("pointerup", 150, 140);
+
+    expect(workspace.scrollLeft).toBe(170);
+    expect(workspace.scrollTop).toBe(120);
+    expect(onSnapshotChange).not.toHaveBeenCalled();
+  });
+
   it("renders the compact toolbar with labeled icon-first controls", async () => {
     const user = userEvent.setup();
     render(
@@ -1482,6 +1523,11 @@ describe("EditorPage PDF rendering", () => {
       />,
     );
     const text = screen.getByRole("group", { name: "text element" });
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+    });
 
     const down = new Event("pointerdown", { bubbles: true });
     Object.defineProperties(down, {
@@ -1522,6 +1568,8 @@ describe("EditorPage PDF rendering", () => {
       expect.objectContaining({ x: 60, y: 70, width: 120, height: 48 }),
     );
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
+    expect(workspace.scrollLeft).toBe(120);
+    expect(workspace.scrollTop).toBe(80);
   });
 
   it("places text as a one-shot tool and switches back to Select", async () => {
@@ -2012,6 +2060,11 @@ describe("EditorPage PDF rendering", () => {
       />,
     );
     const overlay = screen.getByLabelText("PDF overlay");
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+    });
     const setPointerCapture = vi.fn();
     const releasePointerCapture = vi.fn();
     Object.defineProperty(overlay, "setPointerCapture", { value: setPointerCapture });
@@ -2029,6 +2082,8 @@ describe("EditorPage PDF rendering", () => {
 
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
     expect(editor.addWhiteout).toHaveBeenCalledWith({ x: 40, y: 50, width: 120, height: 60 });
+    expect(workspace.scrollLeft).toBe(120);
+    expect(workspace.scrollTop).toBe(80);
   });
 
   it("normalizes up-left whiteout drags and ignores tiny accidental drags", () => {

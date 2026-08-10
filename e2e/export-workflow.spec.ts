@@ -424,6 +424,70 @@ const expectBoxNear = (
   expect(Math.abs(box.y - expected.y)).toBeLessThanOrEqual(1);
 };
 
+test("pans plain PDF page and green workspace through the shared gesture", async ({
+  page,
+}, testInfo) => {
+  const fixturePath = testInfo.outputPath("workspace-pan-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(page.getByRole("heading", { name: "workspace-pan-fixture.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+
+  for (let index = 0; index < 4; index += 1) {
+    await page.getByRole("button", { name: "Zoom in" }).click();
+  }
+
+  const workspace = page.getByRole("main", { name: "PDF workspace" });
+  const pageArea = page.getByLabel("PDF overlay");
+  await workspace.evaluate((element) => {
+    element.scrollTop = 120;
+  });
+  const pageBox = await pageArea.boundingBox();
+  expect(pageBox).not.toBeNull();
+  if (pageBox === null) {
+    return;
+  }
+
+  const pageStartScroll = await workspace.evaluate((element) => element.scrollTop);
+  await page.mouse.move(pageBox.x + pageBox.width / 2, pageBox.y + pageBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pageBox.x + pageBox.width / 2, pageBox.y + pageBox.height / 2 - 60);
+  await page.mouse.up();
+  await expect
+    .poll(() => workspace.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(pageStartScroll + 30);
+
+  await workspace.evaluate((element) => {
+    element.scrollTop = 120;
+  });
+  const greenPoint = await page.evaluate(() => {
+    const workspaceElement = document.querySelector<HTMLElement>('[aria-label="PDF workspace"]');
+    const pageFrame = document.querySelector<HTMLElement>(".pdf-page-frame");
+    if (workspaceElement === null || pageFrame === null) {
+      throw new Error("Workspace geometry is unavailable.");
+    }
+    const workspaceRect = workspaceElement.getBoundingClientRect();
+    const pageRect = pageFrame.getBoundingClientRect();
+    const y = workspaceRect.top + workspaceRect.height / 2;
+    if (pageRect.left - workspaceRect.left > 24) {
+      return { x: workspaceRect.left + 12, y };
+    }
+    if (workspaceRect.right - pageRect.right > 24) {
+      return { x: workspaceRect.right - 12, y };
+    }
+    throw new Error("No visible green workspace pan surface.");
+  });
+  const workspaceStartScroll = await workspace.evaluate((element) => element.scrollTop);
+  await page.mouse.move(greenPoint.x, greenPoint.y);
+  await page.mouse.down();
+  await page.mouse.move(greenPoint.x, greenPoint.y - 60);
+  await page.mouse.up();
+  await expect
+    .poll(() => workspace.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(workspaceStartScroll + 30);
+});
 test("renders and exports bundled Patrick Hand text", async ({ page }, testInfo) => {
   const fixturePath = testInfo.outputPath("patrick-hand-fixture.pdf");
   const fixtureBytes = await createPdf();
