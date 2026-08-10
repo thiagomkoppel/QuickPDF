@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prepare QuickPDF for its first public release.
+Prepare NestlyPDF for its first public release.
 
 ## Included
 

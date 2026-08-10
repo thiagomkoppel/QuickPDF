@@ -1,4 +1,4 @@
-# QuickPDF Project Format
+# NestlyPDF Project Format
 
 ## Status
 
@@ -6,7 +6,7 @@ Planned after PWA and Version 1.0 delivery.
 
 ## Goal
 
-Allow users to save an editable QuickPDF project and resume later without uploading documents.
+Allow users to save an editable NestlyPDF project and resume later without uploading documents.
 
 Suggested extension:
 

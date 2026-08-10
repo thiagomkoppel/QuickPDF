@@ -1628,7 +1628,7 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
       timeout: 15_000,
     });
     await expect(page.getByText("Rendering PDF page...")).toBeHidden();
-    await expect(page.getByRole("button", { name: "Go to QuickPDF home" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Go to NestlyPDF home" })).toBeVisible();
 
     const layout = await page.evaluate(() => {
       const rectFor = (selector: string): DOMRect => {
@@ -1734,7 +1734,7 @@ test("uses the simplified tablet Quick Edit layout without horizontal overflow",
       timeout: 15_000,
     });
     await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
-    await expect(page.getByRole("button", { name: "Go to QuickPDF home" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Go to NestlyPDF home" })).toBeVisible();
 
     const editor = page.getByRole("region", { name: "tablet-layout-fixture.pdf" });
     await expect(editor).toHaveClass(/is-tablet-quick-edit/);
@@ -1799,11 +1799,13 @@ test("renders the phone landing with an accessible local-first menu", async ({ p
     await page.goto("/");
 
     await expect(page.getByText("Private & Secure")).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Edit PDFs.*quickly/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Edit PDFs privately/i })).toBeVisible();
     await expect(page.getByRole("button", { name: "Choose PDF" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Browse files" })).toBeVisible();
-    await expect(page.getByText("100% Private")).toBeVisible();
-    await expect(page.getByText("No Uploads")).toBeVisible();
+    await expect(page.getByText("Private by design")).toBeVisible();
+    await expect(
+      page.locator(".landing-badges").getByText("No Uploads", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("100% Free")).toBeVisible();
     await expect(page.locator(".landing-install-card")).toBeVisible();
 
@@ -1936,7 +1938,7 @@ test("guards dirty editor logo navigation before discarding the browser-memory s
     await expect(page.locator(".editor-subtitle")).toHaveText("Unsaved temporary edits");
     await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
 
-    const logo = page.getByRole("button", { name: "Go to QuickPDF home" });
+    const logo = page.getByRole("button", { name: "Go to NestlyPDF home" });
     await expect(logo).toHaveAttribute("type", "button");
     await expect(logo).not.toHaveAttribute("href");
     await expect

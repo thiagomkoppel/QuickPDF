@@ -1,4 +1,4 @@
-name: QuickPDF CI
+name: NestlyPDF CI
 
 on:
   workflow_dispatch:

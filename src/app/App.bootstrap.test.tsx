@@ -42,13 +42,13 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
-describe("QuickPDF bootstrap compatibility screen", () => {
+describe("NestlyPDF bootstrap compatibility screen", () => {
   it("shows only the startup screen until the compatible preflight and five-second minimum both complete", async () => {
     vi.useFakeTimers();
     const probe = vi.fn(() => Promise.resolve(compatible));
     render(<App compatibilityProbe={probe} />);
 
-    expect(screen.getByRole("heading", { name: "Preparing QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preparing Nest" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Checking PDF renderer compatibility...");
     expect(
       screen.queryByRole("heading", { name: "Browser not supported" }),
@@ -58,7 +58,7 @@ describe("QuickPDF bootstrap compatibility screen", () => {
 
     await flushPromises();
     await act(() => vi.advanceTimersByTimeAsync(4_999));
-    expect(screen.getByRole("heading", { name: "Preparing QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preparing Nest" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Choose a PDF file")).not.toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(1));
@@ -79,7 +79,7 @@ describe("QuickPDF bootstrap compatibility screen", () => {
     );
 
     await act(() => vi.advanceTimersByTimeAsync(5_000));
-    expect(screen.getByRole("heading", { name: "Preparing QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preparing Nest" })).toBeInTheDocument();
 
     await act(async () => {
       resolveProbe(compatible);
@@ -92,7 +92,7 @@ describe("QuickPDF bootstrap compatibility screen", () => {
     vi.useFakeTimers();
     render(<App initialCompatibilityResult={incompatible} />);
 
-    expect(screen.getByRole("heading", { name: "Preparing QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preparing Nest" })).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Browser not supported" }),
     ).not.toBeInTheDocument();
@@ -105,7 +105,7 @@ describe("QuickPDF bootstrap compatibility screen", () => {
   it("removes the static boot fallback after React mounts", () => {
     document.body.insertAdjacentHTML(
       "beforeend",
-      '<section id="quickpdf-boot-fallback">Starting QuickPDF...</section>',
+      '<section id="quickpdf-boot-fallback">Starting NestlyPDF...</section>',
     );
 
     render(<App initialCompatibilityResult={compatible} startupMinimumDurationMs={0} />);

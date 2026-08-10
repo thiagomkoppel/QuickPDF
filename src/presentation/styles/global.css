@@ -609,7 +609,7 @@ p {
   stroke: #000000;
 }
 
-/* QuickPDF shared presentation foundation */
+/* NestlyPDF shared presentation foundation */
 :root {
   --qp-ink: #224248;
   --qp-surface: #325e6a;
@@ -643,7 +643,7 @@ p {
   --qp-shadow-subtle: 0 1px 2px rgb(16 42 48 / 8%);
   --qp-shadow-panel: 0 14px 34px rgb(16 42 48 / 13%);
   --qp-focus: 0 0 0 3px rgb(68 161 164 / 38%);
-  /* Immutable product identity: the QuickPDF wordmark is always white. */
+  /* Immutable product identity: the NestlyPDF wordmark is always white. */
   --qp-brand-wordmark: #f4fbfc;
   --qp-duration: 180ms;
   --qp-ease: cubic-bezier(0.2, 0.8, 0.2, 1);

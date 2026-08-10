@@ -7,7 +7,7 @@ const root = process.cwd();
 const publicFile = (name: string): string => resolve(root, "public", name);
 
 describe("PWA foundation assets", () => {
-  it("declares the standalone QuickPDF manifest and required install icons", async () => {
+  it("declares the standalone NestlyPDF manifest and required install icons", async () => {
     const manifest = JSON.parse(await readFile(publicFile("manifest.webmanifest"), "utf8")) as {
       name: string;
       short_name: string;
@@ -23,10 +23,11 @@ describe("PWA foundation assets", () => {
     };
 
     expect(manifest).toMatchObject({
-      name: "QuickPDF",
-      short_name: "QuickPDF",
+      name: "NestlyPDF",
+      short_name: "NestlyPDF",
       id: "/",
-      description: "Private browser-based PDF editor",
+      description:
+        "Edit PDFs privately, right on your device. Your files never leave your device. No uploads. No accounts. No cloud storage.",
       display: "standalone",
       start_url: "/",
       scope: "/",
@@ -64,8 +65,10 @@ describe("PWA foundation assets", () => {
     expect(document).toContain('href="/favicon.ico"');
     expect(document).not.toMatch(/serviceWorker|service-worker/i);
     expect(document).toContain('id="quickpdf-boot-fallback"');
-    expect(document).toContain("Starting QuickPDF...");
-    expect(document).toContain("QuickPDF couldn't finish starting.");
+    expect(document).toContain("Starting NestlyPDF...");
+    expect(document).toContain("NestlyPDF couldn't finish starting.");
+    expect(document).toContain("<title>NestlyPDF</title>");
+    expect(document).not.toContain("QuickPDF");
   });
 
   it("uses dynamic viewport units and safe-area insets in the application shell", async () => {

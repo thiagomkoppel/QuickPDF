@@ -1,6 +1,6 @@
-# QuickPDF UI Documentation Freeze Package
+# NestlyPDF UI Documentation Freeze Package
 
-Copy the files under `docs/05-ui/` into the same folder in the QuickPDF repository, replacing existing files after reviewing the diff.
+Copy the files under `docs/05-ui/` into the same folder in the NestlyPDF repository, replacing existing files after reviewing the diff.
 
 Also:
 
@@ -20,7 +20,7 @@ This package contains:
 - VISUAL_HIERARCHY.md
 - USER_WARNINGS.md
 
-## Current QuickPDF implementation notes
+## Current NestlyPDF implementation notes
 
 This repository now contains the browser-local editor foundation rather than only the UI documentation package. The editor supports opening a local PDF, rendering the active page, adding overlay elements, and downloading an edited PDF without a backend or persistence.
 
@@ -32,4 +32,4 @@ All current overlays use the shared selection, move, resize, duplicate, delete, 
 
 ## Browser compatibility
 
-QuickPDF supports current Chrome and Edge (118+), capable current Firefox releases, and Safari 16.4+. It checks browser support before accepting a PDF so that known incompatible browsers, including Chrome 101 on Android, do not receive local document bytes. Firefox on older Android devices is allowed when it provides the required browser capabilities. See [Browser Compatibility](docs/08-roadmap/BROWSER_COMPATIBILITY.md).
+NestlyPDF supports current Chrome and Edge (118+), capable current Firefox releases, and Safari 16.4+. It checks browser support before accepting a PDF so that known incompatible browsers, including Chrome 101 on Android, do not receive local document bytes. Firefox on older Android devices is allowed when it provides the required browser capabilities. See [Browser Compatibility](docs/08-roadmap/BROWSER_COMPATIBILITY.md).

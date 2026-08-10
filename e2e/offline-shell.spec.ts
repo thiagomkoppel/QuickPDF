@@ -352,7 +352,7 @@ test("cold-starts the standalone manifest route from the production shell while 
 test("shows only non-sensitive shell diagnostics from its canonical route", async ({ page }) => {
   await page.goto("/pwa-diagnostics");
 
-  await expect(page.getByRole("heading", { name: "QuickPDF diagnostics" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "NestlyPDF diagnostics" })).toBeVisible({
     timeout: 9_000,
   });
   await expect(page.getByText("Service worker supported", { exact: true })).toBeVisible();
@@ -371,7 +371,7 @@ test("opens the diagnostics SPA route from the cached shell while offline", asyn
   await context.setOffline(true);
   try {
     await page.goto("/pwa-diagnostics");
-    await expect(page.getByRole("heading", { name: "QuickPDF diagnostics" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "NestlyPDF diagnostics" })).toBeVisible({
       timeout: 9_000,
     });
     await expect(page.getByText("Cached PDF.js worker", { exact: true })).toBeVisible();

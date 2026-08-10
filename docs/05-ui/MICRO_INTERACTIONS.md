@@ -1,8 +1,8 @@
-# QuickPDF Micro-Interactions
+# NestlyPDF Micro-Interactions
 
 ## Purpose
 
-Micro-interactions make QuickPDF feel responsive and polished without delaying work or drawing attention away from the PDF.
+Micro-interactions make NestlyPDF feel responsive and polished without delaying work or drawing attention away from the PDF.
 
 Motion communicates state. It is not decoration.
 

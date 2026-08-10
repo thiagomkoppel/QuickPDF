@@ -2,7 +2,7 @@
 
 ## Purpose
 
-QuickPDF represents every committed document-output mutation as an application command. Commands provide one consistent path for validation, state transition, undo, redo, dirty-state updates, and testing.
+NestlyPDF represents every committed document-output mutation as an application command. Commands provide one consistent path for validation, state transition, undo, redo, dirty-state updates, and testing.
 
 Pointer events, keystrokes, focus changes, selection changes, page navigation, zoom, dialog state, and other transient presentation events are not commands by themselves.
 

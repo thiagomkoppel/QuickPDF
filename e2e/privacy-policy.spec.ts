@@ -7,7 +7,7 @@ test("renders the browser-local privacy policy with its complete table of conten
 
   await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
   await expect(page.getByText("Privacy at a glance")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to QuickPDF" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to NestlyPDF" })).toBeVisible();
   await expect(page.getByRole("link", { name: "15. Contact" })).toBeVisible();
   await expect(page.getByText("Last updated: August 3, 2026")).toBeVisible();
 

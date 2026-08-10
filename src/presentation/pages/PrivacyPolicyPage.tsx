@@ -23,9 +23,9 @@ const sections = [
     title: "1. Overview",
     body: (
       <p>
-        QuickPDF is a browser-based PDF editor. This policy explains how the application handles
+        NestlyPDF is a browser-based PDF editor. This policy explains how the application handles
         information while you open, edit, and export a PDF. Our design is intentionally local:
-        document processing happens in your browser rather than on a QuickPDF application server.
+        document processing happens in your browser rather than on a NestlyPDF application server.
       </p>
     ),
   },
@@ -35,18 +35,19 @@ const sections = [
     body: (
       <p>
         Your PDF, rendered pages, overlay elements, text, images, signatures, initials, and other
-        editing state are processed in your browser memory for the active session. QuickPDF does not
-        upload PDF contents to a QuickPDF server or store document contents in a QuickPDF database.
+        editing state are processed in your browser memory for the active session. NestlyPDF does
+        not upload PDF contents to a NestlyPDF server or store document contents in a NestlyPDF
+        database.
       </p>
     ),
   },
   {
     id: "information-not-collected",
-    title: "3. Information QuickPDF does not intentionally collect",
+    title: "3. Information NestlyPDF does not intentionally collect",
     body: (
       <p>
-        QuickPDF does not require an account and does not intentionally collect your document
-        contents, extracted text, signatures, editing data, or exported files. QuickPDF does not
+        NestlyPDF does not require an account and does not intentionally collect your document
+        contents, extracted text, signatures, editing data, or exported files. NestlyPDF does not
         place document contents in URLs, browser history, analytics, or error reporting.
       </p>
     ),
@@ -57,7 +58,7 @@ const sections = [
     body: (
       <p>
         The active PDF and editing state are session-only. They may be lost after a page refresh,
-        tab closure, browser closure, navigating away, or browser memory cleanup. QuickPDF does not
+        tab closure, browser closure, navigating away, or browser memory cleanup. NestlyPDF does not
         use LocalStorage, IndexedDB, cookies, or a document-history feature to restore your active
         document.
       </p>
@@ -70,7 +71,7 @@ const sections = [
       <p>
         Drawn, typed, and uploaded signatures and initials can contain sensitive information. They
         are handled in the same browser-memory session as the document and are not sent to a
-        QuickPDF server. You are responsible for deciding whether your device and browser are
+        NestlyPDF server. You are responsible for deciding whether your device and browser are
         appropriate for the documents you edit.
       </p>
     ),
@@ -80,7 +81,7 @@ const sections = [
     title: "6. Exported files",
     body: (
       <p>
-        When you download an edited PDF, QuickPDF creates the export in your browser and downloads
+        When you download an edited PDF, NestlyPDF creates the export in your browser and downloads
         it directly to your device. The downloaded file is then handled by your browser and device
         according to their normal download settings.
       </p>
@@ -91,10 +92,10 @@ const sections = [
     title: "7. Hosting and technical request data",
     body: (
       <p>
-        QuickPDF may be delivered through a third-party static hosting provider. That provider can
+        NestlyPDF may be delivered through a third-party static hosting provider. That provider can
         process ordinary request metadata, such as an IP address, browser information, and request
         time, under its own policies. This technical hosting data is separate from your PDF
-        contents, which QuickPDF processes locally in your browser.
+        contents, which NestlyPDF processes locally in your browser.
       </p>
     ),
   },
@@ -103,7 +104,7 @@ const sections = [
     title: "8. Cookies, analytics, and advertising",
     body: (
       <p>
-        QuickPDF does not use application cookies, analytics, advertising trackers, or third-party
+        NestlyPDF does not use application cookies, analytics, advertising trackers, or third-party
         scripts that observe document data. A hosting provider or an external website may have its
         own policies; review those policies when you visit those services.
       </p>
@@ -114,8 +115,8 @@ const sections = [
     title: "9. External links",
     body: (
       <p>
-        QuickPDF includes links to external websites, such as GitHub. Those sites are not operated
-        by QuickPDF, and their privacy practices apply when you follow an external link.
+        NestlyPDF includes links to external websites, such as GitHub. Those sites are not operated
+        by NestlyPDF, and their privacy practices apply when you follow an external link.
       </p>
     ),
   },
@@ -127,7 +128,7 @@ const sections = [
         Browser-local processing reduces the need to transfer document contents to an application
         server, but it cannot make every environment risk-free. Device security, browser extensions,
         shared computers, malware, and your browser configuration can affect privacy and security.
-        Use QuickPDF only on devices and browsers you trust.
+        Use NestlyPDF only on devices and browsers you trust.
       </p>
     ),
   },
@@ -136,7 +137,7 @@ const sections = [
     title: "11. Whiteout is not redaction",
     body: (
       <p>
-        QuickPDF whiteout is a visual overlay used to cover content in the exported PDF. It is not
+        NestlyPDF whiteout is a visual overlay used to cover content in the exported PDF. It is not
         secure redaction and must not be relied on to permanently remove sensitive information from
         the original document.
       </p>
@@ -147,7 +148,7 @@ const sections = [
     title: "12. Children's privacy",
     body: (
       <p>
-        QuickPDF does not require accounts and does not intentionally collect personal information
+        NestlyPDF does not require accounts and does not intentionally collect personal information
         from children. Parents and guardians should supervise a child's use of any software for
         documents containing personal or sensitive information.
       </p>
@@ -158,7 +159,7 @@ const sections = [
     title: "13. International use",
     body: (
       <p>
-        QuickPDF can be used from different locations because document processing occurs on your
+        NestlyPDF can be used from different locations because document processing occurs on your
         device. Static hosting providers and external websites may process technical request data in
         locations described by their own privacy policies.
       </p>
@@ -169,8 +170,8 @@ const sections = [
     title: "14. Changes to this policy",
     body: (
       <p>
-        We may update this policy as QuickPDF changes. The "Last updated" date at the top of this
-        page identifies the current version. Because QuickPDF does not require accounts, we do not
+        We may update this policy as NestlyPDF changes. The "Last updated" date at the top of this
+        page identifies the current version. Because NestlyPDF does not require accounts, we do not
         send individual policy-change notices.
       </p>
     ),
@@ -180,7 +181,7 @@ const sections = [
     title: "15. Contact",
     body: (
       <p>
-        For questions about this policy or QuickPDF, email{" "}
+        For questions about this policy or NestlyPDF, email{" "}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> or use the project's{" "}
         <a href={GITHUB_URL} rel="noreferrer" target="_blank">
           GitHub page
@@ -196,23 +197,23 @@ export const PrivacyPolicyPage = (): React.ReactElement => (
     <div className="privacy-policy-page__content">
       <header className="privacy-policy-page__header">
         <a
-          aria-label="Go to QuickPDF home"
+          aria-label="Go to NestlyPDF home"
           className="privacy-policy-page__brand"
           href="/"
           onClick={handleInternalNavigation("/")}
         >
           <img src={quickPdfMark} alt="" aria-hidden="true" />
-          <span aria-hidden="true">QuickPDF</span>
+          <span aria-hidden="true">NestlyPDF</span>
         </a>
         <a className="privacy-policy-page__back" href="/" onClick={handleInternalNavigation("/")}>
-          Back to QuickPDF
+          Back to NestlyPDF
         </a>
       </header>
 
       <div className="privacy-policy-page__hero">
         <p className="privacy-policy-page__eyebrow">Private PDF workspace</p>
         <h1 id="privacy-policy-title">Privacy Policy</h1>
-        <p>Clear, local-first information about how QuickPDF handles your documents.</p>
+        <p>Clear, local-first information about how NestlyPDF handles your documents.</p>
         <p className="privacy-policy-page__updated">Last updated: August 3, 2026</p>
       </div>
 
@@ -220,7 +221,7 @@ export const PrivacyPolicyPage = (): React.ReactElement => (
         <h2 id="privacy-summary-title">Privacy at a glance</h2>
         <ul>
           <li>Your PDF is processed locally in your browser.</li>
-          <li>QuickPDF does not upload or store your document on its own servers.</li>
+          <li>NestlyPDF does not upload or store your document on its own servers.</li>
           <li>No account is required.</li>
           <li>No analytics or advertising trackers are used.</li>
           <li>Closing or refreshing the page may permanently discard your editing session.</li>

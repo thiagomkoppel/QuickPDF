@@ -6,7 +6,7 @@ Accepted for the undo/redo milestone.
 
 ## Context
 
-QuickPDF now supports several reversible overlay operations: creation, text editing, font-size changes, movement, resizing, duplication, and deletion across text, whiteout, signature, and initials elements.
+NestlyPDF now supports several reversible overlay operations: creation, text editing, font-size changes, movement, resizing, duplication, and deletion across text, whiteout, signature, and initials elements.
 
 A React-owned pair of undo and redo arrays would couple history to the current interface, make future page and form features harder to integrate, and risk inconsistent behavior between toolbar, keyboard, pointer, and inspector actions.
 
@@ -19,7 +19,7 @@ Full snapshots are simple conceptually but can duplicate unnecessary state, enco
 
 ## Decision
 
-QuickPDF will use application-owned command history for committed document-output mutations.
+NestlyPDF will use application-owned command history for committed document-output mutations.
 
 - Presentation invokes application use cases and reads `canUndo`/`canRedo` state.
 - History is not owned by React components.
@@ -62,7 +62,7 @@ Rejected because a drag or typing session would produce unusable history and exc
 
 ### Persist history locally
 
-Rejected because QuickPDF intentionally discards document and editing state when the browser session ends.
+Rejected because NestlyPDF intentionally discards document and editing state when the browser session ends.
 
 ### Clear history after export
 

@@ -2,7 +2,7 @@
 
 ## User goal
 
-Undo and redo let users recover from editing mistakes without making QuickPDF feel like a complex desktop publishing application.
+Undo and redo let users recover from editing mistakes without making NestlyPDF feel like a complex desktop publishing application.
 
 The feature applies to document-output changes only.
 
@@ -77,7 +77,7 @@ Requirements:
 Shortcut handling must:
 
 - call the same application use cases as toolbar controls;
-- prevent browser-native undo only when QuickPDF handles the shortcut;
+- prevent browser-native undo only when NestlyPDF handles the shortcut;
 - not hijack native text-field undo while the user is actively editing text or another form control;
 - ignore repeated shortcuts while a history transition is pending;
 - preserve browser zoom shortcuts and existing editor keyboard behavior.
@@ -134,7 +134,7 @@ The visible status must reflect the actual revision, not merely whether history 
 
 Undo and redo history is available only while the current document remains open in the current browser session.
 
-History and the session-local overlay clipboard are destroyed when the document is closed, replaced, or the page is unloaded. QuickPDF does not persist history or copied overlay snapshots.
+History and the session-local overlay clipboard are destroyed when the document is closed, replaced, or the page is unloaded. NestlyPDF does not persist history or copied overlay snapshots.
 
 ## Accessibility
 

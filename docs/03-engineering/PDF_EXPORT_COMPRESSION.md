@@ -1,6 +1,6 @@
 # PDF Export Compression
 
-QuickPDF exposes two export-only modes. **Original Size** is the default and uses the existing pdf-lib export gateway without quality changes. **Compress PDF** first creates the final edited PDF, then rasterizes each final page locally with PDF.js at 150 DPI and JPEG quality 0.82 before rebuilding a PDF with the original page dimensions.
+NestlyPDF exposes two export-only modes. **Original Size** is the default and uses the existing pdf-lib export gateway without quality changes. **Compress PDF** first creates the final edited PDF, then rasterizes each final page locally with PDF.js at 150 DPI and JPEG quality 0.82 before rebuilding a PDF with the original page dimensions.
 
 Compression processes one page at a time and releases each canvas before the next page. It never changes session bytes, overlays, history, or the source document. Because the compressed output is rasterized, selectable text, forms, metadata, and other original PDF semantics may be flattened. The UI discloses this.
 

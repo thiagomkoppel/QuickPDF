@@ -47,7 +47,7 @@ test("never mounts the unsupported page for a compatible renderer", async ({ pag
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Preparing QuickPDF" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Preparing Nest" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Browser not supported" })).toHaveCount(0);
   await expect(page.getByLabel("Choose a PDF file")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Browser not supported" })).toHaveCount(0);
@@ -63,7 +63,7 @@ test("shows the compatibility panel only for a confirmed incompatible renderer",
 
   await expect(page.getByRole("heading", { name: "Browser not supported" })).toBeVisible();
   await expect(
-    page.getByText("This browser cannot reliably display PDFs in QuickPDF."),
+    page.getByText("This browser cannot reliably display PDFs in NestlyPDF."),
   ).toBeVisible();
   await expect(page.getByLabel("Choose a PDF file")).toHaveCount(0);
 });

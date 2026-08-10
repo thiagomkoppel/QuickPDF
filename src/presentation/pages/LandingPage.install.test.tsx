@@ -76,9 +76,9 @@ describe("LandingPage install onboarding", () => {
     renderLanding();
 
     fireEvent(window, event);
-    const card = await screen.findByRole("region", { name: "Install QuickPDF" });
+    const card = await screen.findByRole("region", { name: "Install NestlyPDF" });
     expect(
-      within(card).getByText("Use QuickPDF like an app and open it offline."),
+      within(card).getByText("Use NestlyPDF like an app and open it offline."),
     ).toBeInTheDocument();
     expect(within(card).getByText("Opens quickly")).toBeInTheDocument();
     expect(within(card).getByText("Launches from your home screen")).toBeInTheDocument();
@@ -86,10 +86,10 @@ describe("LandingPage install onboarding", () => {
     expect(within(card).getByText("Your PDFs always stay on your device")).toBeInTheDocument();
     expect(within(card).getByText("You only need to install it once.")).toBeInTheDocument();
 
-    await user.click(within(card).getByRole("button", { name: "Install QuickPDF" }));
+    await user.click(within(card).getByRole("button", { name: "Install NestlyPDF" }));
     expect(prompt).toHaveBeenCalledOnce();
     await waitFor(() => {
-      expect(screen.queryByRole("region", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
     });
   });
 
@@ -100,23 +100,23 @@ describe("LandingPage install onboarding", () => {
     const user = userEvent.setup();
     renderLanding();
 
-    const card = screen.getByRole("region", { name: "Install QuickPDF" });
-    await user.click(within(card).getByRole("button", { name: "Install QuickPDF" }));
-    expect(screen.getByRole("dialog", { name: "Install QuickPDF" })).toBeInTheDocument();
+    const card = screen.getByRole("region", { name: "Install NestlyPDF" });
+    await user.click(within(card).getByRole("button", { name: "Install NestlyPDF" }));
+    expect(screen.getByRole("dialog", { name: "Install NestlyPDF" })).toBeInTheDocument();
   });
 
   it("keeps the onboarding card visible but hides its install action when unavailable", () => {
     renderLanding();
 
-    const card = screen.getByRole("region", { name: "Install QuickPDF" });
+    const card = screen.getByRole("region", { name: "Install NestlyPDF" });
     expect(card).toBeInTheDocument();
     expect(
-      within(card).queryByRole("button", { name: "Install QuickPDF" }),
+      within(card).queryByRole("button", { name: "Install NestlyPDF" }),
     ).not.toBeInTheDocument();
 
     cleanup();
     setMatchMedia(true);
     renderLanding();
-    expect(screen.queryByRole("region", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
   });
 });

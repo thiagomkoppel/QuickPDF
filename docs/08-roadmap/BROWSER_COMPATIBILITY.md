@@ -2,7 +2,7 @@
 
 ## Supported browser policy
 
-QuickPDF decides renderer support from a local PDF.js capability preflight, not browser names, versions, operating-system versions, or device models. The preflight uses only bundled static probe bytes; it never reads a user-selected PDF.
+NestlyPDF decides renderer support from a local PDF.js capability preflight, not browser names, versions, operating-system versions, or device models. The preflight uses only bundled static probe bytes; it never reads a user-selected PDF.
 
 ## Preflight outcomes
 
@@ -10,13 +10,13 @@ The root application bootstrap starts in `checking` and immediately displays the
 
 - `compatible`: the required browser APIs were available, the installed PDF.js module initialized its worker, and a tiny PDF rendered visible pixels to a canvas.
 - `incompatible`: a required API, PDF.js module, worker, canvas, or render probe definitively failed.
-- `indeterminate`: the lightweight probe did not finish within its bounded time. QuickPDF leaves the upload controls available rather than falsely blocking a browser.
+- `indeterminate`: the lightweight probe did not finish within its bounded time. NestlyPDF leaves the upload controls available rather than falsely blocking a browser.
 
 The startup screen remains visible for at least five seconds and until the probe resolves. Only a completed `incompatible` result shows the compatibility panel. Compatible and indeterminate environments never see it, including during startup; indeterminate results continue into the normal application and retain the existing pre-open safety guard.
 
 ## Required capabilities
 
-QuickPDF checks the APIs needed across its local PDF workflow:
+NestlyPDF checks the APIs needed across its local PDF workflow:
 
 - `Promise`
 - `ReadableStream`

@@ -119,11 +119,11 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
           <a
             className="brand-link"
             href="/"
-            aria-label="Go to QuickPDF home"
+            aria-label="Go to NestlyPDF home"
             onClick={handleInternalNavigation("/")}
           >
-            <img src={quickPdfMark} alt="QuickPDF" />
-            <span aria-hidden="true">QuickPDF</span>
+            <img src={quickPdfMark} alt="NestlyPDF" />
+            <span aria-hidden="true">NestlyPDF</span>
           </a>
           <button
             ref={menuButtonRef}
@@ -149,7 +149,7 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
           >
             {canInstall ? (
               <button className="primary-nav__install" type="button" onClick={requestInstall}>
-                Install QuickPDF
+                Install NestlyPDF
               </button>
             ) : null}
             <a
@@ -190,7 +190,7 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
             role="dialog"
           >
             <div aria-hidden="true" className="ios-install-sheet__handle" />
-            <h2 id="ios-install-title">Install QuickPDF</h2>
+            <h2 id="ios-install-title">Install NestlyPDF</h2>
             <ol>
               <li>
                 Tap the{" "}

@@ -166,8 +166,8 @@ const BrowserCompatibilityPage = ({
       <div className="landing-hero">
         <section className="browser-compatibility-panel" role="alert">
           <h1 id="browser-compatibility-title">Browser not supported</h1>
-          <p>This browser cannot reliably display PDFs in QuickPDF.</p>
-          <p>Check your browser support or open QuickPDF on another device.</p>
+          <p>This browser cannot reliably display PDFs in NestlyPDF.</p>
+          <p>Check your browser support or open NestlyPDF on another device.</p>
           {compatibility.diagnostics.missingRequiredApis.length > 0 ? (
             <p>
               Missing required browser capability:{" "}

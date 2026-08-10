@@ -6,7 +6,7 @@ Items here are ideas, not commitments.
 
 - Progressive Web App
 - Version 1.0 release preparation
-- Save/Open QuickPDF Project (`.qpp`)
+- Save/Open NestlyPDF Project (`.qpp`)
 - Performance optimization
 - Accessibility completion
 - Browser compatibility

@@ -1,8 +1,8 @@
 {
-  "name": "QuickPDF",
-  "short_name": "QuickPDF",
+  "name": "NestlyPDF",
+  "short_name": "NestlyPDF",
   "id": "/",
-  "description": "Private browser-based PDF editor",
+  "description": "Edit PDFs privately, right on your device. Your files never leave your device. No uploads. No accounts. No cloud storage.",
   "display": "standalone",
   "start_url": "/",
   "scope": "/",

@@ -3092,13 +3092,13 @@ export const EditorPage = ({
         <button
           type="button"
           className="editor-header-identity editor-home-link"
-          aria-label="Go to QuickPDF home"
+          aria-label="Go to NestlyPDF home"
           onClick={() => {
             onHomeRequest?.();
           }}
         >
           <img src={quickPdfMark} alt="" aria-hidden="true" />
-          <span aria-hidden="true">QuickPDF</span>
+          <span aria-hidden="true">NestlyPDF</span>
         </button>
         <div className="editor-document-meta">
           <h1 id="editor-title">{state.fileName ?? "Open PDF"}</h1>
@@ -3972,7 +3972,7 @@ const ExportPdfDialog = ({
                 <span>
                   <strong>Original Size (No Compression)</strong>
                   <small>
-                    Export with the original document quality. QuickPDF edits will be included.
+                    Export with the original document quality. NestlyPDF edits will be included.
                   </small>
                 </span>
               </label>

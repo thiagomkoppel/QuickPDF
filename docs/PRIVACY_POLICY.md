@@ -4,21 +4,21 @@ Last updated: August 3, 2026
 
 1. Overview
 
-QuickPDF is a browser-based PDF editing application designed to process documents locally on your device. This Privacy Policy explains how QuickPDF handles documents, editing information, technical data, and external services.
+NestlyPDF is a browser-based PDF editing application designed to process documents locally on your device. This Privacy Policy explains how NestlyPDF handles documents, editing information, technical data, and external services.
 
-QuickPDF is built around a simple principle: your PDF contents should remain under your control.
+NestlyPDF is built around a simple principle: your PDF contents should remain under your control.
 
 2. Documents and editing data
 
-When you open a PDF in QuickPDF, the document is processed locally by your web browser.
+When you open a PDF in NestlyPDF, the document is processed locally by your web browser.
 
-QuickPDF does not intentionally transmit the contents of your PDF to a QuickPDF application server. Text, images, signatures, initials, annotations, page operations, and other edits are handled within the browser using local application code.
+NestlyPDF does not intentionally transmit the contents of your PDF to a NestlyPDF application server. Text, images, signatures, initials, annotations, page operations, and other edits are handled within the browser using local application code.
 
-Your original PDF remains unchanged. QuickPDF applies edits to an in-browser working session and creates a new PDF when you choose to download the result.
+Your original PDF remains unchanged. NestlyPDF applies edits to an in-browser working session and creates a new PDF when you choose to download the result.
 
-3. Information QuickPDF does not intentionally collect
+3. Information NestlyPDF does not intentionally collect
 
-QuickPDF does not currently require or intentionally collect:
+NestlyPDF does not currently require or intentionally collect:
 
 account information;
 names or email addresses;
@@ -31,13 +31,13 @@ advertising identifiers;
 behavioral analytics;
 precise location information.
 
-QuickPDF does not sell personal information or document information.
+NestlyPDF does not sell personal information or document information.
 
 4. Browser storage and session lifetime
 
 The active document and its edits are currently maintained in browser memory.
 
-Unless a future feature clearly tells you otherwise, QuickPDF does not automatically save an editable project or recovery copy.
+Unless a future feature clearly tells you otherwise, NestlyPDF does not automatically save an editable project or recovery copy.
 
 Your editing session may be permanently lost when you:
 
@@ -56,19 +56,19 @@ Download the finished PDF before leaving the editor if you want to keep your wor
 
 PDFs may contain sensitive, confidential, financial, medical, legal, identification, or other personal information. Signatures and initials may also be sensitive.
 
-QuickPDF processes these items locally in the browser and does not intentionally upload them to its own servers. However, you remain responsible for deciding whether the device, browser, network, and environment you use are appropriate for the information in your document.
+NestlyPDF processes these items locally in the browser and does not intentionally upload them to its own servers. However, you remain responsible for deciding whether the device, browser, network, and environment you use are appropriate for the information in your document.
 
-Avoid using QuickPDF on an untrusted or shared device when working with sensitive files.
+Avoid using NestlyPDF on an untrusted or shared device when working with sensitive files.
 
 6. Exported files
 
 When you download an edited PDF, the file is generated for download to your device.
 
-After download, the file is controlled by you and by the software, storage providers, backup tools, sharing services, or recipients you choose to use. QuickPDF is not responsible for how an exported file is stored, transmitted, or shared after it leaves the application.
+After download, the file is controlled by you and by the software, storage providers, backup tools, sharing services, or recipients you choose to use. NestlyPDF is not responsible for how an exported file is stored, transmitted, or shared after it leaves the application.
 
 7. Hosting and technical request data
 
-Although PDF contents are processed locally, the QuickPDF website must still be delivered to your browser by a hosting provider.
+Although PDF contents are processed locally, the NestlyPDF website must still be delivered to your browser by a hosting provider.
 
 The hosting provider may automatically process ordinary technical request information, such as:
 
@@ -78,13 +78,13 @@ requested page or asset;
 request date and time;
 general security and diagnostic information.
 
-This information is handled under the hosting provider’s own terms and privacy practices. It is not intended to include the contents of PDFs processed locally by QuickPDF.
+This information is handled under the hosting provider’s own terms and privacy practices. It is not intended to include the contents of PDFs processed locally by NestlyPDF.
 
 Do not identify a specific hosting provider in this section unless the repository and production configuration confirm which provider is currently used.
 
 8. Cookies, analytics, and advertising
 
-QuickPDF does not currently use:
+NestlyPDF does not currently use:
 
 advertising cookies;
 analytics trackers;
@@ -92,19 +92,19 @@ behavioral profiling;
 cross-site tracking;
 targeted advertising.
 
-QuickPDF may use minimal browser storage only when required for clearly disclosed interface preferences or future user-requested features. Any future persistence or recovery feature must be documented before release.
+NestlyPDF may use minimal browser storage only when required for clearly disclosed interface preferences or future user-requested features. Any future persistence or recovery feature must be documented before release.
 
 Do not claim that no browser storage of any kind exists unless the code audit confirms it.
 
 9. External links
 
-QuickPDF may contain links to external services, including GitHub.
+NestlyPDF may contain links to external services, including GitHub.
 
-When you follow an external link, the destination website may collect information according to its own privacy policy. QuickPDF does not control the data practices, content, or security of third-party websites.
+When you follow an external link, the destination website may collect information according to its own privacy policy. NestlyPDF does not control the data practices, content, or security of third-party websites.
 
 10. Security and limitations
 
-QuickPDF is designed to reduce privacy exposure by processing documents locally. Local processing, however, does not guarantee absolute security.
+NestlyPDF is designed to reduce privacy exposure by processing documents locally. Local processing, however, does not guarantee absolute security.
 
 Security may still depend on:
 
@@ -129,13 +129,13 @@ Do not use Whiteout when permanent, secure redaction is required. Use a purpose-
 
 12. Children’s privacy
 
-QuickPDF is a general-purpose document utility and is not specifically directed to children.
+NestlyPDF is a general-purpose document utility and is not specifically directed to children.
 
-QuickPDF does not intentionally request personal information from children. A parent, guardian, school, or other responsible adult should supervise a child’s use when documents contain personal or sensitive information.
+NestlyPDF does not intentionally request personal information from children. A parent, guardian, school, or other responsible adult should supervise a child’s use when documents contain personal or sensitive information.
 
 13. International use
 
-QuickPDF may be accessed from different countries and regions.
+NestlyPDF may be accessed from different countries and regions.
 
 Because the application does not currently require an account or intentionally collect document contents, many traditional data-account requests may not apply. Technical information processed by the hosting provider may be handled in locations determined by that provider.
 
@@ -143,7 +143,7 @@ Users are responsible for complying with laws and document-handling requirements
 
 14. Changes to this policy
 
-This policy may be updated when QuickPDF’s functionality or data practices change.
+This policy may be updated when NestlyPDF’s functionality or data practices change.
 
 The “Last updated” date will identify the current version. Material changes involving document storage, analytics, accounts, cloud processing, or other new data practices should be clearly disclosed before or when those features are introduced.
 
@@ -157,4 +157,4 @@ The official project repository is [thiagomkoppel/QuickPDF](https://github.com/t
 
 16. Offline application shell
 
-QuickPDF may store its own application files in browser Cache Storage so the app can open offline. This can include QuickPDF JavaScript, CSS, icons, fonts, and the PDF.js runtime and worker. It does not include PDFs opened by users, edited documents, exports, signatures, uploaded images, or document contents.
+NestlyPDF may store its own application files in browser Cache Storage so the app can open offline. This can include NestlyPDF JavaScript, CSS, icons, fonts, and the PDF.js runtime and worker. It does not include PDFs opened by users, edited documents, exports, signatures, uploaded images, or document contents.

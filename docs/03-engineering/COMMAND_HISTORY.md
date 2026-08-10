@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Command history provides browser-memory-only undo and redo for the active QuickPDF document session.
+Command history provides browser-memory-only undo and redo for the active NestlyPDF document session.
 
 It is an application concern. The presentation layer may read capabilities such as `canUndo` and `canRedo` and invoke use cases, but it must not own or mutate the stacks.
 

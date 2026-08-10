@@ -1,8 +1,8 @@
-# QuickPDF Accessibility
+# NestlyPDF Accessibility
 
 ## Goal
 
-QuickPDF must support users who navigate with keyboards, touch, screen readers, magnification, reduced motion, and alternative input devices.
+NestlyPDF must support users who navigate with keyboards, touch, screen readers, magnification, reduced motion, and alternative input devices.
 
 Accessibility is part of feature completion, not a later visual polish task.
 

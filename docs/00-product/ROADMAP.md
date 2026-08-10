@@ -1,4 +1,4 @@
-# QuickPDF Roadmap
+# NestlyPDF Roadmap
 
 ## ✅ Phase 1 — Foundation and Core Editor
 

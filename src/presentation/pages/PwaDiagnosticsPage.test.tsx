@@ -49,6 +49,11 @@ describe("PWA diagnostics page", () => {
     const user = userEvent.setup();
     render(<PwaDiagnosticsPage bootstrapStatus="compatible" />);
 
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "NestlyPDF diagnostics" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to NestlyPDF" })).toHaveAttribute("href", "/");
+
     expect(await screen.findByText("Navigator standalone")).toBeInTheDocument();
     expect(screen.getByText("Display-mode standalone")).toBeInTheDocument();
     expect(screen.getByText("Current shell cache")).toBeInTheDocument();

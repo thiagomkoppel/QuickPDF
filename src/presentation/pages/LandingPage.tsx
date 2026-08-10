@@ -184,7 +184,7 @@ export const LandingPage = ({
     <section className="landing-page" aria-labelledby="landing-title">
       {install.update.status === "available" ? (
         <aside className="pwa-update-banner" aria-live="polite">
-          <strong>QuickPDF update available</strong>
+          <strong>NestlyPDF update available</strong>
           <span>A new version is ready.</span>
           <button
             type="button"
@@ -215,16 +215,20 @@ export const LandingPage = ({
           <span className="landing-eyebrow-mobile">Private &amp; Secure</span>
         </p>
         <h1 id="landing-title">
-          <span className="landing-title-desktop">Edit PDFs in seconds.</span>
+          <span className="landing-title-desktop">Edit PDFs privately, right on your device.</span>
           <span className="landing-title-mobile">
             Edit PDFs
             <br />
-            quickly.
+            privately.
           </span>
         </h1>
         <p className="landing-subtitle">
-          <span className="landing-subtitle-desktop">Your files never leave your browser.</span>
-          <span className="landing-subtitle-mobile">Private, browser-only editing.</span>
+          <span className="landing-subtitle-desktop">
+            Your files never leave your device. No uploads. No accounts. No cloud storage.
+          </span>
+          <span className="landing-subtitle-mobile">
+            No uploads. No accounts. No cloud storage.
+          </span>
         </p>
         <input
           ref={inputRef}
@@ -325,8 +329,8 @@ export const LandingPage = ({
               </svg>
             </span>
             <div className="landing-install-card__content">
-              <h2 id="landing-install-title">Install QuickPDF</h2>
-              <p>Use QuickPDF like an app and open it offline.</p>
+              <h2 id="landing-install-title">Install NestlyPDF</h2>
+              <p>Use NestlyPDF like an app and open it offline.</p>
               <ul>
                 <li>Opens quickly</li>
                 <li>Launches from your home screen</li>
@@ -336,17 +340,17 @@ export const LandingPage = ({
             </div>
             {canInstall ? (
               <button type="button" onClick={() => void install.requestInstall()}>
-                Install QuickPDF
+                Install NestlyPDF
               </button>
             ) : null}
             <small>You only need to install it once.</small>
           </section>
         ) : null}
-        <ul aria-label="QuickPDF privacy promises" className="landing-badges">
+        <ul aria-label="NestlyPDF privacy promises" className="landing-badges">
           <li>
             <b>?</b>
             <span>
-              <strong>100% Private</strong>
+              <strong>Private by design</strong>
               <small className="landing-badge-desktop">Stays in your browser</small>
               <small className="landing-badge-mobile">Your files never leave your browser</small>
             </span>
@@ -377,9 +381,9 @@ export const LandingPage = ({
       </div>
       <footer className="landing-footer" id="privacy">
         <span>
-          <strong className="landing-footer-desktop">QuickPDF - Browser-Based PDF Editor</strong>
+          <strong className="landing-footer-desktop">NestlyPDF - Browser-Based PDF Editor</strong>
           <strong className="landing-footer-mobile">Made with privacy in mind</strong>
-          <small aria-label="QuickPDF build" className="landing-version">
+          <small aria-label="NestlyPDF build" className="landing-version">
             {formatQuickPdfBuildLabel()}
           </small>
         </span>

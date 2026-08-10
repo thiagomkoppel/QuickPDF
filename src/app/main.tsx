@@ -8,7 +8,7 @@ import { App } from "./App";
 const rootElement = document.getElementById("root");
 
 if (rootElement === null) {
-  throw new Error("QuickPDF root element was not found.");
+  throw new Error("NestlyPDF root element was not found.");
 }
 
 if (import.meta.env.PROD) {

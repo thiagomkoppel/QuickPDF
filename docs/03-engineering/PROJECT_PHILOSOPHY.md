@@ -1,6 +1,6 @@
-﻿# Project Philosophy
+# Project Philosophy
 
-QuickPDF favors small, local, understandable workflows over platform breadth.
+NestlyPDF favors small, local, understandable workflows over platform breadth.
 
 ## Principles
 

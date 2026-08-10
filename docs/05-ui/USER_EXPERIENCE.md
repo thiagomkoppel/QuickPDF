@@ -1,8 +1,8 @@
-# QuickPDF User Experience
+# NestlyPDF User Experience
 
 ## Product promise
 
-QuickPDF solves one immediate problem:
+NestlyPDF solves one immediate problem:
 
 > I need to complete this PDF quickly and send it back.
 
@@ -20,7 +20,7 @@ The user should understand the next action without a tutorial.
 
 ### Private
 
-The product clearly states that documents stay in the browser session and are not uploaded to QuickPDF.
+The product clearly states that documents stay in the browser session and are not uploaded to NestlyPDF.
 
 ### Predictable
 
@@ -32,7 +32,7 @@ Undo/Redo, discard warnings, input validation, and recoverable errors protect us
 
 ### Focused
 
-QuickPDF avoids cloud workflows, dashboards, accounts, collaboration, and unrelated document-management features.
+NestlyPDF avoids cloud workflows, dashboards, accounts, collaboration, and unrelated document-management features.
 
 ### Honest
 
@@ -70,7 +70,7 @@ A feature should be rejected or deferred when it:
 
 The landing page should communicate, within seconds:
 
-- what QuickPDF does;
+- what NestlyPDF does;
 - how to open a file;
 - that the file stays local;
 - that no account is required.
@@ -159,7 +159,7 @@ Trust is reinforced through:
 
 ## Simplicity limits
 
-QuickPDF is not initially:
+NestlyPDF is not initially:
 
 - a PDF creator;
 - a cloud drive;
@@ -172,7 +172,7 @@ QuickPDF is not initially:
 
 ## Definition of a good interaction
 
-A good QuickPDF interaction:
+A good NestlyPDF interaction:
 
 - needs little explanation;
 - behaves like familiar document/design tools;

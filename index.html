@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="QuickPDF is a private browser-based PDF utility in early Phase 0 foundation work."
+      content="Edit PDFs privately, right on your device. Your files never leave your device. No uploads. No accounts. No cloud storage."
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#224248" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="QuickPDF" />
+    <meta name="apple-mobile-web-app-title" content="NestlyPDF" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
-    <title>QuickPDF</title>
+    <title>NestlyPDF</title>
     <style>
       #quickpdf-boot-fallback {
         position: fixed;
@@ -63,18 +63,18 @@
     <section id="quickpdf-boot-fallback" aria-live="polite" aria-labelledby="quickpdf-boot-title">
       <div>
         <img src="/quickpdf-192.png" alt="" />
-        <strong id="quickpdf-boot-title">Quick<span>PDF</span></strong>
-        <p id="quickpdf-boot-status">Starting QuickPDF...</p>
+        <strong id="quickpdf-boot-title">Nestly<span>PDF</span></strong>
+        <p id="quickpdf-boot-status">Starting NestlyPDF...</p>
       </div>
     </section>
     <script>
       window.addEventListener("error", function () {
         var status = document.getElementById("quickpdf-boot-status");
-        if (status) status.textContent = "QuickPDF couldn't finish starting.";
+        if (status) status.textContent = "NestlyPDF couldn't finish starting.";
       });
       window.addEventListener("unhandledrejection", function () {
         var status = document.getElementById("quickpdf-boot-status");
-        if (status) status.textContent = "QuickPDF couldn't finish starting.";
+        if (status) status.textContent = "NestlyPDF couldn't finish starting.";
       });
     </script>
     <script type="module" src="/src/app/main.tsx"></script>

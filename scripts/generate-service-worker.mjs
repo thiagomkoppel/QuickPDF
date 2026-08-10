@@ -74,7 +74,7 @@ const populateCache=async()=>{
   try{
     await Promise.all(PRECACHE.map(async(pathname)=>{
       const response=await fetch(new Request(pathname,{cache:"reload"}));
-      if(!response.ok||!hasExpectedContentType(pathname,response))throw new Error("QuickPDF shell asset could not be safely cached");
+      if(!response.ok||!hasExpectedContentType(pathname,response))throw new Error("NestlyPDF shell asset could not be safely cached");
       await cache.put(pathname,pathname===APP_SHELL_URL?await normalizeNavigationResponse(response):response);
     }));
   }catch(error){

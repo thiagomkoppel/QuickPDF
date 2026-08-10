@@ -1,4 +1,4 @@
-# QuickPDF Editor Interface
+# NestlyPDF Editor Interface
 
 ## Purpose
 
@@ -26,7 +26,7 @@ The header should be minimal.
 
 Possible contents:
 
-- QuickPDF wordmark;
+- NestlyPDF wordmark;
 - local file name;
 - current document status;
 - optional help/shortcuts entry.
@@ -268,7 +268,7 @@ Workflow:
 
 1. Activate Image.
 2. Choose a supported local image file.
-3. QuickPDF validates and decodes the image in the browser.
+3. NestlyPDF validates and decodes the image in the browser.
 4. The editor enters image placement mode.
 5. Click the PDF page to place the image centered on that point.
 6. The image is clamped inside the page and selected.
@@ -283,7 +283,7 @@ Checkmark, Cross, and Date are fast one-shot annotation tools:
 
 1. Activate the tool.
 2. Click the PDF page.
-3. QuickPDF places one overlay, selects it, and returns to Select.
+3. NestlyPDF places one overlay, selects it, and returns to Select.
 
 Checkmark and Cross render as transparent vector symbols, preserve aspect ratio during resize, and export as vector line artwork without relying on remote fonts or emoji glyphs.
 
@@ -431,7 +431,7 @@ A shortcut help dialog may be added later.
 
 ## Phone Quick Edit
 
-Below `768px`, QuickPDF uses a reduced **Quick Edit** layout. It keeps the PDF workspace dominant and exposes only Select, Text, Signature, Checkmark, Date, Image, Undo, Redo, Download, simple page navigation, and viewer zoom. A dismissible session-only notice directs users to desktop or tablet for layers, advanced formatting, and the complete toolset.
+Below `768px`, NestlyPDF uses a reduced **Quick Edit** layout. It keeps the PDF workspace dominant and exposes only Select, Text, Signature, Checkmark, Date, Image, Undo, Redo, Download, simple page navigation, and viewer zoom. A dismissible session-only notice directs users to desktop or tablet for layers, advanced formatting, and the complete toolset.
 
 On an empty phone workspace while Select is active, a one-finger drag pans the zoomed document directly without creating history or changing dirty state. Two-finger gestures retain pinch zoom; overlay movement, resizing, whiteout placement, and text editing keep ownership of their own touch interactions.
 

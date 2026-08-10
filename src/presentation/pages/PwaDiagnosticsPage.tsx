@@ -94,7 +94,7 @@ export const PwaDiagnosticsPage = ({
   return (
     <section aria-labelledby="pwa-diagnostics-title" className="pwa-diagnostics-page">
       <div className="pwa-diagnostics-page__content">
-        <h1 id="pwa-diagnostics-title">QuickPDF diagnostics</h1>
+        <h1 id="pwa-diagnostics-title">NestlyPDF diagnostics</h1>
         <p>Temporary installation diagnostics. No document or user data is shown.</p>
         {diagnostics === undefined ? (
           <p aria-live="polite" role="status">
@@ -130,7 +130,7 @@ export const PwaDiagnosticsPage = ({
             window.dispatchEvent(new Event("quickpdf:navigation"));
           }}
         >
-          Back to QuickPDF
+          Back to NestlyPDF
         </a>
       </div>
     </section>

@@ -10,7 +10,7 @@ Phase 0 requires a browser-only foundation that can be developed and validated q
 
 ## Decision
 
-QuickPDF will use Vite, React, and TypeScript as a static client-side application. The application will not use server-side rendering, backend document processing, authentication, a database, cloud storage, analytics, telemetry, remote fonts, or external scripts.
+NestlyPDF will use Vite, React, and TypeScript as a static client-side application. The application will not use server-side rendering, backend document processing, authentication, a database, cloud storage, analytics, telemetry, remote fonts, or external scripts.
 
 npm is the selected package manager unless a future decision changes it.
 

@@ -1,4 +1,4 @@
-# QuickPDF Landing Page
+# NestlyPDF Landing Page
 
 ## Purpose
 
@@ -27,7 +27,7 @@ The page should communicate:
 
 ## Information hierarchy
 
-1. QuickPDF identity
+1. NestlyPDF identity
 2. Clear product promise
 3. Large drag-and-drop interaction
 4. Privacy reassurance
@@ -40,7 +40,7 @@ Avoid testimonials, pricing tables, blog cards, comparison grids, and oversized 
 Recommended structure:
 
 ```text
-Header: QuickPDF logo/name
+Header: NestlyPDF logo/name
 
 Hero heading
 Supporting privacy message
@@ -181,11 +181,11 @@ Suggested copy:
 
 ## Install onboarding
 
-Show a calm **Install QuickPDF** card directly below the PDF upload surface and before the privacy reassurance row whenever the app is not installed. It explains the local native-app benefit. When a supported browser exposes a genuine install path, its action launches the Chromium browser prompt or the iOS Safari Add to Home Screen instructions. The action is absent when no accurate install action is available; the card itself is absent only in standalone mode or after installation.
+Show a calm **Install NestlyPDF** card directly below the PDF upload surface and before the privacy reassurance row whenever the app is not installed. It explains the local native-app benefit. When a supported browser exposes a genuine install path, its action launches the Chromium browser prompt or the iOS Safari Add to Home Screen instructions. The action is absent when no accurate install action is available; the card itself is absent only in standalone mode or after installation.
 
 ### Multiple files
 
-QuickPDF initially accepts one PDF at a time.
+NestlyPDF initially accepts one PDF at a time.
 
 Suggested copy:
 
@@ -221,7 +221,7 @@ If the app enforces a practical limit or fails gracefully:
 
 ## Signature micro-interaction
 
-The drag-and-drop interaction is a defining QuickPDF experience.
+The drag-and-drop interaction is a defining NestlyPDF experience.
 
 Preferred motion:
 
@@ -259,7 +259,7 @@ Reduced motion:
 Use accurate language:
 
 - `Your PDF stays in this browser session.`
-- `Nothing is uploaded to QuickPDF.`
+- `Nothing is uploaded to NestlyPDF.`
 - `Closing the document or tab may discard your edits.`
 
 Avoid unverifiable claims such as cryptographic deletion from memory.
@@ -278,4 +278,4 @@ Avoid unverifiable claims such as cryptographic deletion from memory.
 
 ## Phone landing
 
-Below 768px, the landing page uses a native-app entry layout: a compact QuickPDF header with a keyboard-accessible menu for Privacy and GitHub, a concise Private & Secure hero, picker-first Open a PDF card, three trust cards, and a privacy footer. The same local staged opening workflow is used for picker and supported drag-and-drop input. Desktop and tablet landing layouts remain unchanged.
+Below 768px, the landing page uses a native-app entry layout: a compact NestlyPDF header with a keyboard-accessible menu for Privacy and GitHub, a concise Private & Secure hero, picker-first Open a PDF card, three trust cards, and a privacy footer. The same local staged opening workflow is used for picker and supported drag-and-drop input. Desktop and tablet landing layouts remain unchanged.

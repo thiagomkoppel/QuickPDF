@@ -1,4 +1,4 @@
-# QuickPDF User Warnings
+# NestlyPDF User Warnings
 
 ## Purpose
 

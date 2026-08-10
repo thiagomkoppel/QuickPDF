@@ -1,4 +1,4 @@
-# QuickPDF Roadmap
+# NestlyPDF Roadmap
 
 This folder defines the roadmap after completion of the `05-ui` milestone.
 

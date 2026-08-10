@@ -57,7 +57,7 @@ const renderFailure = (message: string, cancelled = false): PdfPageRenderFailure
 
 const logRenderDiagnostic = (context: string, error: unknown): void => {
   if (import.meta.env.DEV) {
-    console.warn("QuickPDF PDF render diagnostic", {
+    console.warn("NestlyPDF PDF render diagnostic", {
       context,
       name: error instanceof Error ? error.name : typeof error,
     });

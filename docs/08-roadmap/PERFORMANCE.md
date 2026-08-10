@@ -2,7 +2,7 @@
 
 ## Goal
 
-Keep QuickPDF responsive on large PDFs and memory-constrained mobile devices.
+Keep NestlyPDF responsive on large PDFs and memory-constrained mobile devices.
 
 ## Priorities
 

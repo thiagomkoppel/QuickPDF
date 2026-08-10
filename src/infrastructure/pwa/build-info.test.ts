@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { QUICKPDF_BUILD, formatQuickPdfBuildLabel } from "./build-info";
 
-describe("QuickPDF build identity", () => {
+describe("NestlyPDF build identity", () => {
   it("uses the package semantic version and formats a non-sensitive runtime label", () => {
     expect(QUICKPDF_BUILD.version).toBe(packageJson.version);
     expect(formatQuickPdfBuildLabel(QUICKPDF_BUILD)).toBe(

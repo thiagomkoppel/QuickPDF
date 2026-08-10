@@ -1,4 +1,4 @@
-# QuickPDF Visual Hierarchy
+# NestlyPDF Visual Hierarchy
 
 ## Purpose
 
@@ -151,7 +151,7 @@ Avoid arbitrary escalating values.
 
 ## Density
 
-QuickPDF should feel spacious on landing and efficient in the editor.
+NestlyPDF should feel spacious on landing and efficient in the editor.
 
 Landing:
 

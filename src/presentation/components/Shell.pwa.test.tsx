@@ -43,15 +43,15 @@ describe("Shell PWA presentation", () => {
       </Shell>,
     );
 
-    expect(screen.queryByRole("dialog", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open site menu" }));
-    await user.click(screen.getByRole("button", { name: "Install QuickPDF" }));
+    await user.click(screen.getByRole("button", { name: "Install NestlyPDF" }));
 
-    expect(screen.getByRole("dialog", { name: "Install QuickPDF" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Install NestlyPDF" })).toBeInTheDocument();
     expect(screen.getByText("Tap the Share button in Safari.")).toBeInTheDocument();
     expect(screen.getByText(/Add to Home Screen/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Got it" }));
-    expect(screen.queryByRole("dialog", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
   });
 
   it("uses the saved Chromium prompt and hides installation after acceptance", async () => {
@@ -69,11 +69,11 @@ describe("Shell PWA presentation", () => {
     );
 
     fireEvent(window, event);
-    await user.click(await screen.findByRole("button", { name: "Install QuickPDF" }));
+    await user.click(await screen.findByRole("button", { name: "Install NestlyPDF" }));
 
     expect(prompt).toHaveBeenCalledOnce();
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
     });
     expect(screen.getByText("Landing content")).toBeInTheDocument();
   });
@@ -94,10 +94,10 @@ describe("Shell PWA presentation", () => {
     );
 
     fireEvent(window, event);
-    expect(await screen.findByRole("button", { name: "Install QuickPDF" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Install NestlyPDF" })).toBeInTheDocument();
     fireEvent(window, new Event("appinstalled"));
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
     });
   });
   it("does not expose an install action when native installation is unavailable", () => {
@@ -107,7 +107,7 @@ describe("Shell PWA presentation", () => {
       </Shell>,
     );
 
-    expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
   });
 
   it("suppresses all installation controls in standalone mode", () => {
@@ -118,9 +118,9 @@ describe("Shell PWA presentation", () => {
       </Shell>,
     );
 
-    expect(screen.getByRole("link", { name: "Go to QuickPDF home" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to NestlyPDF home" })).toBeInTheDocument();
     expect(document.querySelector(".app-shell")).toHaveAttribute("data-standalone", "true");
-    expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install NestlyPDF" })).not.toBeInTheDocument();
   });
 
   it("does not expose PWA diagnostics from the existing menu", async () => {

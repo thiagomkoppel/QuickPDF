@@ -1,10 +1,10 @@
-# QuickPDF Design System
+# NestlyPDF Design System
 
 ## Purpose
 
-This document defines the final visual language for QuickPDF.
+This document defines the final visual language for NestlyPDF.
 
-QuickPDF is a private browser utility for short, focused document tasks. It is not a dashboard, collaboration platform, cloud drive, or office suite.
+NestlyPDF is a private browser utility for short, focused document tasks. It is not a dashboard, collaboration platform, cloud drive, or office suite.
 
 The interface must feel:
 
@@ -19,14 +19,14 @@ The PDF is the primary visual object. Controls support the document and must nev
 
 ## Design direction
 
-QuickPDF combines:
+NestlyPDF combines:
 
 - Apple-like restraint, spacing, clarity, and softness;
 - Linear-like precision, compact controls, and crisp interaction states.
 
 ## Brand Identity Invariant
 
-The approved QuickPDF mark and wordmark are immutable across all routes, form factors, and states. Use the repository `quickpdf-mark.svg` with the `QuickPDF` wordmark rendered in the shared white brand token. Do not recolor the wordmark per page, theme, dialog, header, or interaction state. Navigation semantics may change, but the logo visual treatment must not.
+The approved NestlyPDF mark and wordmark are immutable across all routes, form factors, and states. Use the repository `quickpdf-mark.svg` with the `NestlyPDF` wordmark rendered in the shared white brand token. Do not recolor the wordmark per page, theme, dialog, header, or interaction state. Navigation semantics may change, but the logo visual treatment must not.
 
 Avoid:
 

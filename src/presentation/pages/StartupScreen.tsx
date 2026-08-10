@@ -18,13 +18,13 @@ interface StartupScreenProps {
 export const StartupScreen = ({ stage }: StartupScreenProps): React.ReactElement => (
   <main aria-labelledby="startup-title" className="startup-screen">
     <section aria-live="polite" className="startup-screen__content" role="status">
-      <div className="startup-screen__brand" aria-label="QuickPDF">
+      <div className="startup-screen__brand" aria-label="NestlyPDF">
         <img src={quickPdfMark} alt="" />
         <span>
-          Quick<span>PDF</span>
+          Nestly<span>PDF</span>
         </span>
       </div>
-      <h1 id="startup-title">Preparing QuickPDF</h1>
+      <h1 id="startup-title">Preparing Nest</h1>
       <p>{stageCopy[stage]}</p>
       <div aria-hidden="true" className="startup-screen__portal">
         <i />

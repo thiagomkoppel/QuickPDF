@@ -1,4 +1,4 @@
-# QuickPDF Editor Completion Specification
+# NestlyPDF Editor Completion Specification
 
 ## Goal
 

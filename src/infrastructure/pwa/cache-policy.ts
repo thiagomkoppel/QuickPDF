@@ -9,7 +9,7 @@ const isApprovedAssetPath = (pathname: string): boolean =>
     pathname,
   );
 
-/** Limits Cache Storage to QuickPDF's versioned application shell. */
+/** Limits Cache Storage to NestlyPDF's versioned application shell. */
 export const shouldCacheRequest = (request: Request, response: Response): boolean => {
   const url = new URL(request.url);
   if (url.protocol === "blob:" || url.protocol === "data:") return false;

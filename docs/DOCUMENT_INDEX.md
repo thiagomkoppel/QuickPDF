@@ -10,7 +10,7 @@ Assesses the repository baseline, current implementation state, risks, and recom
 
 ### `00-product/PRODUCT_VISION.md`
 
-Defines QuickPDF's product purpose, target users, core promise, and intentionally narrow browser-only direction.
+Defines NestlyPDF's product purpose, target users, core promise, and intentionally narrow browser-only direction.
 
 ### `00-product/PRODUCT_REQUIREMENTS.md`
 
@@ -64,7 +64,7 @@ Defines rules that must remain true across every valid document session transiti
 
 ### `03-engineering/PROJECT_PHILOSOPHY.md`
 
-Defines the engineering values that keep QuickPDF local, small, understandable, and honest about limitations.
+Defines the engineering values that keep NestlyPDF local, small, understandable, and honest about limitations.
 
 ### `03-engineering/CODING_STANDARDS.md`
 
@@ -124,7 +124,7 @@ Defines keyboard, focus, semantic, contrast, status-announcement, and touch-acce
 
 ### `05-ui/DESIGN_SYSTEM.md`
 
-Defines the visual language of QuickPDF, including colors, typography, spacing, buttons, icons, and motion.
+Defines the visual language of NestlyPDF, including colors, typography, spacing, buttons, icons, and motion.
 
 ### `05-ui/LANDING_PAGE.md`
 
@@ -186,7 +186,7 @@ Records the decision to use application-owned, reversible, mergeable command his
 
 ### `08-roadmap/BROWSER_COMPATIBILITY.md`
 
-Defines QuickPDF's supported-browser policy, required runtime capabilities, compatibility gate, and documented legacy-browser limitation.
+Defines NestlyPDF's supported-browser policy, required runtime capabilities, compatibility gate, and documented legacy-browser limitation.
 
 ### `08-roadmap/PWA.md`
 

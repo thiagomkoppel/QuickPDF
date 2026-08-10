@@ -183,7 +183,7 @@ beforeEach(() => {
   clearCanvas.mockClear();
 });
 
-describe("QuickPDF application shell", () => {
+describe("NestlyPDF application shell", () => {
   it("captures a native install prompt while the startup screen is still visible", async () => {
     vi.useFakeTimers();
     try {
@@ -206,14 +206,14 @@ describe("QuickPDF application shell", () => {
         />,
       );
 
-      expect(screen.getByText("Preparing QuickPDF")).toBeInTheDocument();
+      expect(screen.getByText("Preparing Nest")).toBeInTheDocument();
       fireEvent(window, installEvent);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
 
-      const installButton = screen.getAllByRole("button", { name: "Install QuickPDF" })[0];
+      const installButton = screen.getAllByRole("button", { name: "Install NestlyPDF" })[0];
       if (installButton === undefined) throw new Error("Expected the captured install action.");
       fireEvent.click(installButton);
       expect(prompt).toHaveBeenCalledOnce();
@@ -225,13 +225,21 @@ describe("QuickPDF application shell", () => {
   it("renders the landing page with the product name, product statement, and accurate privacy promise", () => {
     renderAt("/");
 
-    expect(screen.getByRole("link", { name: "Go to QuickPDF home" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to NestlyPDF home" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Edit PDFs privately, right on your device. Edit PDFs privately.",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Your files never leave your browser.")).toBeInTheDocument();
-    expect(screen.getByText("100% Private")).toBeInTheDocument();
-    expect(screen.getByLabelText("QuickPDF build")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your files never leave your device. No uploads. No accounts. No cloud storage.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Private by design")).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("QuickPDF");
+    expect(screen.getByLabelText("NestlyPDF build")).toBeInTheDocument();
     expect(screen.getByText("Fast & Simple")).toBeInTheDocument();
     expect(screen.getByText("Your Control")).toBeInTheDocument();
     expect(screen.getByLabelText("Choose a PDF file")).toHaveAttribute(
@@ -247,10 +255,10 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByText("Privacy at a glance")).toBeInTheDocument();
     expect(screen.getByText("Your PDF is processed locally in your browser.")).toBeInTheDocument();
     expect(
-      screen.getByText("QuickPDF does not upload or store your document on its own servers."),
+      screen.getByText("NestlyPDF does not upload or store your document on its own servers."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to QuickPDF" })).toHaveAttribute("href", "/");
-    const privacyBrand = screen.getByRole("link", { name: "Go to QuickPDF home" });
+    expect(screen.getByRole("link", { name: "Back to NestlyPDF" })).toHaveAttribute("href", "/");
+    const privacyBrand = screen.getByRole("link", { name: "Go to NestlyPDF home" });
     expect(privacyBrand.querySelector("img")).toHaveAttribute(
       "src",
       expect.stringContaining("quickpdf-mark"),
@@ -259,7 +267,7 @@ describe("QuickPDF application shell", () => {
     for (const heading of [
       "1. Overview",
       "2. Documents and editing data",
-      "3. Information QuickPDF does not intentionally collect",
+      "3. Information NestlyPDF does not intentionally collect",
       "4. Browser storage and session lifetime",
       "5. Signatures and sensitive information",
       "6. Exported files",
@@ -291,9 +299,12 @@ describe("QuickPDF application shell", () => {
     await user.click(screen.getByRole("link", { name: "Privacy Policy" }));
     expect(screen.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: "Back to QuickPDF" }));
+    await user.click(screen.getByRole("link", { name: "Back to NestlyPDF" }));
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Edit PDFs privately, right on your device. Edit PDFs privately.",
+      }),
     ).toBeInTheDocument();
   });
   it("renders diagnostics from the canonical internal route and returns to the landing page", async () => {
@@ -301,15 +312,18 @@ describe("QuickPDF application shell", () => {
     renderAt("/pwa-diagnostics");
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "QuickPDF diagnostics" }),
+      await screen.findByRole("heading", { level: 1, name: "NestlyPDF diagnostics" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Choose a PDF file")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: "Back to QuickPDF" }));
+    await user.click(screen.getByRole("link", { name: "Back to NestlyPDF" }));
 
     expect(window.location.pathname).toBe("/");
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Edit PDFs privately, right on your device. Edit PDFs privately.",
+      }),
     ).toBeInTheDocument();
   });
   it("opens the accessible local picker from the complete drop zone", () => {
@@ -432,13 +446,13 @@ describe("QuickPDF application shell", () => {
     });
     Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
   });
-  it("navigates home immediately from a clean editor through the QuickPDF logo", async () => {
+  it("navigates home immediately from a clean editor through the NestlyPDF logo", async () => {
     const user = userEvent.setup();
     renderAt("/");
 
     await user.upload(screen.getByLabelText("Choose a PDF file"), pdfFile());
     await screen.findByRole("heading", { name: "contract.pdf" }, { timeout: 6_500 });
-    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+    await user.click(screen.getByRole("button", { name: "Go to NestlyPDF home" }));
 
     expect(window.location.pathname).toBe("/");
     expect(screen.getByLabelText("Choose a PDF file")).toBeInTheDocument();
@@ -455,7 +469,7 @@ describe("QuickPDF application shell", () => {
     await screen.findByLabelText("Edit text element");
     expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+    await user.click(screen.getByRole("button", { name: "Go to NestlyPDF home" }));
     expect(window.location.pathname).toBe("/editor");
     expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
     expect(screen.getByText(/You have unsaved changes in this PDF\./)).toBeInTheDocument();
@@ -466,7 +480,7 @@ describe("QuickPDF application shell", () => {
     expect(screen.getByText("Unsaved temporary edits")).toBeInTheDocument();
     expect(disposeRenderDocument).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Go to QuickPDF home" }));
+    await user.click(screen.getByRole("button", { name: "Go to NestlyPDF home" }));
     await user.click(screen.getByRole("button", { name: "Leave without saving" }));
 
     expect(window.location.pathname).toBe("/");
@@ -695,9 +709,11 @@ describe("QuickPDF application shell", () => {
 
     expect(screen.getByText("Private & Secure")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+      screen.getByRole("heading", {
+        name: "Edit PDFs privately, right on your device. Edit PDFs privately.",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Private, browser-only editing.")).toBeInTheDocument();
+    expect(screen.getByText("No uploads. No accounts. No cloud storage.")).toBeInTheDocument();
     expect(screen.getByText("No Uploads")).toBeInTheDocument();
     expect(screen.getByText("100% Free")).toBeInTheDocument();
     expect(screen.getByText(/Made with privacy in mind/)).toBeInTheDocument();
@@ -726,7 +742,10 @@ describe("QuickPDF application shell", () => {
       expect(window.location.pathname).toBe("/");
     });
     expect(
-      screen.getByRole("heading", { level: 1, name: "Edit PDFs in seconds. Edit PDFs quickly." }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Edit PDFs privately, right on your device. Edit PDFs privately.",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -745,7 +764,7 @@ describe("QuickPDF application shell", () => {
     renderAt("/missing-route");
 
     expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Return to QuickPDF home" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Return to NestlyPDF home" })).toHaveAttribute(
       "href",
       "/",
     );
