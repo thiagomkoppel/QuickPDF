@@ -1,4 +1,4 @@
-﻿name: QuickPDF CI
+name: QuickPDF CI
 
 on:
   workflow_dispatch:
@@ -9,10 +9,12 @@ on:
       - "feat/**"
       - "fix/**"
       - "docs/**"
+      - "release/**"
 
   pull_request:
     branches:
       - main
+      - "release/**"
 
 jobs:
   validate:
