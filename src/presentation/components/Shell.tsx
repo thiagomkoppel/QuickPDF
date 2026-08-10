@@ -153,17 +153,6 @@ const ShellContent = ({ children, hideHeader = false }: ShellProps): React.React
               </button>
             ) : null}
             <a
-              className="primary-nav__diagnostics"
-              href="/pwa-diagnostics"
-              onClick={(event) => {
-                event.preventDefault();
-                navigate("/pwa-diagnostics");
-                setIsMobileMenuOpen(false);
-              }}
-            >
-              PWA Diagnostics
-            </a>
-            <a
               className="primary-nav__privacy"
               href="/privacy"
               onClick={(event) => {

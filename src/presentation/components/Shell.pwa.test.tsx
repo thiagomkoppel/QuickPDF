@@ -123,7 +123,7 @@ describe("Shell PWA presentation", () => {
     expect(screen.queryByRole("button", { name: "Install QuickPDF" })).not.toBeInTheDocument();
   });
 
-  it("opens the temporary PWA diagnostics route from the existing menu", async () => {
+  it("does not expose PWA diagnostics from the existing menu", async () => {
     const user = userEvent.setup();
     window.history.replaceState({}, "", "/");
     render(
@@ -133,9 +133,7 @@ describe("Shell PWA presentation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Open site menu" }));
-    await user.click(screen.getByRole("link", { name: "PWA Diagnostics" }));
 
-    expect(window.location.pathname).toBe("/pwa-diagnostics");
-    expect(window.location.search).toBe("");
+    expect(screen.queryByRole("link", { name: "PWA Diagnostics" })).not.toBeInTheDocument();
   });
 });
