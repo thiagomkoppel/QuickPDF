@@ -1,5 +1,7 @@
 # NestlyPDF UI Documentation Freeze Package
 
+Repository: [thiagomkoppel/NestlyPDF](https://github.com/thiagomkoppel/NestlyPDF)
+
 Copy the files under `docs/05-ui/` into the same folder in the NestlyPDF repository, replacing existing files after reviewing the diff.
 
 Also:
