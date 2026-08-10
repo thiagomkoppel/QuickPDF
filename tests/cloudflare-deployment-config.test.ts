@@ -13,4 +13,8 @@ describe("Cloudflare static deployment configuration", () => {
     expect(configurationSource).toContain('"directory": "./dist"');
     expect(packageJson.devDependencies.wrangler).toBe("4.120.0");
   });
+
+  it("serves direct client-side routes through the SPA fallback", () => {
+    expect(configurationSource).toContain('"not_found_handling": "single-page-application"');
+  });
 });
