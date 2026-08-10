@@ -32,6 +32,60 @@ const renderedCanvasHasVisibleContent = (page: Page): Promise<boolean> =>
       return false;
     });
 
+const expectLayerActionInsideVisibleList = async (
+  page: Page,
+  accessibleName: string,
+): Promise<void> => {
+  const action = page.getByRole("button", { name: accessibleName });
+  await action.scrollIntoViewIfNeeded();
+
+  const [actionBox, listBox, headerBox, actionsBox, actionsHeadingBox] = await Promise.all([
+    action.boundingBox(),
+    page.locator(".layers-list").boundingBox(),
+    page.locator(".layers-panel-header").boundingBox(),
+    page.locator(".layers-bulk-actions").boundingBox(),
+    page.locator(".layers-actions-heading").boundingBox(),
+  ]);
+
+  expect(actionBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(headerBox).not.toBeNull();
+  expect(actionsBox).not.toBeNull();
+  expect(actionsHeadingBox).not.toBeNull();
+  if (
+    actionBox === null ||
+    listBox === null ||
+    headerBox === null ||
+    actionsBox === null ||
+    actionsHeadingBox === null
+  ) {
+    return;
+  }
+
+  const center = {
+    x: actionBox.x + actionBox.width / 2,
+    y: actionBox.y + actionBox.height / 2,
+  };
+  const containsPoint = (
+    box: {
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    },
+    point: { readonly x: number; readonly y: number },
+  ): boolean =>
+    point.x >= box.x &&
+    point.x <= box.x + box.width &&
+    point.y >= box.y &&
+    point.y <= box.y + box.height;
+
+  expect(listBox.height).toBeGreaterThanOrEqual(actionBox.height);
+  expect(containsPoint(listBox, center)).toBe(true);
+  expect(containsPoint(headerBox, center)).toBe(false);
+  expect(containsPoint(actionsHeadingBox, center)).toBe(false);
+  expect(containsPoint(actionsBox, center)).toBe(false);
+};
 const canvasRegionIsMostlyWhite = (
   page: Page,
   region: {
@@ -764,7 +818,6 @@ test("hides, restores, locks, and unlocks current-page layers through Layer Acti
   await page.mouse.click(overlayBox.x + 180, overlayBox.y + 200);
   await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
   await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
-
   await page.getByRole("button", { name: "Hide All" }).click();
   await expect(page.getByRole("button", { name: "Show All" })).toBeVisible();
   await expect(page.getByRole("group", { name: "text element" })).toHaveCount(0);
@@ -773,7 +826,6 @@ test("hides, restores, locks, and unlocks current-page layers through Layer Acti
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
   await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
-
   await page.getByRole("button", { name: "Hide All" }).click();
   await page.getByRole("button", { name: "Show All" }).click();
   await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
@@ -865,7 +917,7 @@ test("toggles individual layer visibility and locks through the real Layers cont
   const checkmarkElement = page.getByRole("group", { name: "checkmark element" });
   await expect(textElement).toBeVisible();
   await expect(checkmarkElement).toBeVisible();
-
+  await expectLayerActionInsideVisibleList(page, "Hide Text layer");
   await page.getByRole("button", { name: "Hide Text layer" }).click();
   await expect(textElement).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Text layer", exact: true })).toBeVisible();

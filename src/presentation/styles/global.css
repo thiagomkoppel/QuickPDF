@@ -3034,13 +3034,17 @@ body {
 
 /* The selected-element inspector uses stable tabs, properties, and layers regions. */
 .desktop-inspector-content {
-  display: contents;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: 3.6rem minmax(6rem, 20%) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .element-inspector:has(.layers-panel) {
   height: 100%;
   max-height: 100%;
-  display: grid;
-  grid-template-rows: 3.6rem minmax(6rem, 20%) minmax(0, 1fr);
+  display: block;
   align-items: stretch;
   align-content: start;
   gap: 0;
@@ -3097,8 +3101,8 @@ body {
   padding: 1.15rem 0 0;
 }
 @media (max-height: 760px) {
-  .element-inspector:has(.layers-panel) {
-    grid-template-rows: 3.6rem minmax(6rem, 18%) minmax(0, 1fr);
+  .desktop-inspector-content {
+    grid-template-rows: 3.6rem 3rem minmax(0, 1fr);
   }
 }
 
