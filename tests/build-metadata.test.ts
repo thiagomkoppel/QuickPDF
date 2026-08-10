@@ -1,3 +1,4 @@
+import packageJson from "../package.json";
 import { describe, expect, it } from "vitest";
 
 import { resolveQuickPdfBuildMetadata } from "../scripts/build-metadata.mjs";
@@ -10,7 +11,7 @@ describe("build metadata resolver", () => {
       gitValue: () => undefined,
     });
 
-    expect(metadata.version).toBe("0.0.0");
+    expect(metadata.version).toBe(packageJson.version);
     expect(metadata.sha).toBe("unknown");
     expect(metadata.branch).toBe("unknown");
     expect(metadata.mode).toBe("production");

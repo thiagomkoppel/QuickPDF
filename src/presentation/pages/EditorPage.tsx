@@ -584,12 +584,15 @@ const LayersPanel = ({
                   <small>{elementLabel(element)}</small>
                 </span>
               </div>
-              <div className="layer-row-actions" aria-label={`${elementLabel(element)} layer actions`}>
+              <div
+                className="layer-row-actions"
+                aria-label={`${elementLabel(element)} layer actions`}
+              >
                 <button
                   type="button"
-                  className={`layer-row-action${element.visible ?? true ? "" : " is-hidden"}`}
-                  aria-label={`${element.visible ?? true ? "Hide" : "Show"} ${elementLabel(element)} layer`}
-                  title={`${element.visible ?? true ? "Hide" : "Show"} layer`}
+                  className={`layer-row-action${(element.visible ?? true) ? "" : " is-hidden"}`}
+                  aria-label={`${(element.visible ?? true) ? "Hide" : "Show"} ${elementLabel(element)} layer`}
+                  title={`${(element.visible ?? true) ? "Hide" : "Show"} layer`}
                   onPointerDown={(event) => {
                     event.stopPropagation();
                   }}
@@ -601,7 +604,7 @@ const LayersPanel = ({
                     onSetVisible(element.id, !(element.visible ?? true));
                   }}
                 >
-                  <ToolbarIcon name={element.visible ?? true ? "eye" : "eye-off"} />
+                  <ToolbarIcon name={(element.visible ?? true) ? "eye" : "eye-off"} />
                 </button>
                 <button
                   type="button"

@@ -2850,6 +2850,9 @@ body {
   border-top: 1px solid rgb(159 219 218 / 18%);
   color: #e6edf3;
 }
+.layers-panel > :not(.layers-list) {
+  flex: 0 0 auto;
+}
 .layers-panel h2,
 .layers-panel h3 {
   margin: 0;
@@ -2891,7 +2894,7 @@ body {
 .layers-list {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   gap: 0.45rem;
   margin: 0;
@@ -3037,7 +3040,7 @@ body {
   height: 100%;
   max-height: 100%;
   display: grid;
-  grid-template-rows: 3.6rem minmax(15rem, 42%) minmax(0, 1fr);
+  grid-template-rows: 3.6rem minmax(6rem, 20%) minmax(0, 1fr);
   align-items: stretch;
   align-content: start;
   gap: 0;
@@ -3095,7 +3098,7 @@ body {
 }
 @media (max-height: 760px) {
   .element-inspector:has(.layers-panel) {
-    grid-template-rows: 3.6rem minmax(15rem, 38%) minmax(0, 1fr);
+    grid-template-rows: 3.6rem minmax(6rem, 18%) minmax(0, 1fr);
   }
 }
 

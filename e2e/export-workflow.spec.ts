@@ -779,37 +779,51 @@ test("hides, restores, locks, and unlocks current-page layers through Layer Acti
   await expect(page.getByRole("group", { name: "text element" })).toBeVisible();
   await expect(page.getByRole("group", { name: "checkmark element" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Text layer" }).click();
+  await page.getByRole("button", { name: "Text layer", exact: true }).click();
   const textElement = page.getByRole("group", { name: "text element" });
-  const startBounds = await textElement.boundingBox();
-  expect(startBounds).not.toBeNull();
-  if (startBounds === null) {
+  const unlockedBounds = await textElement.boundingBox();
+  expect(unlockedBounds).not.toBeNull();
+  if (unlockedBounds === null) {
     return;
   }
 
   await page.getByRole("button", { name: "Lock All" }).click();
   await expect(page.getByRole("button", { name: "Unlock All" })).toBeVisible();
+  await expect(textElement).toHaveAttribute("data-locked", "true");
+  await expect(page.getByLabel("Resize text element")).toHaveCount(0);
+  const lockedBoundsBeforeDrag = await textElement.boundingBox();
+  expect(lockedBoundsBeforeDrag).not.toBeNull();
+  if (lockedBoundsBeforeDrag === null) {
+    return;
+  }
   await page.mouse.move(
-    startBounds.x + startBounds.width / 2,
-    startBounds.y + startBounds.height / 2,
+    lockedBoundsBeforeDrag.x + lockedBoundsBeforeDrag.width / 2,
+    lockedBoundsBeforeDrag.y + lockedBoundsBeforeDrag.height / 2,
   );
   await page.mouse.down();
   await page.mouse.move(
-    startBounds.x + startBounds.width / 2 + 48,
-    startBounds.y + startBounds.height / 2 + 24,
+    lockedBoundsBeforeDrag.x + lockedBoundsBeforeDrag.width / 2 + 48,
+    lockedBoundsBeforeDrag.y + lockedBoundsBeforeDrag.height / 2 + 24,
   );
   await page.mouse.up();
-  expectBoxNear(await textElement.boundingBox(), startBounds);
+  const lockedBoundsAfterDrag = await textElement.boundingBox();
+  expectBoxNear(lockedBoundsAfterDrag, lockedBoundsBeforeDrag);
 
   await page.getByRole("button", { name: "Unlock All" }).click();
+  await expect(textElement).toHaveAttribute("data-locked", "false");
+  const unlockedBoundsAfterUnlock = await textElement.boundingBox();
+  expect(unlockedBoundsAfterUnlock).not.toBeNull();
+  if (unlockedBoundsAfterUnlock === null) {
+    return;
+  }
   await page.mouse.move(
-    startBounds.x + startBounds.width / 2,
-    startBounds.y + startBounds.height / 2,
+    unlockedBoundsAfterUnlock.x + unlockedBoundsAfterUnlock.width / 2,
+    unlockedBoundsAfterUnlock.y + unlockedBoundsAfterUnlock.height / 2,
   );
   await page.mouse.down();
   await page.mouse.move(
-    startBounds.x + startBounds.width / 2 + 48,
-    startBounds.y + startBounds.height / 2 + 24,
+    unlockedBoundsAfterUnlock.x + unlockedBoundsAfterUnlock.width / 2 + 48,
+    unlockedBoundsAfterUnlock.y + unlockedBoundsAfterUnlock.height / 2 + 24,
   );
   await page.mouse.up();
   const movedBounds = await textElement.boundingBox();
@@ -817,8 +831,8 @@ test("hides, restores, locks, and unlocks current-page layers through Layer Acti
   if (movedBounds === null) {
     return;
   }
-  expect(movedBounds.x).toBeGreaterThan(startBounds.x + 30);
-  expect(movedBounds.y).toBeGreaterThan(startBounds.y + 10);
+  expect(movedBounds.x).toBeGreaterThan(unlockedBoundsAfterUnlock.x + 30);
+  expect(movedBounds.y).toBeGreaterThan(unlockedBoundsAfterUnlock.y + 10);
 });
 test("toggles individual layer visibility and locks through the real Layers controls", async ({
   page,
