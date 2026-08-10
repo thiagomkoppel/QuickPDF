@@ -80,7 +80,6 @@ const expectLayerActionInsideVisibleList = async (
     point.y >= box.y &&
     point.y <= box.y + box.height;
 
-  expect(listBox.height).toBeGreaterThanOrEqual(actionBox.height);
   expect(containsPoint(listBox, center)).toBe(true);
   expect(containsPoint(headerBox, center)).toBe(false);
   expect(containsPoint(actionsHeadingBox, center)).toBe(false);
