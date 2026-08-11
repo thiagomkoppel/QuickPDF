@@ -3090,6 +3090,87 @@ describe("EditorPage PDF rendering", () => {
     );
   });
 
+  it("prioritizes the current page and bounds large-document thumbnail canvases", async () => {
+    const pages = Array.from({ length: 1_001 }, (_, index) => ({
+      id: `page-${String(index + 1)}`,
+      width: 300,
+      height: 400,
+      rotation: 0 as const,
+    }));
+    const currentPageRender = deferred<{
+      readonly ok: true;
+      readonly cssWidth: number;
+      readonly cssHeight: number;
+      readonly backingWidth: number;
+      readonly backingHeight: number;
+    }>();
+    const startRenderThumbnail = vi.fn(() => ({
+      promise: Promise.resolve({
+        ok: true as const,
+        cssWidth: 96,
+        cssHeight: 128,
+        backingWidth: 96,
+        backingHeight: 128,
+      }),
+      cancel: vi.fn(),
+    }));
+    const renderer = {
+      startRenderPage: vi.fn(() => ({ promise: currentPageRender.promise, cancel: vi.fn() })),
+      startRenderThumbnail,
+      clearCanvas: vi.fn(),
+    };
+    const { container } = render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({ pages })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={renderer}
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: /page [0-9]+/i })).toHaveLength(20);
+    expect(screen.queryByRole("button", { name: "page 1001" })).toBeNull();
+    expect(startRenderThumbnail).not.toHaveBeenCalled();
+    expect(container.querySelectorAll(".page-thumbnail-canvas")).toHaveLength(0);
+
+    act(() => {
+      currentPageRender.resolve({
+        ok: true,
+        cssWidth: 300,
+        cssHeight: 400,
+        backingWidth: 300,
+        backingHeight: 400,
+      });
+    });
+    await waitFor(() => {
+      expect(startRenderThumbnail.mock.calls.length).toBeGreaterThan(0);
+    });
+    expect(startRenderThumbnail.mock.calls.length).toBeLessThanOrEqual(20);
+    expect(container.querySelectorAll(".page-thumbnail-canvas").length).toBeLessThanOrEqual(20);
+
+    const pageRailList = container.querySelector<HTMLElement>(".page-rail-list");
+    const firstThumbnail = screen.getByRole("button", { name: "Current page 1" });
+    expect(pageRailList).not.toBeNull();
+    if (pageRailList === null) {
+      return;
+    }
+    Object.defineProperty(pageRailList, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(firstThumbnail, "offsetHeight", { configurable: true, value: 160 });
+    pageRailList.scrollTop = 1_000_000;
+    fireEvent.scroll(pageRailList);
+
+    await waitFor(() => {
+      expect(startRenderThumbnail).toHaveBeenCalledWith(
+        expect.objectContaining({ pageNumber: 1_001 }),
+      );
+    });
+    expect(
+      screen.getByRole("button", { name: "page 1001" }).querySelector(".page-thumbnail-canvas"),
+    ).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: /page [0-9]+/i }).length).toBeLessThanOrEqual(20);
+    expect(container.querySelectorAll(".page-thumbnail-canvas").length).toBeLessThanOrEqual(20);
+  });
+
   it("does not delete selected overlays while focus is inside editing controls", async () => {
     const user = userEvent.setup();
     const editor = createEditor();

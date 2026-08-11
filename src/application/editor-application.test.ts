@@ -17,12 +17,26 @@ import type {
   PdfRenderDocumentResult,
 } from "./editor-application";
 import {
+  classifyDocumentSize,
   MAX_TEXT_FONT_SIZE,
   MIN_TEXT_FONT_SIZE,
   PdfEditorApplication,
   validateImageFile,
   validateSignatureImageFile,
 } from "./editor-application";
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolvePromise: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+};
 
 class TestIds implements IdGenerator {
   #next = 1;
@@ -665,6 +679,82 @@ describe("PdfEditorApplication export", () => {
 });
 
 describe("PdfEditorApplication render document lifecycle", () => {
+  it.each([
+    [99, "normal"],
+    [100, "large"],
+    [499, "large"],
+    [500, "very-large"],
+  ] as const)("classifies %s pages as %s", (pageCount, expected) => {
+    expect(classifyDocumentSize(pageCount)).toBe(expected);
+  });
+
+  it("reports large-document preparation after page count discovery", async () => {
+    const pages = Array.from({ length: 500 }, (_, index) => ({
+      id: `page-${String(index + 1)}`,
+      width: 300,
+      height: 400,
+      rotation: 0 as const,
+    }));
+    const onProgress = vi.fn();
+    const application = new PdfEditorApplication(
+      {
+        read: () =>
+          Promise.resolve({
+            ok: true,
+            fileName: "large.pdf",
+            bytes: new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+      },
+      {
+        open: () => Promise.resolve({ ok: true, pages }),
+        exportPdf: () => Promise.resolve({ ok: true, bytes: new Uint8Array([1]) }),
+      },
+      { download: vi.fn() },
+      new TestIds(),
+      {
+        openRenderDocument: () => Promise.resolve({ ok: true, documentId: "render-large" }),
+        disposeRenderDocument: vi.fn(),
+      },
+    );
+
+    const snapshot = await application.openFile(file, onProgress);
+
+    expect(onProgress).toHaveBeenCalledWith({
+      phase: "preparing-large-document",
+      pageCount: 500,
+      sizeClass: "very-large",
+    });
+    expect(snapshot.state).toMatchObject({ status: "ready", pageCount: 500 });
+  });
+
+  it("does not report large-document preparation for a normal PDF", async () => {
+    const onProgress = vi.fn();
+    const application = new PdfEditorApplication(
+      {
+        read: () =>
+          Promise.resolve({
+            ok: true,
+            fileName: "normal.pdf",
+            bytes: new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+      },
+      {
+        open: () =>
+          Promise.resolve({
+            ok: true,
+            pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+          }),
+        exportPdf: () => Promise.resolve({ ok: true, bytes: new Uint8Array([1]) }),
+      },
+      { download: vi.fn() },
+      new TestIds(),
+    );
+
+    await application.openFile(file, onProgress);
+
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
   it("opens a render document from copied bytes and exposes an opaque render id", async () => {
     const sourceBytes = new Uint8Array([37, 80, 68, 70, 45]);
     const renderBytes: Uint8Array[] = [];
@@ -767,6 +857,91 @@ describe("PdfEditorApplication render document lifecycle", () => {
     expect(snapshot.state.status).toBe("error");
     expect(snapshot.state.error).toEqual(renderResult.error);
     expect(snapshot.canExport).toBe(false);
+  });
+
+  it("ignores and disposes an open that finishes after the document is closed", async () => {
+    const pendingRender = deferred<PdfRenderDocumentResult>();
+    const disposeRenderDocument = vi.fn();
+    const openRenderDocument = vi.fn(() => pendingRender.promise);
+    const application = new PdfEditorApplication(
+      {
+        read: () =>
+          Promise.resolve({
+            ok: true,
+            fileName: "large.pdf",
+            bytes: new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+      },
+      {
+        open: () =>
+          Promise.resolve({
+            ok: true,
+            pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+          }),
+        exportPdf: () => Promise.resolve({ ok: true, bytes: new Uint8Array([1]) }),
+      },
+      { download: vi.fn() },
+      new TestIds(),
+      { openRenderDocument, disposeRenderDocument },
+    );
+
+    const opening = application.openFile(file);
+    await vi.waitFor(() => {
+      expect(openRenderDocument).toHaveBeenCalledTimes(1);
+    });
+    application.closeDocument();
+    pendingRender.resolve({ ok: true, documentId: "stale-render" });
+    await opening;
+
+    expect(disposeRenderDocument).toHaveBeenCalledWith("stale-render");
+    expect(application.snapshot().state.status).toBe("empty");
+  });
+
+  it("keeps a replacement document when an older open finishes later", async () => {
+    const pendingFirstRender = deferred<PdfRenderDocumentResult>();
+    const disposeRenderDocument = vi.fn();
+    const openRenderDocument = vi
+      .fn<PdfRenderDocumentGateway["openRenderDocument"]>()
+      .mockImplementationOnce(() => pendingFirstRender.promise)
+      .mockResolvedValueOnce({ ok: true, documentId: "replacement-render" });
+    const application = new PdfEditorApplication(
+      {
+        read: (selectedFile) =>
+          Promise.resolve({
+            ok: true,
+            fileName: selectedFile.name,
+            bytes: new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+      },
+      {
+        open: () =>
+          Promise.resolve({
+            ok: true,
+            pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }],
+          }),
+        exportPdf: () => Promise.resolve({ ok: true, bytes: new Uint8Array([1]) }),
+      },
+      { download: vi.fn() },
+      new TestIds(),
+      { openRenderDocument, disposeRenderDocument },
+    );
+    const replacementFile = { ...file, name: "replacement.pdf" };
+
+    const firstOpening = application.openFile(file);
+    await vi.waitFor(() => {
+      expect(openRenderDocument).toHaveBeenCalledTimes(1);
+    });
+    const replacementSnapshot = await application.openFile(replacementFile);
+    pendingFirstRender.resolve({ ok: true, documentId: "stale-render" });
+    await firstOpening;
+
+    expect(replacementSnapshot.state).toMatchObject({
+      status: "ready",
+      fileName: "replacement.pdf",
+      renderDocumentId: "replacement-render",
+    });
+    expect(application.snapshot().state.fileName).toBe("replacement.pdf");
+    expect(disposeRenderDocument).toHaveBeenCalledWith("stale-render");
   });
 });
 

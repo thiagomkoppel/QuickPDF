@@ -56,6 +56,29 @@ export interface EditorError {
   readonly message: string;
 }
 
+export const LARGE_DOCUMENT_PAGE_THRESHOLD = 100;
+export const VERY_LARGE_DOCUMENT_PAGE_THRESHOLD = 500;
+
+export type DocumentSizeClass = "normal" | "large" | "very-large";
+
+export const classifyDocumentSize = (pageCount: number): DocumentSizeClass => {
+  if (pageCount >= VERY_LARGE_DOCUMENT_PAGE_THRESHOLD) {
+    return "very-large";
+  }
+  if (pageCount >= LARGE_DOCUMENT_PAGE_THRESHOLD) {
+    return "large";
+  }
+  return "normal";
+};
+
+export interface PdfOpenProgress {
+  readonly phase: "preparing-large-document";
+  readonly pageCount: number;
+  readonly sizeClass: Exclude<DocumentSizeClass, "normal">;
+}
+
+export type PdfOpenProgressListener = (progress: PdfOpenProgress) => void;
+
 export interface LocalPdfFile {
   readonly name: string;
   readonly size: number;
@@ -570,6 +593,7 @@ export class PdfEditorApplication {
   #currentRevision = 0;
   #cleanRevision = 0;
   #clipboard: ClipboardElement | undefined;
+  #openSequence = 0;
 
   public constructor(
     fileReader: LocalPdfFileReader,
@@ -599,7 +623,12 @@ export class PdfEditorApplication {
     };
   }
 
-  public async openFile(file: LocalPdfFile): Promise<EditorSnapshot> {
+  public async openFile(
+    file: LocalPdfFile,
+    onProgress?: PdfOpenProgressListener,
+  ): Promise<EditorSnapshot> {
+    const openSequence = this.#openSequence + 1;
+    this.#openSequence = openSequence;
     this.#disposeRenderDocument();
     this.#session = undefined;
     this.#originalBytes = undefined;
@@ -614,6 +643,9 @@ export class PdfEditorApplication {
     void discardedExportFilename;
     this.#state = { ...openState, status: "loading" };
     const readResult = await this.#fileReader.read(file);
+    if (openSequence !== this.#openSequence) {
+      return this.snapshot();
+    }
     if (!readResult.ok) {
       this.#state = { ...emptyState(), status: "error", error: readResult.error };
       return this.snapshot();
@@ -621,13 +653,31 @@ export class PdfEditorApplication {
 
     const originalBytes = cloneBytes(readResult.bytes);
     const openResult = await this.#pdfGateway.open(originalBytes);
+    if (openSequence !== this.#openSequence) {
+      return this.snapshot();
+    }
     if (!openResult.ok) {
       this.#state = { ...emptyState(), status: "error", error: openResult.error };
       return this.snapshot();
     }
 
+    const sizeClass = classifyDocumentSize(openResult.pages.length);
+    if (sizeClass !== "normal") {
+      onProgress?.({
+        phase: "preparing-large-document",
+        pageCount: openResult.pages.length,
+        sizeClass,
+      });
+    }
+
     if (this.#renderGateway !== undefined) {
       const renderResult = await this.#renderGateway.openRenderDocument(cloneBytes(originalBytes));
+      if (openSequence !== this.#openSequence) {
+        if (renderResult.ok) {
+          this.#renderGateway.disposeRenderDocument(renderResult.documentId);
+        }
+        return this.snapshot();
+      }
       if (!renderResult.ok) {
         this.#state = { ...emptyState(), status: "error", error: renderResult.error };
         return this.snapshot();
@@ -635,6 +685,9 @@ export class PdfEditorApplication {
       this.#renderDocumentId = renderResult.documentId;
     }
 
+    if (openSequence !== this.#openSequence) {
+      return this.snapshot();
+    }
     this.#originalBytes = originalBytes;
     this.#resetHistory();
     this.#session = DocumentSession.create({
@@ -649,6 +702,7 @@ export class PdfEditorApplication {
   }
 
   public closeDocument(): EditorSnapshot {
+    this.#openSequence += 1;
     this.#disposeRenderDocument();
     this.#session = undefined;
     this.#originalBytes = undefined;

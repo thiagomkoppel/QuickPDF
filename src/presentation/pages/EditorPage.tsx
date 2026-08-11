@@ -23,6 +23,7 @@ import type {
 } from "../../application/editor-application";
 import {
   DEFAULT_TEXT_APPEARANCE,
+  LARGE_DOCUMENT_PAGE_THRESHOLD,
   MAX_TEXT_FONT_SIZE,
   MIN_ELEMENT_HEIGHT,
   MIN_ELEMENT_WIDTH,
@@ -126,6 +127,8 @@ const MOBILE_MARK_SIZE = 44;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
 const MIN_WHITEOUT_DRAG_DISTANCE = 4;
+const LARGE_DOCUMENT_THUMBNAIL_LIMIT = 20;
+const LARGE_DOCUMENT_THUMBNAIL_OVERSCAN = 4;
 const SIGNATURE_FONTS: readonly { readonly value: SignatureFont; readonly label: string }[] = [
   { value: "cursive", label: "Signature Script" },
   { value: "serif", label: "Serif Italic" },
@@ -695,6 +698,7 @@ interface PageThumbnailProps {
   readonly pageNumber: number;
   readonly pageId: string;
   readonly current: boolean;
+  readonly renderEnabled: boolean;
   readonly onSelect: (pageId: string) => void;
   readonly maxWidth: number;
   readonly devicePixelRatio: number;
@@ -747,6 +751,7 @@ const PageThumbnail = ({
   pageNumber,
   pageId,
   current,
+  renderEnabled,
   onSelect,
   maxWidth,
   devicePixelRatio,
@@ -756,6 +761,7 @@ const PageThumbnail = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (
+      !renderEnabled ||
       canvas === null ||
       documentId === undefined ||
       renderer.startRenderThumbnail === undefined
@@ -781,7 +787,7 @@ const PageThumbnail = ({
       handle.cancel();
       renderer.clearCanvas(canvas);
     };
-  }, [devicePixelRatio, documentId, maxWidth, pageNumber, renderer]);
+  }, [devicePixelRatio, documentId, maxWidth, pageNumber, renderEnabled, renderer]);
   return (
     <button
       type="button"
@@ -793,12 +799,35 @@ const PageThumbnail = ({
       }}
     >
       <span className="page-thumbnail-canvas-wrap" aria-hidden="true">
-        <canvas ref={canvasRef} className="page-thumbnail-canvas" />
-        {status === "loading" ? <span className="page-thumbnail-skeleton" /> : null}
+        {renderEnabled ? <canvas ref={canvasRef} className="page-thumbnail-canvas" /> : null}
+        {renderEnabled && status === "loading" ? (
+          <span className="page-thumbnail-skeleton" />
+        ) : null}
       </span>
       <span>{String(pageNumber)}</span>
     </button>
   );
+};
+
+interface ThumbnailRenderRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+interface ThumbnailRenderWindow {
+  readonly documentId: string | undefined;
+  readonly currentPageId: string | undefined;
+  readonly pageCount: number;
+  readonly range: ThumbnailRenderRange;
+}
+
+const thumbnailRangeAround = (pageIndex: number, pageCount: number): ThumbnailRenderRange => {
+  const maximumStart = Math.max(0, pageCount - LARGE_DOCUMENT_THUMBNAIL_LIMIT);
+  const start = Math.min(maximumStart, Math.max(0, pageIndex - LARGE_DOCUMENT_THUMBNAIL_OVERSCAN));
+  return {
+    start,
+    end: Math.min(pageCount, start + LARGE_DOCUMENT_THUMBNAIL_LIMIT),
+  };
 };
 
 const readEditorFormFactor = (): EditorFormFactor => {
@@ -903,6 +932,7 @@ export const EditorPage = ({
   const currentPageWidth = currentPage?.width;
   const currentPageHeight = currentPage?.height;
   const currentPageRotation = currentPage?.rotation;
+  const isLargeDocument = state.pageCount >= LARGE_DOCUMENT_PAGE_THRESHOLD;
   const currentPageLayers = state.elements
     .filter((element) => element.pageId === currentPage?.id)
     .reverse();
@@ -910,6 +940,7 @@ export const EditorPage = ({
   const workspaceRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayLayerRef = useRef<HTMLDivElement | null>(null);
+  const pageRailListRef = useRef<HTMLDivElement | null>(null);
   const renderSequenceRef = useRef(0);
   const [zoom, setZoom] = useState(1);
   const [viewMode, setViewMode] = useState<ViewerMode>("fit-page");
@@ -924,6 +955,25 @@ export const EditorPage = ({
   const mobileFitDocumentIdRef = useRef<string | undefined>(undefined);
   const lastRenderDocumentIdRef = useRef<string | undefined>(state.renderDocumentId);
   const [renderState, setRenderState] = useState<RenderState>({ status: "idle" });
+  const currentPageThumbnailRange = thumbnailRangeAround(
+    Math.max(0, state.currentPageNumber - 1),
+    state.pageCount,
+  );
+  const [scrolledThumbnailWindow, setScrolledThumbnailWindow] = useState<ThumbnailRenderWindow>(
+    () => ({
+      documentId: state.renderDocumentId,
+      currentPageId,
+      pageCount: state.pageCount,
+      range: currentPageThumbnailRange,
+    }),
+  );
+  const thumbnailRenderRange =
+    scrolledThumbnailWindow.documentId === state.renderDocumentId &&
+    scrolledThumbnailWindow.currentPageId === currentPageId &&
+    scrolledThumbnailWindow.pageCount === state.pageCount
+      ? scrolledThumbnailWindow.range
+      : currentPageThumbnailRange;
+  const [thumbnailRowStride, setThumbnailRowStride] = useState(216);
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -1340,6 +1390,70 @@ export const EditorPage = ({
       }
     };
   }, [pdfRenderer]);
+
+  const updateLargeDocumentThumbnailRange = useCallback((): void => {
+    if (!isLargeDocument) {
+      return;
+    }
+    const list = pageRailListRef.current;
+    const firstThumbnail = list?.querySelector<HTMLElement>(".page-rail-thumbnail");
+    if (list === null || firstThumbnail === null || firstThumbnail === undefined) {
+      return;
+    }
+    const styles = window.getComputedStyle(list);
+    const parsedGap = Number.parseFloat(styles.rowGap || styles.gap);
+    const gap = Number.isFinite(parsedGap) ? parsedGap : 0;
+    const rowStride = firstThumbnail.offsetHeight + gap;
+    if (rowStride <= 0) {
+      return;
+    }
+    setThumbnailRowStride((currentStride) =>
+      Math.abs(currentStride - rowStride) < 0.5 ? currentStride : rowStride,
+    );
+    const maximumScrollTop = list.scrollHeight - list.clientHeight;
+    const firstVisiblePageIndex = Math.min(
+      state.pageCount - 1,
+      Math.max(
+        0,
+        maximumScrollTop > 0
+          ? Math.round((list.scrollTop / maximumScrollTop) * (state.pageCount - 1))
+          : Math.floor(list.scrollTop / rowStride),
+      ),
+    );
+    const nextRange = thumbnailRangeAround(firstVisiblePageIndex, state.pageCount);
+    setScrolledThumbnailWindow((currentWindow) => {
+      const nextWindow: ThumbnailRenderWindow = {
+        documentId: state.renderDocumentId,
+        currentPageId,
+        pageCount: state.pageCount,
+        range: nextRange,
+      };
+      return currentWindow.documentId === nextWindow.documentId &&
+        currentWindow.currentPageId === nextWindow.currentPageId &&
+        currentWindow.pageCount === nextWindow.pageCount &&
+        currentWindow.range.start === nextRange.start &&
+        currentWindow.range.end === nextRange.end
+        ? currentWindow
+        : nextWindow;
+    });
+  }, [currentPageId, isLargeDocument, state.pageCount, state.renderDocumentId]);
+
+  useEffect(() => {
+    const list = pageRailListRef.current;
+    if (list !== null) {
+      list.scrollTop = 0;
+    }
+  }, [state.renderDocumentId]);
+
+  useEffect(() => {
+    if (!isLargeDocument) {
+      return undefined;
+    }
+    window.addEventListener("resize", updateLargeDocumentThumbnailRange);
+    return () => {
+      window.removeEventListener("resize", updateLargeDocumentThumbnailRange);
+    };
+  }, [isLargeDocument, updateLargeDocumentThumbnailRange]);
 
   useEffect(() => {
     const editorViewport = editorViewportRef.current;
@@ -3052,6 +3166,13 @@ export const EditorPage = ({
     </aside>
   );
 
+  const pageRailStartIndex = isLargeDocument ? thumbnailRenderRange.start : 0;
+  const pageRailPages = isLargeDocument
+    ? state.pages.slice(thumbnailRenderRange.start, thumbnailRenderRange.end)
+    : state.pages;
+  const pageRailPagesBefore = pageRailStartIndex;
+  const pageRailPagesAfter = state.pageCount - pageRailStartIndex - pageRailPages.length;
+
   return (
     <section
       ref={editorViewportRef}
@@ -3508,22 +3629,44 @@ export const EditorPage = ({
               {isPageRailCollapsed ? ">" : "<"}
             </button>
           </div>
-          <div className="page-rail-list">
-            {state.pages.map((page, index) => (
-              <PageThumbnail
-                key={page.id}
-                renderer={pdfRenderer}
-                documentId={state.renderDocumentId}
-                pageNumber={index + 1}
-                pageId={page.id}
-                current={page.id === currentPageId}
-                maxWidth={effectivePerformanceProfile === "light" ? 96 : 126}
-                devicePixelRatio={renderPixelRatio}
-                onSelect={(pageId) => {
-                  applySnapshot(editor.selectPage(pageId));
-                }}
+          <div
+            ref={pageRailListRef}
+            className="page-rail-list"
+            onScroll={updateLargeDocumentThumbnailRange}
+          >
+            {isLargeDocument && pageRailPagesBefore > 0 ? (
+              <div
+                className="page-rail-spacer"
+                aria-hidden="true"
+                style={{ height: pageRailPagesBefore * thumbnailRowStride }}
               />
-            ))}
+            ) : null}
+            {pageRailPages.map((page, visibleIndex) => {
+              const pageIndex = pageRailStartIndex + visibleIndex;
+              return (
+                <PageThumbnail
+                  key={page.id}
+                  renderer={pdfRenderer}
+                  documentId={state.renderDocumentId}
+                  pageNumber={pageIndex + 1}
+                  pageId={page.id}
+                  current={page.id === currentPageId}
+                  renderEnabled={!isLargeDocument || renderState.status === "ready"}
+                  maxWidth={effectivePerformanceProfile === "light" ? 96 : 126}
+                  devicePixelRatio={renderPixelRatio}
+                  onSelect={(pageId) => {
+                    applySnapshot(editor.selectPage(pageId));
+                  }}
+                />
+              );
+            })}
+            {isLargeDocument && pageRailPagesAfter > 0 ? (
+              <div
+                className="page-rail-spacer"
+                aria-hidden="true"
+                style={{ height: pageRailPagesAfter * thumbnailRowStride }}
+              />
+            ) : null}
           </div>
         </aside>
         <div className="editor-viewport" aria-label="PDF editor viewport">

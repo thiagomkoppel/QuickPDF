@@ -109,18 +109,28 @@ export class PdfJsPageRenderer implements PdfRenderDocumentGateway {
   #nextDocumentNumber = 1;
 
   public async openRenderDocument(bytes: Uint8Array): Promise<PdfRenderDocumentResult> {
+    let task: PDFDocumentLoadingTask | undefined;
+    let document: PDFDocumentProxy | undefined;
     try {
-      const task = pdfjs.getDocument({
+      task = pdfjs.getDocument({
         data: new Uint8Array(bytes),
         disableAutoFetch: true,
         disableStream: true,
       });
-      const document = await task.promise;
+      document = await task.promise;
+      const firstPage = await document.getPage(1);
+      firstPage.cleanup();
       const documentId = `pdfjs-${String(this.#nextDocumentNumber)}`;
       this.#nextDocumentNumber += 1;
       this.#documents.set(documentId, { task, document });
       return { ok: true, documentId };
     } catch (error) {
+      if (document !== undefined) {
+        void document.cleanup();
+      }
+      if (task !== undefined) {
+        void task.destroy();
+      }
       logRenderDiagnostic("open", error);
       return {
         ok: false,

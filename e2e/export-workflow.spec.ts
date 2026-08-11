@@ -10,6 +10,14 @@ const createPdf = async (): Promise<Buffer> => {
   return Buffer.from(await document.save());
 };
 
+const createPageCountPdf = async (pageCount: number): Promise<Buffer> => {
+  const document = await PDFDocument.create();
+  for (let pageNumber = 0; pageNumber < pageCount; pageNumber += 1) {
+    document.addPage([300, 400]);
+  }
+  return Buffer.from(await document.save());
+};
+
 const renderedCanvasHasVisibleContent = (page: Page): Promise<boolean> =>
   page
     .locator('canvas[aria-label="Rendered PDF page"]')
@@ -423,6 +431,83 @@ const expectBoxNear = (
   expect(Math.abs(box.x - expected.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(box.y - expected.y)).toBeLessThanOrEqual(1);
 };
+
+test("normal PDF opening stays on the standard loading path", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("normal-opening.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+
+  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByText("Preparing large PDF...")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "normal-opening.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+});
+
+test("large PDF opening reports page count before editor readiness", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("large-opening.pdf");
+  await import("node:fs/promises").then(async (fs) =>
+    fs.writeFile(fixturePath, await createPageCountPdf(120)),
+  );
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+
+  await expect(page.getByText("Preparing large PDF...")).toBeVisible();
+  await expect(
+    page.getByText("This document has 120 pages. NestlyPDF is preparing it for editing."),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "large-opening.pdf" })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Current page", exact: true })).toContainText(
+    "1 / 120",
+  );
+});
+
+test("1000-page PDF becomes usable with lazy thumbnails and far navigation", async ({
+  page,
+}, testInfo) => {
+  test.slow();
+  const fixturePath = testInfo.outputPath("thousand-page-opening.pdf");
+  await import("node:fs/promises").then(async (fs) =>
+    fs.writeFile(fixturePath, await createPageCountPdf(1_001)),
+  );
+
+  await page.goto("/");
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+
+  await expect(page.getByText("Preparing large PDF...")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "thousand-page-opening.pdf" })).toBeVisible();
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect(page.getByRole("status", { name: "Current page", exact: true })).toContainText(
+    "1 / 1001",
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator('canvas[aria-label="Rendered PDF page"]')
+        .evaluate((canvas: HTMLCanvasElement) => canvas.width > 0 && canvas.height > 0),
+    )
+    .toBe(true);
+  await expect.poll(() => page.locator(".page-thumbnail-canvas").count()).toBeLessThanOrEqual(20);
+
+  const pageRailList = page.locator(".page-rail-list");
+  await pageRailList.evaluate((element) => {
+    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+  });
+  await expect.poll(() => pageRailList.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  const lastPage = page.getByRole("button", { name: "page 1001", exact: true });
+  await expect(lastPage).toBeVisible();
+  await expect(lastPage.locator(".page-thumbnail-canvas")).toHaveCount(1);
+  await lastPage.click();
+
+  await expect(page.getByRole("status", { name: "Current page", exact: true })).toContainText(
+    "1001 / 1001",
+  );
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+  await expect.poll(() => page.locator(".page-thumbnail-canvas").count()).toBeLessThanOrEqual(20);
+});
 
 test("pans plain PDF page and green workspace through the shared gesture", async ({
   page,

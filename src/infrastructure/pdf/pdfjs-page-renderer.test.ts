@@ -85,6 +85,28 @@ describe("PdfJsPageRenderer", () => {
     expect(pdfjsMock.getDocument).toHaveBeenCalledWith(
       expect.objectContaining({ disableAutoFetch: true, disableStream: true }),
     );
+    expect(fixture.document.getPage).toHaveBeenCalledWith(1);
+    expect(fixture.page.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose a render document until its first page is available", async () => {
+    const firstPage = deferred<ReturnType<typeof createPdfDocument>["page"]>();
+    const fixture = createPdfDocument();
+    fixture.document.getPage.mockReturnValueOnce(firstPage.promise);
+    pdfjsMock.getDocument.mockReturnValueOnce(fixture.task);
+    const renderer = new PdfJsPageRenderer();
+
+    const opening = renderer.openRenderDocument(new Uint8Array([37, 80, 68, 70, 45]));
+    await Promise.resolve();
+    let settled = false;
+    void opening.finally(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    firstPage.resolve(fixture.page);
+    await expect(opening).resolves.toEqual({ ok: true, documentId: "pdfjs-1" });
   });
 
   it("renders a page to a real canvas with CSS dimensions and DPR backing dimensions", async () => {

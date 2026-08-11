@@ -373,9 +373,49 @@ describe("NestlyPDF application shell", () => {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 1300));
     expect(screen.getByRole("status")).toHaveTextContent("Building workspace...");
     expect(screen.getByText("Processing locally in your browser")).toBeInTheDocument();
+    expect(screen.queryByText("Preparing large PDF...")).not.toBeInTheDocument();
 
     act(() => {
       resolveOpen({ ok: true, pages: [{ id: "page-1", width: 300, height: 400, rotation: 0 }] });
+    });
+  });
+
+  it("shows deterministic large-document preparation after page count discovery", async () => {
+    let resolveRender: (result: {
+      readonly ok: true;
+      readonly documentId: string;
+    }) => void = () => {
+      throw new Error("The render gateway did not begin opening.");
+    };
+    const pages = Array.from({ length: 500 }, (_, index) => ({
+      id: `page-${String(index + 1)}`,
+      width: 300,
+      height: 400,
+      rotation: 0 as const,
+    }));
+    open.mockResolvedValueOnce({ ok: true, pages });
+    openRenderDocument.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRender = resolve;
+        }),
+    );
+    renderAt("/");
+
+    fireEvent.change(screen.getByLabelText("Choose a PDF file"), {
+      target: { files: [pdfFile("large.pdf")] },
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Preparing large PDF...");
+    expect(
+      screen.getByText("This document has 500 pages. NestlyPDF is preparing it for editing."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Large documents may take a little longer on this device."),
+    ).toBeInTheDocument();
+
+    act(() => {
+      resolveRender({ ok: true, documentId: "render-large" });
     });
   });
 

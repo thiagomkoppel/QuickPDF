@@ -53,6 +53,7 @@ export const LandingPage = ({
   const [isOpening, setIsOpening] = useState(false);
   const [openingStage, setOpeningStage] = useState(0);
   const [openingFileName, setOpeningFileName] = useState<string>();
+  const [largeDocumentPageCount, setLargeDocumentPageCount] = useState<number>();
   const [isPhoneLayout, setIsPhoneLayout] = useState(
     () => window.matchMedia("(max-width: 767px)").matches,
   );
@@ -100,11 +101,15 @@ export const LandingPage = ({
       dragDepthRef.current = 0;
       setIsDragActive(false);
       setOpeningFileName(file.name);
+      setLargeDocumentPageCount(undefined);
       setOpeningStage(0);
       setIsOpening(true);
       const startedAt = performance.now();
       try {
-        const nextSnapshot = await editor.openFile(file);
+        const nextSnapshot = await editor.openFile(file, (progress) => {
+          setLargeDocumentPageCount(progress.pageCount);
+          setOpeningStage(3);
+        });
         onSnapshotChange(nextSnapshot);
         if (nextSnapshot.state.status !== "ready") return;
         const remaining = Math.max(
@@ -177,7 +182,8 @@ export const LandingPage = ({
   };
 
   const isError = snapshot.state.error !== undefined && !isOpening;
-  const visibleOpeningStage = prefersReducedMotion ? 3 : openingStage;
+  const isPreparingLargeDocument = largeDocumentPageCount !== undefined;
+  const visibleOpeningStage = isPreparingLargeDocument || prefersReducedMotion ? 3 : openingStage;
   const openingProgress = `${String((visibleOpeningStage + 1) * 25)}%`;
 
   return (
@@ -258,12 +264,24 @@ export const LandingPage = ({
           {isOpening ? (
             <span className="file-drop-opening" role="status">
               <span aria-hidden="true" className="landing-loader" />
-              <strong>{OPENING_STAGES[visibleOpeningStage]}</strong>
-              <span>{openingFileName}</span>
+              <strong>
+                {isPreparingLargeDocument
+                  ? "Preparing large PDF..."
+                  : OPENING_STAGES[visibleOpeningStage]}
+              </strong>
+              <span>
+                {isPreparingLargeDocument
+                  ? `This document has ${largeDocumentPageCount.toLocaleString()} pages. NestlyPDF is preparing it for editing.`
+                  : openingFileName}
+              </span>
               <span aria-label={`Opening progress ${openingProgress}`} className="opening-progress">
                 <i style={{ width: openingProgress }} />
               </span>
-              <small>Processing locally in your browser</small>
+              <small>
+                {isPreparingLargeDocument
+                  ? "Large documents may take a little longer on this device."
+                  : "Processing locally in your browser"}
+              </small>
             </span>
           ) : (
             <>

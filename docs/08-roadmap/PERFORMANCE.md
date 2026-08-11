@@ -4,6 +4,11 @@
 
 Keep NestlyPDF responsive on large PDFs and memory-constrained mobile devices.
 
+## Startup invariant
+
+Document startup cost must not scale linearly with full-document page rendering. NestlyPDF
+prepares the minimum usable editor state and renders non-current pages and thumbnails lazily.
+
 ## Priorities
 
 ### Rendering
