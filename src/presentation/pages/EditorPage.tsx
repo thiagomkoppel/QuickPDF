@@ -2563,11 +2563,6 @@ export const EditorPage = ({
         {selectedElement === undefined ? (
           <>
             <div
-              className="element-inspector__tabs-region"
-              data-testid="inspector-tabs-region"
-              aria-hidden="true"
-            />
-            <div
               className="element-inspector__properties-region"
               data-testid="inspector-properties-region"
             >

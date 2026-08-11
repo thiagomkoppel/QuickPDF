@@ -3034,12 +3034,16 @@ body {
 
 /* The selected-element inspector uses stable tabs, properties, and layers regions. */
 .desktop-inspector-content {
+  --inspector-tabs-height: 3.6rem;
+  --inspector-layers-min-height: 26rem;
   box-sizing: border-box;
-  display: grid;
-  grid-template-rows: 3.6rem minmax(6rem, 20%) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .element-inspector:has(.layers-panel) {
   height: 100%;
@@ -3052,6 +3056,7 @@ body {
   padding: 0;
 }
 .element-inspector__tabs-region {
+  flex: 0 0 var(--inspector-tabs-height);
   min-width: 0;
   border-bottom: 1px solid rgb(159 219 218 / 14%);
 }
@@ -3065,7 +3070,8 @@ body {
   min-height: 0;
 }
 .element-inspector__properties-region {
-  overflow: hidden;
+  flex: 0 0 auto;
+  overflow: visible;
   border-bottom: 1px solid rgb(159 219 218 / 18%);
 }
 .element-inspector__properties-scroll,
@@ -3079,9 +3085,9 @@ body {
 }
 .element-inspector__properties-scroll {
   box-sizing: border-box;
-  height: 100%;
+  height: auto;
   align-content: start;
-  overflow-y: auto;
+  overflow: visible;
   padding: 1rem;
 }
 .element-inspector__properties-scroll .text-inspector,
@@ -3089,6 +3095,8 @@ body {
   margin: 0;
 }
 .element-inspector__layers-region {
+  flex: 1 0 var(--inspector-layers-min-height);
+  min-height: var(--inspector-layers-min-height);
   overflow: hidden;
   padding: 0 1rem 1.15rem;
 }
@@ -3100,17 +3108,12 @@ body {
   margin: 0;
   padding: 1.15rem 0 0;
 }
-@media (max-height: 760px) {
-  .desktop-inspector-content {
-    grid-template-rows: 3.6rem 3rem minmax(0, 1fr);
-  }
-}
 
 /* Keep primary element actions reachable within the independently scrolling properties region. */
 .element-inspector__properties-scroll .text-inspector-actions,
 .element-inspector__properties-scroll .image-inspector-actions {
-  position: sticky;
-  bottom: -1rem;
+  position: static;
+  bottom: auto;
   z-index: 1;
   padding: 0.75rem 0 1rem;
   background: linear-gradient(180deg, rgb(15 39 44 / 0%), #0f272c 34%);

@@ -776,6 +776,95 @@ test("selects text with one click and edits text only through explicit edit acti
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 });
+test("keeps Text and Date properties above Layers in the desktop inspector", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const fixturePath = testInfo.outputPath("inspector-layout-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  const expectPropertiesAboveLayers = async (): Promise<void> => {
+    const properties = page.getByTestId("inspector-properties-region");
+    const layers = page.getByTestId("inspector-layers-region");
+    const lastStyleControl = page.getByLabel("Letter spacing");
+    const initialLayout = await page.evaluate(() => {
+      const propertiesElement = document.querySelector<HTMLElement>(
+        '[data-testid="inspector-properties-region"]',
+      );
+      const propertiesScroll = document.querySelector<HTMLElement>(
+        ".element-inspector__properties-scroll",
+      );
+      const layersElement = document.querySelector<HTMLElement>(
+        '[data-testid="inspector-layers-region"]',
+      );
+      if (propertiesElement === null || propertiesScroll === null || layersElement === null) {
+        throw new Error("Missing desktop inspector regions");
+      }
+      const propertiesBox = propertiesElement.getBoundingClientRect();
+      const layersBox = layersElement.getBoundingClientRect();
+      return {
+        layersTop: layersBox.top,
+        propertiesBottom: propertiesBox.bottom,
+        propertiesHeight: propertiesBox.height,
+        propertiesScrollHeight: propertiesScroll.scrollHeight,
+      };
+    });
+
+    expect(initialLayout.propertiesBottom).toBeLessThanOrEqual(initialLayout.layersTop + 1);
+    expect(initialLayout.propertiesHeight + 1).toBeGreaterThanOrEqual(
+      initialLayout.propertiesScrollHeight,
+    );
+
+    await lastStyleControl.scrollIntoViewIfNeeded();
+    await expect(lastStyleControl).toBeVisible();
+    const visibleLayout = await Promise.all([
+      properties.boundingBox(),
+      layers.boundingBox(),
+      lastStyleControl.boundingBox(),
+    ]);
+    const [propertiesBox, layersBox, controlBox] = visibleLayout;
+    expect(propertiesBox).not.toBeNull();
+    expect(layersBox).not.toBeNull();
+    expect(controlBox).not.toBeNull();
+    if (propertiesBox === null || layersBox === null || controlBox === null) return;
+    expect(propertiesBox.y + propertiesBox.height).toBeLessThanOrEqual(layersBox.y + 1);
+    expect(controlBox.y).toBeGreaterThanOrEqual(propertiesBox.y - 1);
+    expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(
+      propertiesBox.y + propertiesBox.height + 1,
+    );
+  };
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1366, height: 768 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+    await expect(page.getByRole("region", { name: "inspector-layout-fixture.pdf" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+
+    const overlayBox = await page.locator(".overlay-layer").boundingBox();
+    expect(overlayBox).not.toBeNull();
+    if (overlayBox === null) return;
+
+    await page.getByRole("button", { name: "Text" }).click();
+    await page.locator(".overlay-layer").click({ position: { x: 80, y: 100 } });
+    await page.getByLabel("Edit text element").fill("Inspector text");
+    await page.getByLabel("Edit text element").press("Escape");
+    await page.getByRole("tab", { name: "Style" }).click();
+    await expectPropertiesAboveLayers();
+
+    await page.getByRole("button", { name: "Date" }).click();
+    await page.locator(".overlay-layer").click({ position: { x: 150, y: 180 } });
+    await page.getByRole("tab", { name: "Style" }).click();
+    await expect(page.getByRole("button", { name: "Date layer", exact: true })).toBeVisible();
+    await expectPropertiesAboveLayers();
+  }
+});
 test("undoes and redoes overlay add/delete history and exports the final state", async ({
   page,
 }, testInfo) => {
@@ -1663,7 +1752,14 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
       const viewBar = rectFor(".editor-status-bar");
       const actionRect = (
         label: string,
-      ): { bottom: number; height: number; left: number; right: number; top: number; width: number } => {
+      ): {
+        bottom: number;
+        height: number;
+        left: number;
+        right: number;
+        top: number;
+        width: number;
+      } => {
         const action = document.querySelector<HTMLElement>(`[aria-label="${label}"]`);
         if (action === null) {
           throw new Error(`Missing ${label}`);

@@ -1861,6 +1861,7 @@ describe("EditorPage PDF rendering", () => {
     const user = userEvent.setup();
     const editor = createEditor();
     const text = selectedElementForType("text");
+    const date = selectedElementForType("date");
     const checkmark = selectedElementForType("checkmark");
     const { rerender } = render(
       <EditorPage
@@ -1886,6 +1887,9 @@ describe("EditorPage PDF rendering", () => {
     expect(tabsRegion).toContainElement(
       screen.getByRole("tablist", { name: "Text inspector sections" }),
     );
+    for (const tabName of ["Text", "Style", "Page"]) {
+      expect(screen.getByRole("tab", { name: tabName })).toBeInTheDocument();
+    }
     expect(propertiesScroll).toContainElement(screen.getByLabelText("Text content"));
     expect(propertiesRegion).toContainElement(screen.getByRole("button", { name: "Duplicate" }));
     expect(layersRegion).toContainElement(screen.getByLabelText("Layers"));
@@ -1900,6 +1904,27 @@ describe("EditorPage PDF rendering", () => {
     await user.click(screen.getByRole("tab", { name: "Page" }));
     expect(propertiesScroll).toHaveTextContent("This text belongs to page 1.");
     expect(screen.getByTestId("inspector-layers-region")).toBe(layersRegion);
+
+    rerender(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({
+          selectedElementId: date.id,
+          selectedElement: date,
+          elements: [text, date, checkmark],
+          visibleElements: [text, date, checkmark],
+        })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+
+    expect(screen.getByTestId("inspector-tabs-region")).toContainElement(
+      screen.getByRole("tablist", { name: "Text inspector sections" }),
+    );
+    for (const tabName of ["Text", "Style", "Page"]) {
+      expect(screen.getByRole("tab", { name: tabName })).toBeInTheDocument();
+    }
 
     rerender(
       <EditorPage
@@ -2930,8 +2955,8 @@ describe("EditorPage PDF rendering", () => {
       expect(editor.setTool).toHaveBeenCalledWith(tool);
     },
   );
-  it("shows the document inspector when nothing is selected", () => {
-    render(
+  it("shows the document inspector without reserving an empty tabs region", () => {
+    const { container } = render(
       <EditorPage
         editor={createEditor()}
         snapshot={baseSnapshot()}
@@ -2943,7 +2968,11 @@ describe("EditorPage PDF rendering", () => {
     expect(
       screen.getByRole("complementary", { name: "Selected element actions" }),
     ).toHaveTextContent("visible.pdf");
-    expect(screen.getByText("Select an element to edit its properties.")).toBeInTheDocument();
+    const desktopInspector = container.querySelector(".desktop-inspector-content");
+    const propertiesRegion = screen.getByTestId("inspector-properties-region");
+    expect(screen.queryByTestId("inspector-tabs-region")).not.toBeInTheDocument();
+    expect(desktopInspector?.firstElementChild).toBe(propertiesRegion);
+    expect(screen.getByText("Select an element to edit its properties.")).toBeVisible();
     expect(screen.getByLabelText("Layers")).toBeInTheDocument();
   });
 
