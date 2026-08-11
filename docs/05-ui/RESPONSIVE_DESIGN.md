@@ -6,6 +6,10 @@ NestlyPDF must remain usable on desktop, tablet, and mobile without turning the 
 
 The PDF remains the visual priority at every size.
 
+NestlyPDF uses fluid responsive density across width and height. UI spacing, controls,
+typography, panels, and inspector content must adapt from phones through large desktops while
+preserving accessibility and full functionality.
+
 ## Breakpoint strategy
 
 Use content-driven breakpoints rather than device-name assumptions.

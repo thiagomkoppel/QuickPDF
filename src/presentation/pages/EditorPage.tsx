@@ -123,7 +123,6 @@ const MIN_MOBILE_ZOOM = 0.1;
 const MOBILE_TEXT_SIZE: InitialElementSize = { width: 200, height: 52 };
 const MOBILE_DATE_SIZE: InitialElementSize = { width: 144, height: 40 };
 const MOBILE_MARK_SIZE = 44;
-const MOBILE_WHITEOUT_SIZE: InitialElementSize = { width: 160, height: 56 };
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
 const MIN_WHITEOUT_DRAG_DISTANCE = 4;
@@ -490,10 +489,6 @@ const LayersPanel = ({
       <section className="layers-panel" aria-label="Layers">
         <h2>Layer</h2>
         <div className="layers-panel-header">
-          <div>
-            <h3>Order</h3>
-            <p>Top items appear in front of bottom items.</p>
-          </div>
           <div className="layers-order-actions" aria-label="Layer order controls">
             {[
               ["Bring to front", 0],
@@ -1701,7 +1696,7 @@ export const EditorPage = ({
   };
 
   const startWhiteoutDraft = (event: PointerEvent<HTMLDivElement>): void => {
-    if (isCompactEditorViewport || currentPage === undefined || state.tool !== "whiteout") {
+    if (currentPage === undefined || state.tool !== "whiteout") {
       return;
     }
     if (event.target instanceof HTMLElement && event.target.closest(".overlay-element") !== null) {
@@ -1712,6 +1707,7 @@ export const EditorPage = ({
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     workspaceGestureModeRef.current = "drawing-whiteout";
     capturePointer(event.currentTarget, event.pointerId);
     if (editingTextElementId !== undefined) {
@@ -1875,20 +1871,6 @@ export const EditorPage = ({
     if (state.tool === "date") {
       applySnapshot(
         isCompactEditorViewport ? editor.addDate(point, MOBILE_DATE_SIZE) : editor.addDate(point),
-      );
-      applySnapshot(editor.setTool("select"));
-      return;
-    }
-    if (state.tool === "whiteout" && isCompactEditorViewport) {
-      const width = Math.min(MOBILE_WHITEOUT_SIZE.width, currentPage.width);
-      const height = Math.min(MOBILE_WHITEOUT_SIZE.height, currentPage.height);
-      applySnapshot(
-        editor.addWhiteout({
-          x: Math.min(Math.max(point.x - width / 2, 0), currentPage.width - width),
-          y: Math.min(Math.max(point.y - height / 2, 0), currentPage.height - height),
-          width,
-          height,
-        }),
       );
       applySnapshot(editor.setTool("select"));
       return;

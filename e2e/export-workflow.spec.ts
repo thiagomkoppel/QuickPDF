@@ -488,6 +488,105 @@ test("pans plain PDF page and green workspace through the shared gesture", async
     .poll(() => workspace.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(workspaceStartScroll + 30);
 });
+
+test("keeps compact Whiteout ahead of PDF-page pan", async ({ page }, testInfo) => {
+  const fixturePath = testInfo.outputPath("compact-whiteout-pan-fixture.pdf");
+  await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 });
+    window.matchMedia = (query: string) => {
+      if (query === "(pointer: coarse)") {
+        return {
+          addEventListener: () => undefined,
+          addListener: () => undefined,
+          dispatchEvent: () => false,
+          matches: true,
+          media: query,
+          onchange: null,
+          removeEventListener: () => undefined,
+          removeListener: () => undefined,
+        } as MediaQueryList;
+      }
+      return nativeMatchMedia(query);
+    };
+  });
+
+  await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+  await expect(page.getByRole("region", { name: "compact-whiteout-pan-fixture.pdf" })).toHaveClass(
+    /is-compact-editor/,
+  );
+  await expect(page.getByText("Rendering PDF page...")).toBeHidden();
+
+  for (let index = 0; index < 4; index += 1) {
+    await page.getByRole("button", { name: "Zoom in" }).click();
+  }
+
+  const workspace = page.getByRole("main", { name: "PDF workspace" });
+  await workspace.evaluate((element) => {
+    element.scrollTop = 80;
+  });
+  const points = await page.evaluate(() => {
+    const workspaceElement = document.querySelector<HTMLElement>('[aria-label="PDF workspace"]');
+    const overlay = document.querySelector<HTMLElement>(".overlay-layer");
+    if (workspaceElement === null || overlay === null) {
+      throw new Error("Whiteout pan geometry is unavailable.");
+    }
+    const workspaceRect = workspaceElement.getBoundingClientRect();
+    const overlayRect = overlay.getBoundingClientRect();
+    const left = Math.max(workspaceRect.left, overlayRect.left);
+    const right = Math.min(workspaceRect.right, overlayRect.right);
+    const top = Math.max(workspaceRect.top, overlayRect.top);
+    const bottom = Math.min(workspaceRect.bottom, overlayRect.bottom);
+    if (right - left < 180 || bottom - top < 140) {
+      throw new Error("Not enough visible PDF page area for Whiteout and pan gestures.");
+    }
+    return {
+      panEnd: { x: right - 30, y: top + 20 },
+      panStart: { x: right - 30, y: top + 80 },
+      whiteoutEnd: { x: left + 110, y: top + 80 },
+      whiteoutStart: { x: left + 30, y: top + 30 },
+    };
+  });
+
+  await page.getByRole("button", { name: "More editor tools" }).click();
+  const moreTools = page.getByRole("dialog", { name: "More tools" });
+  await moreTools.getByRole("button", { name: "Whiteout" }).click();
+  await expect(moreTools).toBeHidden();
+
+  const beforeWhiteoutScroll = await workspace.evaluate((element) => ({
+    left: element.scrollLeft,
+    top: element.scrollTop,
+  }));
+  await dragWhiteout(page, points.whiteoutStart, points.whiteoutEnd);
+  await expect(page.getByRole("group", { name: "whiteout element" })).toBeVisible();
+  await expect(page.locator('button[aria-label="Whiteout"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect
+    .poll(() =>
+      workspace.evaluate((element) => ({
+        left: element.scrollLeft,
+        top: element.scrollTop,
+      })),
+    )
+    .toEqual(beforeWhiteoutScroll);
+
+  await page.getByRole("button", { name: "Select" }).click();
+  const beforePanScroll = await workspace.evaluate((element) => element.scrollTop);
+  await page.mouse.move(points.panStart.x, points.panStart.y);
+  await page.mouse.down();
+  await page.mouse.move(points.panEnd.x, points.panEnd.y);
+  await page.mouse.up();
+  await expect
+    .poll(() => workspace.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(beforePanScroll + 30);
+});
+
 test("renders and exports bundled Patrick Hand text", async ({ page }, testInfo) => {
   const fixturePath = testInfo.outputPath("patrick-hand-fixture.pdf");
   const fixtureBytes = await createPdf();
@@ -593,8 +692,24 @@ test("opens a visible synthetic PDF, aligns overlays, and downloads an edited PD
   await page.mouse.move(pageFrameAtFullZoom.x + 260, pageFrameAtFullZoom.y + 100);
   await startWheelEventRecorder(page);
   const browserScaleBeforeBoundaryZoom = await browserScaleSnapshot(page);
-  await modifiedWheel(page, "out", 3);
+  await modifiedWheel(page, "out", 10);
   await expect(page.getByLabel("Zoom level")).toHaveText("50%");
+  const pageFrameAtMinZoom = await page.locator(".pdf-page-frame").boundingBox();
+  const workspaceAtMinZoom = await page.getByLabel("PDF workspace").boundingBox();
+  expect(pageFrameAtMinZoom).not.toBeNull();
+  expect(workspaceAtMinZoom).not.toBeNull();
+  if (pageFrameAtMinZoom === null || workspaceAtMinZoom === null) {
+    return;
+  }
+  const backgroundX = workspaceAtMinZoom.x + 2;
+  const backgroundY = workspaceAtMinZoom.y + 2;
+  expect(
+    backgroundX < pageFrameAtMinZoom.x ||
+      backgroundX > pageFrameAtMinZoom.x + pageFrameAtMinZoom.width ||
+      backgroundY < pageFrameAtMinZoom.y ||
+      backgroundY > pageFrameAtMinZoom.y + pageFrameAtMinZoom.height,
+  ).toBe(true);
+  await page.mouse.move(backgroundX, backgroundY);
   await modifiedWheel(page, "out", 3);
   await expect(page.getByLabel("Zoom level")).toHaveText("50%");
   const wheelRecordsAtMin = await wheelEventRecords(page);
@@ -776,12 +891,28 @@ test("selects text with one click and edits text only through explicit edit acti
   await expect(page.getByText("Rendering PDF page...")).toBeHidden();
   await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
 });
-test("keeps Text and Date properties above Layers in the desktop inspector", async ({
+test("keeps Text and Date properties above Layers in the responsive desktop inspector", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const fixturePath = testInfo.outputPath("inspector-layout-fixture.pdf");
   await import("node:fs/promises").then(async (fs) => fs.writeFile(fixturePath, await createPdf()));
+  const densityByViewport = new Map<
+    string,
+    {
+      documentScrollWidth: number;
+      exportDialogPadding: number;
+      headerHeight: number;
+      landingDropHeight: number;
+      metadataRowHeight: number;
+      previewHeight: number;
+      propertiesPaddingTop: number;
+      sectionGap: number;
+      tabHeight: number;
+      toolbarHeight: number;
+      viewportWidth: number;
+    }
+  >();
 
   const expectPropertiesAboveLayers = async (): Promise<void> => {
     const properties = page.getByTestId("inspector-properties-region");
@@ -834,13 +965,96 @@ test("keeps Text and Date properties above Layers in the desktop inspector", asy
     );
   };
 
+  const expectScrollableLayersRegion = async (): Promise<void> => {
+    const layout = await page.evaluate(() => {
+      const inspector = document.querySelector<HTMLElement>(".element-inspector");
+      const inspectorContent = document.querySelector<HTMLElement>(".desktop-inspector-content");
+      const layersRegion = document.querySelector<HTMLElement>(
+        '[data-testid="inspector-layers-region"]',
+      );
+      const layersList = document.querySelector<HTMLElement>(".layers-list");
+      const rows = [...document.querySelectorAll<HTMLElement>(".layers-list > li")];
+      if (
+        inspector === null ||
+        inspectorContent === null ||
+        layersRegion === null ||
+        layersList === null
+      ) {
+        throw new Error("Missing scrollable Layers layout.");
+      }
+      const inspectorBox = inspector.getBoundingClientRect();
+      const regionBox = layersRegion.getBoundingClientRect();
+      const regionStyle = window.getComputedStyle(layersRegion);
+      const listStyle = window.getComputedStyle(layersList);
+      return {
+        inspectorBottom: inspectorBox.bottom,
+        inspectorOverflowY: window.getComputedStyle(inspectorContent).overflowY,
+        listClientHeight: layersList.clientHeight,
+        listOverflowY: listStyle.overflowY,
+        listScrollHeight: layersList.scrollHeight,
+        regionBottom: regionBox.bottom,
+        regionClientHeight: layersRegion.clientHeight,
+        regionOverflowX: regionStyle.overflowX,
+        regionOverflowY: regionStyle.overflowY,
+        regionScrollHeight: layersRegion.scrollHeight,
+        regionScrollWidth: layersRegion.scrollWidth,
+        regionClientWidth: layersRegion.clientWidth,
+        rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+      };
+    });
+
+    expect(layout.inspectorOverflowY).toBe("hidden");
+    expect(layout.regionOverflowY).toBe("auto");
+    expect(layout.regionOverflowX).toBe("hidden");
+    expect(layout.regionClientHeight).toBeGreaterThan(0);
+    expect(layout.regionScrollHeight).toBeGreaterThan(layout.regionClientHeight + 1);
+    expect(layout.regionBottom).toBeLessThanOrEqual(layout.inspectorBottom + 1);
+    expect(layout.regionScrollWidth).toBeLessThanOrEqual(layout.regionClientWidth + 1);
+    expect(layout.listOverflowY).toBe("visible");
+    expect(layout.listScrollHeight).toBeLessThanOrEqual(layout.listClientHeight + 1);
+    expect(layout.rowHeights.length).toBeGreaterThan(2);
+    for (const rowHeight of layout.rowHeights) {
+      expect(rowHeight).toBeGreaterThanOrEqual(64);
+    }
+
+    const layersRegion = page.getByTestId("inspector-layers-region");
+    for (const target of [
+      page.getByRole("heading", { name: "Layer Actions" }),
+      page.getByText("How layers work", { exact: true }),
+    ]) {
+      await target.scrollIntoViewIfNeeded();
+      const [regionBox, targetBox] = await Promise.all([
+        layersRegion.boundingBox(),
+        target.boundingBox(),
+      ]);
+      expect(regionBox).not.toBeNull();
+      expect(targetBox).not.toBeNull();
+      if (regionBox === null || targetBox === null) return;
+      expect(targetBox.y).toBeGreaterThanOrEqual(regionBox.y - 1);
+      expect(targetBox.y + targetBox.height).toBeLessThanOrEqual(
+        regionBox.y + regionBox.height + 1,
+      );
+      await expect
+        .poll(() => layersRegion.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+    }
+  };
+
   for (const viewport of [
+    { width: 1024, height: 600 },
+    { width: 1152, height: 648 },
     { width: 1280, height: 720 },
     { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1536, height: 864 },
     { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
+    const landingDropHeight = await page
+      .locator(".file-drop")
+      .evaluate((element) => element.getBoundingClientRect().height);
     await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
     await expect(page.getByRole("region", { name: "inspector-layout-fixture.pdf" })).toBeVisible({
       timeout: 15_000,
@@ -859,11 +1073,164 @@ test("keeps Text and Date properties above Layers in the desktop inspector", asy
     await expectPropertiesAboveLayers();
 
     await page.getByRole("button", { name: "Date" }).click();
-    await page.locator(".overlay-layer").click({ position: { x: 150, y: 180 } });
+    await page.locator(".overlay-layer").click({
+      position: { x: overlayBox.width * 0.75, y: overlayBox.height * 0.2 },
+    });
     await page.getByRole("tab", { name: "Style" }).click();
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector('[aria-label="Date layer"]') !== null))
+      .toBe(true);
+    await page.evaluate(() => {
+      const dateLayer = document.querySelector<HTMLElement>('[aria-label="Date layer"]');
+      dateLayer?.scrollIntoView({ block: "nearest" });
+    });
     await expect(page.getByRole("button", { name: "Date layer", exact: true })).toBeVisible();
+    if (viewport.width === 1024 && viewport.height === 600) {
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const dateLayer = document.querySelector<HTMLElement>('[aria-label="Date layer"]');
+            return dateLayer?.closest<HTMLElement>(".element-inspector__layers-region")?.scrollTop;
+          }),
+        )
+        .toBeGreaterThan(0);
+    }
     await expectPropertiesAboveLayers();
+    await expect(page.getByRole("heading", { name: "Order" })).toHaveCount(0);
+    await expect(
+      page.getByText("Top items appear in front of bottom items.", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Layer order controls")).toBeVisible();
+    await page.getByRole("tab", { name: "Text" }).click();
+    for (let index = 0; index < 8; index += 1) {
+      await page.getByRole("button", { name: "Duplicate" }).click();
+    }
+    await page.getByRole("tab", { name: "Style" }).click();
+    const layerRows = page.locator(".layers-list > li");
+    await expect(layerRows).toHaveCount(10);
+    await page.getByRole("button", { name: "Move down" }).click();
+    await expect(layerRows.nth(1)).toHaveClass(/is-selected/);
+    await expectScrollableLayersRegion();
+
+    const whiteoutButton = page.getByRole("button", { name: "Whiteout", exact: true });
+    await whiteoutButton.click();
+    await expect(whiteoutButton).toHaveAttribute("aria-pressed", "true");
+    const whiteoutSurface = await page.locator(".overlay-layer").boundingBox();
+    expect(whiteoutSurface).not.toBeNull();
+    if (whiteoutSurface === null) return;
+    await dragWhiteout(
+      page,
+      { x: whiteoutSurface.x + 300, y: whiteoutSurface.y + 380 },
+      { x: whiteoutSurface.x + 380, y: whiteoutSurface.y + 420 },
+    );
+    await expect(page.locator(".image-inspector-preview")).toBeVisible();
+    const density = await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>(".editor-header");
+      const toolbar = document.querySelector<HTMLElement>(".viewer-toolbar");
+      const tabs = document.querySelector<HTMLElement>(".text-inspector-tabs");
+      const propertiesScroll = document.querySelector<HTMLElement>(
+        ".element-inspector__properties-scroll",
+      );
+      const imageInspector = document.querySelector<HTMLElement>(".image-inspector");
+      const preview = document.querySelector<HTMLElement>(".image-inspector-preview");
+      const metadataRow = document.querySelector<HTMLElement>(".image-inspector-metadata div");
+      if (
+        header === null ||
+        toolbar === null ||
+        tabs === null ||
+        propertiesScroll === null ||
+        imageInspector === null ||
+        preview === null ||
+        metadataRow === null
+      ) {
+        throw new Error("Missing responsive density surfaces.");
+      }
+      const propertiesStyle = window.getComputedStyle(propertiesScroll);
+      return {
+        documentScrollWidth: document.documentElement.scrollWidth,
+        headerHeight: header.getBoundingClientRect().height,
+        metadataRowHeight: metadataRow.getBoundingClientRect().height,
+        previewHeight: preview.getBoundingClientRect().height,
+        propertiesPaddingTop: Number.parseFloat(propertiesStyle.paddingTop),
+        sectionGap: Number.parseFloat(window.getComputedStyle(imageInspector).rowGap),
+        tabHeight: tabs.getBoundingClientRect().height,
+        toolbarHeight: toolbar.getBoundingClientRect().height,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(density.documentScrollWidth).toBeLessThanOrEqual(density.viewportWidth);
+    const downloadButton = page.getByRole("button", { name: "Download", exact: true });
+    await downloadButton.click();
+    const exportDialog = page.getByRole("dialog", { name: "Export PDF" });
+    await expect(exportDialog).toBeVisible();
+    const exportGeometry = await exportDialog.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        bottom: box.bottom,
+        left: box.left,
+        padding: Number.parseFloat(window.getComputedStyle(element).paddingTop),
+        right: box.right,
+        top: box.top,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(exportGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(exportGeometry.top).toBeGreaterThanOrEqual(0);
+    expect(exportGeometry.right).toBeLessThanOrEqual(exportGeometry.viewportWidth);
+    expect(exportGeometry.bottom).toBeLessThanOrEqual(exportGeometry.viewportHeight);
+    await exportDialog.getByRole("button", { name: "Close export dialog" }).click();
+
+    await page.getByRole("button", { name: "Signature", exact: true }).click();
+    const signatureDialog = page.getByRole("dialog", { name: "Signature" });
+    await expect(signatureDialog).toBeVisible();
+    const signatureGeometry = await signatureDialog.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        bottom: box.bottom,
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(signatureGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(signatureGeometry.top).toBeGreaterThanOrEqual(0);
+    expect(signatureGeometry.right).toBeLessThanOrEqual(signatureGeometry.viewportWidth);
+    expect(signatureGeometry.bottom).toBeLessThanOrEqual(signatureGeometry.viewportHeight);
+    await signatureDialog.getByRole("button", { name: "Close dialog" }).click();
+
+    densityByViewport.set(`${String(viewport.width)}x${String(viewport.height)}`, {
+      ...density,
+      exportDialogPadding: exportGeometry.padding,
+      landingDropHeight,
+    });
   }
+
+  const compactDensity = densityByViewport.get("1280x720");
+  const largeDensity = densityByViewport.get("1920x1080");
+  const wideDensity = densityByViewport.get("2560x1440");
+  expect(compactDensity).toBeDefined();
+  expect(largeDensity).toBeDefined();
+  expect(wideDensity).toBeDefined();
+  if (compactDensity === undefined || largeDensity === undefined || wideDensity === undefined)
+    return;
+  expect(compactDensity.headerHeight).toBeLessThan(largeDensity.headerHeight);
+  expect(compactDensity.toolbarHeight).toBeLessThan(largeDensity.toolbarHeight);
+  expect(compactDensity.landingDropHeight).toBeLessThan(largeDensity.landingDropHeight);
+  expect(compactDensity.exportDialogPadding).toBeLessThan(largeDensity.exportDialogPadding);
+  expect(compactDensity.tabHeight).toBeLessThan(largeDensity.tabHeight);
+  expect(compactDensity.previewHeight).toBeLessThan(largeDensity.previewHeight);
+  expect(compactDensity.metadataRowHeight).toBeLessThan(largeDensity.metadataRowHeight);
+  expect(compactDensity.propertiesPaddingTop).toBeLessThan(largeDensity.propertiesPaddingTop);
+  expect(wideDensity.headerHeight).toBeGreaterThanOrEqual(largeDensity.headerHeight);
+  expect(wideDensity.toolbarHeight).toBeGreaterThanOrEqual(largeDensity.toolbarHeight);
+  expect(wideDensity.previewHeight).toBeGreaterThanOrEqual(largeDensity.previewHeight);
+  expect(wideDensity.propertiesPaddingTop).toBeGreaterThanOrEqual(
+    largeDensity.propertiesPaddingTop,
+  );
+  expect(compactDensity.sectionGap).toBeLessThan(largeDensity.sectionGap);
 });
 test("undoes and redoes overlay add/delete history and exports the final state", async ({
   page,
@@ -1234,6 +1601,8 @@ test("deletes every selected overlay type and excludes deleted overlays from exp
   await expect(
     page.getByRole("heading", { name: "delete-overlays-fixture-edited.pdf" }),
   ).toBeVisible();
+  await page.keyboard.press("Control+0");
+  await expect(page.getByLabel("Zoom level")).toHaveText("100%");
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 40, y: 50, width: 120, height: 48 }))
     .toBe(true);
@@ -1671,6 +2040,8 @@ test("draws, resizes, exports, and reopens a signature", async ({ page }, testIn
   await expect(
     page.getByRole("heading", { name: "draw-signature-fixture-edited.pdf" }),
   ).toBeVisible();
+  await page.keyboard.press("Control+0");
+  await expect(page.getByLabel("Zoom level")).toHaveText("100%");
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 240, height: 90 }))
     .toBe(true);
@@ -1695,6 +2066,8 @@ test("types, exports, and reopens a signature", async ({ page }, testInfo) => {
   await expect(
     page.getByRole("heading", { name: "typed-signature-fixture-edited.pdf" }),
   ).toBeVisible();
+  await page.keyboard.press("Control+0");
+  await expect(page.getByLabel("Zoom level")).toHaveText("100%");
   await expect
     .poll(() => canvasRegionHasDarkContent(page, { x: 56, y: 250, width: 220, height: 70 }))
     .toBe(true);

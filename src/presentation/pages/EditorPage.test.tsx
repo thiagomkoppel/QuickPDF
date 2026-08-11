@@ -1752,6 +1752,11 @@ describe("EditorPage PDF rendering", () => {
     );
 
     expect(screen.getByLabelText("Layers")).toHaveTextContent("Checkmark");
+    expect(screen.queryByRole("heading", { name: "Order" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Top items appear in front of bottom items."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Layer order controls")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Move up" }));
     expect(editor.reorderCurrentPageLayers).toHaveBeenCalledWith("text-1", 0);
   });
@@ -2109,6 +2114,47 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.addWhiteout).toHaveBeenCalledWith({ x: 40, y: 50, width: 120, height: 60 });
     expect(workspace.scrollLeft).toBe(120);
     expect(workspace.scrollTop).toBe(80);
+  });
+
+  it("lets compact Whiteout own PDF-page drags without panning the workspace", () => {
+    const mediaQuery = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => mediaQuery),
+    );
+    const editor = createEditor();
+    editor.addWhiteout.mockReturnValue(baseSnapshot({ tool: "whiteout", isDirty: true }));
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot({ tool: "whiteout" })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+      />,
+    );
+    const overlay = screen.getByLabelText("PDF overlay");
+    const workspace = screen.getByRole("main", { name: "PDF workspace" });
+    Object.defineProperties(workspace, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 80, writable: true },
+    });
+    Object.defineProperty(overlay, "setPointerCapture", { value: vi.fn() });
+    Object.defineProperty(overlay, "hasPointerCapture", { value: vi.fn(() => true) });
+    Object.defineProperty(overlay, "releasePointerCapture", { value: vi.fn() });
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 300, height: 400, right: 310, bottom: 420 }),
+    });
+
+    dispatchPointerEvent(overlay, "pointerdown", { clientX: 50, clientY: 70, pointerId: 17 });
+    dispatchPointerEvent(overlay, "pointermove", { clientX: 170, clientY: 130, pointerId: 17 });
+    expect(screen.getByLabelText("Whiteout preview")).toBeVisible();
+    dispatchPointerEvent(overlay, "pointerup", { clientX: 170, clientY: 130, pointerId: 17 });
+
+    expect(editor.addWhiteout).toHaveBeenCalledWith({ x: 40, y: 50, width: 120, height: 60 });
+    expect(editor.setTool).not.toHaveBeenCalledWith("select");
+    expect(workspace.scrollLeft).toBe(120);
+    expect(workspace.scrollTop).toBe(80);
+    vi.unstubAllGlobals();
   });
 
   it("normalizes up-left whiteout drags and ignores tiny accidental drags", () => {
