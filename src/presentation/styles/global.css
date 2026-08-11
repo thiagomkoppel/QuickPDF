@@ -4,6 +4,11 @@
   font-display: swap;
 }
 :root {
+  --scrollbar-size: 0.45rem;
+  --scrollbar-track-color: rgb(7 29 35 / 28%);
+  --scrollbar-thumb-color: rgb(103 157 164 / 72%);
+  --scrollbar-thumb-hover-color: rgb(68 161 164 / 92%);
+  --scrollbar-radius: 999px;
   color: #16201b;
   background: #f8faf7;
   font-family:
@@ -20,6 +25,42 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: var(--scrollbar-thumb-color) var(--scrollbar-track-color);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  border-radius: var(--scrollbar-radius);
+  background: var(--scrollbar-track-color);
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--scrollbar-radius);
+  background: var(--scrollbar-thumb-color);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover-color);
+}
+
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: Canvas;
+  }
+
+  *::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb:hover {
+    background: ButtonText;
+  }
 }
 
 body {
@@ -3074,24 +3115,8 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: rgb(103 157 164 / 72%) rgb(7 29 35 / 28%);
-  scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
   padding: 0 1rem 1.15rem;
-}
-.element-inspector__layers-region::-webkit-scrollbar {
-  width: 0.45rem;
-}
-.element-inspector__layers-region::-webkit-scrollbar-track {
-  border-radius: 999px;
-  background: rgb(7 29 35 / 28%);
-}
-.element-inspector__layers-region::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(103 157 164 / 72%);
-}
-.element-inspector__layers-region::-webkit-scrollbar-thumb:hover {
-  background: rgb(68 161 164 / 92%);
 }
 .element-inspector__layers-region .layers-panel {
   min-width: 0;
