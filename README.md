@@ -16,11 +16,11 @@ NestlyPDF is also a **Progressive Web App (PWA)**, so it can be installed on sup
 
 NestlyPDF is designed to keep document processing local.
 
-* **No document uploads**
-* **No cloud document storage**
-* **No account required**
-* **PDF processing happens locally in your browser**
-* **Your document stays on your device**
+- **No document uploads**
+- **No cloud document storage**
+- **No account required**
+- **PDF processing happens locally in your browser**
+- **Your document stays on your device**
 
 Closing the editor or leaving the session discards the working document from the application. NestlyPDF does not provide cloud document history or synchronization.
 
@@ -32,35 +32,35 @@ Closing the editor or leaving the session discards the working document from the
 
 ### PDF Editing
 
-* Add and edit text
-* Add dates
-* Add checkmarks and crosses
-* Add images
-* Whiteout content
-* Add signatures
-* Add initials
-* Move and resize elements
-* Copy and paste supported elements
-* Undo and redo changes
+- Add and edit text
+- Add dates
+- Add checkmarks and crosses
+- Add images
+- Whiteout content
+- Add signatures
+- Add initials
+- Move and resize elements
+- Copy and paste supported elements
+- Undo and redo changes
 
 ### Layers
 
-* View added elements as layers
-* Reorder layers
-* Hide and show individual layers
-* Lock and unlock individual layers
-* Hide or show all layers
-* Lock or unlock all layers
+- View added elements as layers
+- Reorder layers
+- Hide and show individual layers
+- Lock and unlock individual layers
+- Hide or show all layers
+- Lock or unlock all layers
 
 ### Page Management
 
-* Navigate multi-page PDFs
-* Reorder pages
-* Duplicate pages
-* Delete pages
-* Insert pages
-* Extract pages
-* Rotate pages
+- Navigate multi-page PDFs
+- Reorder pages
+- Duplicate pages
+- Delete pages
+- Insert pages
+- Extract pages
+- Rotate pages
 
 ### Export
 
@@ -68,8 +68,8 @@ Export the edited document while keeping the original PDF unchanged.
 
 NestlyPDF supports:
 
-* Original-quality export
-* Compressed export
+- Original-quality export
+- Compressed export
 
 ---
 
@@ -81,12 +81,12 @@ Large PDFs use lazy page and thumbnail rendering rather than attempting to rende
 
 For very large documents, NestlyPDF:
 
-* Detects the document's page count during opening
-* Prioritizes the current page
-* Virtualizes the page rail
-* Renders thumbnails on demand
-* Cancels unnecessary offscreen rendering
-* Releases rendering resources when they are no longer needed
+- Detects the document's page count during opening
+- Prioritizes the current page
+- Virtualizes the page rail
+- Renders thumbnails on demand
+- Cancels unnecessary offscreen rendering
+- Releases rendering resources when they are no longer needed
 
 This helps reduce startup time and memory usage, particularly on lower-powered devices.
 
@@ -102,10 +102,10 @@ Once the application shell has been installed and cached, NestlyPDF can launch a
 
 This makes it useful on:
 
-* Desktop computers
-* Laptops
-* Tablets
-* Phones
+- Desktop computers
+- Laptops
+- Tablets
+- Phones
 
 No separate native application is required.
 
@@ -117,12 +117,12 @@ NestlyPDF is designed to adapt across different screen sizes and available viewp
 
 The interface supports:
 
-* Desktop monitors
-* Laptops
-* Tablets
-* Large and small phones
-* Short-height browser windows
-* Installed PWA environments
+- Desktop monitors
+- Laptops
+- Tablets
+- Large and small phones
+- Short-height browser windows
+- Installed PWA environments
 
 Controls, panels, toolbars, dialogs, and inspector density adapt to the available space while preserving access to editor functionality.
 
@@ -132,8 +132,8 @@ Controls, panels, toolbars, dialogs, and inspector density adapt to the availabl
 
 ### Requirements
 
-* Node.js 22+
-* npm
+- Node.js 22+
+- npm
 
 ### Clone the repository
 
@@ -222,15 +222,15 @@ Before contributing, the relevant validation checks should pass.
 
 NestlyPDF is built primarily with:
 
-* **React**
-* **TypeScript**
-* **Vite**
-* **PDF.js**
-* **pdf-lib**
-* **Vitest**
-* **React Testing Library**
-* **Playwright**
-* **Cloudflare Workers / Static Assets**
+- **React**
+- **TypeScript**
+- **Vite**
+- **PDF.js**
+- **pdf-lib**
+- **Vitest**
+- **React Testing Library**
+- **Playwright**
+- **Cloudflare Workers / Static Assets**
 
 The application is intentionally browser-local and does not require a document-processing backend.
 
@@ -284,27 +284,27 @@ NestlyPDF is a small open-source project, and there are plenty of opportunities 
 
 You can contribute by:
 
-* Reporting bugs
-* Suggesting features
-* Improving accessibility
-* Improving browser compatibility
-* Improving performance
-* Adding tests
-* Improving documentation
-* Fixing issues
-* Submitting pull requests
+- Reporting bugs
+- Suggesting features
+- Improving accessibility
+- Improving browser compatibility
+- Improving performance
+- Adding tests
+- Improving documentation
+- Fixing issues
+- Submitting pull requests
 
 If you're planning a larger change, opening an issue first is a good way to discuss the approach before implementation.
 
 Please preserve the project's core principles:
 
-* Browser-local document processing
-* No required account
-* No document upload dependency
-* Privacy-first architecture
-* Responsive behavior across supported screen sizes
-* Accessible interactions
-* Tests for meaningful behavior changes
+- Browser-local document processing
+- No required account
+- No document upload dependency
+- Privacy-first architecture
+- Responsive behavior across supported screen sizes
+- Accessible interactions
+- Tests for meaningful behavior changes
 
 ---
 
@@ -312,13 +312,13 @@ Please preserve the project's core principles:
 
 If something doesn't work correctly, please open an issue and include, when possible:
 
-* Browser and version
-* Operating system
-* Device type
-* Whether NestlyPDF was running in the browser or as an installed PWA
-* Steps to reproduce the issue
-* Expected behavior
-* Actual behavior
+- Browser and version
+- Operating system
+- Device type
+- Whether NestlyPDF was running in the browser or as an installed PWA
+- Steps to reproduce the issue
+- Expected behavior
+- Actual behavior
 
 Please **do not upload private or sensitive PDF documents** when reporting an issue.
 
