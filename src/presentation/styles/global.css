@@ -3163,7 +3163,7 @@ body {
   display: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   :root {
     --mobile-header-height: 4.25rem;
     --mobile-toolbar-height: 6.9rem;
@@ -3441,7 +3441,7 @@ body {
   .editor-status-bar {
     z-index: 55;
     display: grid;
-    grid-template-columns: minmax(4.5rem, 1fr) 2.4rem 2.4rem minmax(3.5rem, 0.8fr) 2.4rem 2.4rem;
+    grid-template-columns: minmax(4.5rem, 1fr) 2.75rem 2.75rem minmax(3.5rem, 0.8fr) 2.75rem 2.75rem;
     gap: 0.25rem;
     min-height: var(--mobile-status-height);
     padding: 0.4rem 0.55rem;
@@ -3456,7 +3456,7 @@ body {
   .mobile-status-zoom,
   .mobile-status-inspector {
     display: grid;
-    min-height: 2.65rem;
+    min-height: 2.75rem;
     place-items: center;
     padding: 0;
     border: 1px solid rgb(159 219 218 / 18%);
@@ -3481,7 +3481,7 @@ body {
   .mobile-status-zoom-value {
     display: grid;
     min-width: 0;
-    min-height: 2.65rem;
+    min-height: 2.75rem;
     place-items: center;
     border-block: 1px solid rgb(159 219 218 / 18%);
     background: #0d252b;
@@ -3699,9 +3699,16 @@ body {
     transition: none;
   }
 }
+@media (max-width: 767px) and (prefers-reduced-motion: reduce),
+  (max-height: 767px) and (orientation: landscape) and (pointer: coarse) and
+    (prefers-reduced-motion: reduce) {
+  .editor-viewer.is-compact-editor .element-inspector:has(.layers-panel) {
+    transition: none;
+  }
+}
 
 /* Keep the compact page bar and inspector sheet in normal vertical flow. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .editor-viewer.is-compact-editor {
     --mobile-sheet-height: 3.1rem;
     grid-template-rows:
@@ -3812,7 +3819,7 @@ body {
 }
 
 /* Phone layout is an independent, one-column application shell. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   html,
   body,
   #root {
@@ -4005,7 +4012,7 @@ body {
 }
 
 /* Phone Quick Edit intentionally exposes a reduced editing surface. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .editor-viewer.is-compact-editor {
     --quick-edit-notice-height: 0px;
     --mobile-sheet-height: 4.5rem;
@@ -4219,7 +4226,7 @@ body {
   .editor-viewer.is-compact-editor {
     --mobile-header-height: 3.75rem;
     --mobile-toolbar-height: 5.5rem;
-    --mobile-status-height: 3.4rem;
+    --mobile-status-height: 3.6rem;
     --mobile-sheet-height: 3.8rem;
   }
 
@@ -4232,7 +4239,7 @@ body {
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .mobile-more-overlay {
     position: fixed;
     inset: 0;
@@ -4296,7 +4303,7 @@ body {
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .editor-viewer.is-compact-editor .viewer-main {
     touch-action: none;
   }
@@ -6588,7 +6595,7 @@ body,
   outline: 3px solid #ff9a00;
   outline-offset: 2px;
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .export-dialog-backdrop {
     place-items: end center;
     padding: 0;
@@ -6735,7 +6742,7 @@ body,
   height: 2.35rem !important;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 767px) and (orientation: landscape) and (pointer: coarse) {
   .editor-viewer.is-compact-editor {
     padding-top: env(safe-area-inset-top);
   }

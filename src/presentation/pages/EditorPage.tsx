@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -40,6 +41,7 @@ import {
   resolveEditorPerformanceProfile,
   type EditorPerformanceProfile,
 } from "./editor-performance-profile";
+import { createThumbnailRenderQueue } from "./thumbnail-render-queue";
 
 interface EditorPageProps {
   readonly editor: PdfEditorApplication;
@@ -129,6 +131,8 @@ const ZOOM_STEP = 0.25;
 const MIN_WHITEOUT_DRAG_DISTANCE = 4;
 const LARGE_DOCUMENT_THUMBNAIL_LIMIT = 20;
 const LARGE_DOCUMENT_THUMBNAIL_OVERSCAN = 4;
+const THUMBNAIL_RENDER_CONCURRENCY = 4;
+const thumbnailRenderQueue = createThumbnailRenderQueue(THUMBNAIL_RENDER_CONCURRENCY);
 const SIGNATURE_FONTS: readonly { readonly value: SignatureFont; readonly label: string }[] = [
   { value: "cursive", label: "Signature Script" },
   { value: "serif", label: "Serif Italic" },
@@ -769,13 +773,16 @@ const PageThumbnail = ({
       return;
     }
     setStatus("loading");
-    const handle = renderer.startRenderThumbnail({
-      documentId,
-      pageNumber,
-      maxWidth,
-      devicePixelRatio,
-      canvas,
-    });
+    const startRenderThumbnail = renderer.startRenderThumbnail.bind(renderer);
+    const handle = thumbnailRenderQueue.enqueue(() =>
+      startRenderThumbnail({
+        documentId,
+        pageNumber,
+        maxWidth,
+        devicePixelRatio,
+        canvas,
+      }),
+    );
     void handle.promise.then((result) => {
       if (result.ok) {
         setStatus("ready");
@@ -933,9 +940,10 @@ export const EditorPage = ({
   const currentPageHeight = currentPage?.height;
   const currentPageRotation = currentPage?.rotation;
   const isLargeDocument = state.pageCount >= LARGE_DOCUMENT_PAGE_THRESHOLD;
-  const currentPageLayers = state.elements
-    .filter((element) => element.pageId === currentPage?.id)
-    .reverse();
+  const currentPageLayers = useMemo(
+    () => state.elements.filter((element) => element.pageId === currentPageId).reverse(),
+    [state.elements, currentPageId],
+  );
   const editorViewportRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1006,6 +1014,10 @@ export const EditorPage = ({
   const resizeFrameRef = useRef<number | undefined>(undefined);
   const pendingVisualResizePreviewRef = useRef<VisualResizePreview | undefined>(undefined);
   const movePreviewRef = useRef<MovePreview | undefined>(undefined);
+  const moveFrameRef = useRef<number | undefined>(undefined);
+  const pendingMovePreviewRef = useRef<{ readonly elementId: string; readonly x: number; readonly y: number } | undefined>(
+    undefined,
+  );
   const moveCancelRef = useRef<(() => void) | undefined>(undefined);
   const workspacePanRef = useRef<WorkspacePan | undefined>(undefined);
   const touchPointsRef = useRef(new Map<number, { readonly x: number; readonly y: number }>());
@@ -1169,11 +1181,43 @@ export const EditorPage = ({
     });
   }, []);
 
+  const cancelMoveFrame = useCallback((): void => {
+    if (moveFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = undefined;
+    }
+    pendingMovePreviewRef.current = undefined;
+  }, []);
+
+  const scheduleMovePreview = useCallback(
+    (preview: { readonly elementId: string; readonly x: number; readonly y: number }): void => {
+      pendingMovePreviewRef.current = preview;
+      if (moveFrameRef.current !== undefined) {
+        return;
+      }
+      moveFrameRef.current = window.requestAnimationFrame(() => {
+        moveFrameRef.current = undefined;
+        const nextPreview = pendingMovePreviewRef.current;
+        pendingMovePreviewRef.current = undefined;
+        if (nextPreview !== undefined) {
+          applySnapshot(
+            editor.previewMoveElement(nextPreview.elementId, {
+              x: nextPreview.x,
+              y: nextPreview.y,
+            }),
+          );
+        }
+      });
+    },
+    [applySnapshot, editor],
+  );
+
   useEffect(
     () => () => {
       cancelResizeFrame();
+      cancelMoveFrame();
     },
-    [cancelResizeFrame],
+    [cancelMoveFrame, cancelResizeFrame],
   );
 
   useEffect(() => {
@@ -1645,12 +1689,7 @@ export const EditorPage = ({
           y: point.y - pointerAction.offsetY,
         };
         movePreviewRef.current = { bounds };
-        applySnapshot(
-          editor.previewMoveElement(pointerAction.elementId, {
-            x: bounds.x,
-            y: bounds.y,
-          }),
-        );
+        scheduleMovePreview({ elementId: pointerAction.elementId, x: bounds.x, y: bounds.y });
         return;
       }
       if (isTextResizeType(pointerAction.type)) {
@@ -1700,6 +1739,7 @@ export const EditorPage = ({
 
     const stopPointerAction = (): void => {
       if (pointerAction.kind === "move") {
+        cancelMoveFrame();
         const preview = movePreviewRef.current;
         if (preview !== undefined) {
           applySnapshot(
@@ -1748,6 +1788,7 @@ export const EditorPage = ({
 
     const cancelPointerAction = (): void => {
       if (pointerAction.kind === "move") {
+        cancelMoveFrame();
         applySnapshot(
           editor.previewMoveElement(pointerAction.elementId, {
             x: pointerAction.startBounds.x,
@@ -1791,9 +1832,11 @@ export const EditorPage = ({
     };
   }, [
     applySnapshot,
+    cancelMoveFrame,
     clearVisualResizePreview,
     editor,
     pointerAction,
+    scheduleMovePreview,
     scheduleVisualResizePreview,
     zoom,
   ]);
@@ -2215,6 +2258,7 @@ export const EditorPage = ({
       workspaceGestureModeRef.current = "idle";
     };
     const restoreStart = (): void => {
+      cancelMoveFrame();
       applySnapshot(editor.previewMoveElement(element.id, { x: startBounds.x, y: startBounds.y }));
       cleanup();
     };
@@ -2238,10 +2282,11 @@ export const EditorPage = ({
       };
       latestBounds = bounds;
       movePreviewRef.current = { bounds };
-      applySnapshot(editor.previewMoveElement(element.id, { x: bounds.x, y: bounds.y }));
+      scheduleMovePreview({ elementId: element.id, x: bounds.x, y: bounds.y });
     };
     const handleUp = (): void => {
       releasePointer(target, "pointerId" in event ? event.pointerId : undefined);
+      cancelMoveFrame();
       if (latestBounds !== undefined) {
         applySnapshot(editor.commitMoveElement(element.id, startBounds, latestBounds));
       }

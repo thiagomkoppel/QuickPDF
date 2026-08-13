@@ -7,7 +7,7 @@ export type EditorViewportMetrics = Readonly<{
   maxTouchPoints: number;
 }>;
 
-const PHONE_MAX_SHORTEST_EDGE = 767;
+const PHONE_MAX_SHORTEST_EDGE = 768;
 const TABLET_MAX_SHORTEST_EDGE = 1024;
 const MIN_USABLE_EDITOR_HEIGHT = 500;
 

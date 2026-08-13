@@ -9,6 +9,7 @@ import type {
   ExportElement,
   PdfEditorApplication,
 } from "../../application/editor-application";
+import type { PdfPageRenderHandle } from "../../infrastructure/pdf/pdfjs-page-renderer";
 import { EditorPage } from "./EditorPage";
 
 interface Deferred<T> {
@@ -1555,12 +1556,6 @@ describe("EditorPage PDF rendering", () => {
       text.dispatchEvent(up);
     });
 
-    await waitFor(() => {
-      expect(editor.previewMoveElement).toHaveBeenCalledWith(
-        "text-1",
-        expect.objectContaining({ x: 60, y: 70 }),
-      );
-    });
     expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
     expect(editor.commitMoveElement).toHaveBeenCalledWith(
       "text-1",
@@ -1570,6 +1565,87 @@ describe("EditorPage PDF rendering", () => {
     expect(screen.queryByLabelText("Edit text element")).toBeNull();
     expect(workspace.scrollLeft).toBe(120);
     expect(workspace.scrollTop).toBe(80);
+  });
+
+  it("batches rapid drag previews into one animation frame and commits the latest bounds", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    try {
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("text")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const text = screen.getByRole("group", { name: "text element" });
+
+      dispatchPointerEvent(text, "pointerdown", { clientX: 55, clientY: 65, pointerId: 1 });
+      dispatchPointerEvent(text, "pointermove", { clientX: 65, clientY: 75, pointerId: 1 });
+      dispatchPointerEvent(text, "pointermove", { clientX: 75, clientY: 85, pointerId: 1 });
+      dispatchPointerEvent(text, "pointermove", { clientX: 85, clientY: 95, pointerId: 1 });
+
+      expect(raf.requestSpy).toHaveBeenCalledTimes(1);
+      expect(raf.pendingCount()).toBe(1);
+      expect(editor.previewMoveElement).not.toHaveBeenCalled();
+
+      raf.flushLatest();
+
+      expect(editor.previewMoveElement).toHaveBeenCalledTimes(1);
+      expect(editor.previewMoveElement).toHaveBeenCalledWith(
+        "text-1",
+        expect.objectContaining({ x: 70, y: 80 }),
+      );
+
+      dispatchPointerEvent(text, "pointerup", { clientX: 85, clientY: 95, pointerId: 1 });
+
+      expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+      expect(editor.commitMoveElement).toHaveBeenCalledWith(
+        "text-1",
+        { x: 40, y: 50, width: 120, height: 48 },
+        expect.objectContaining({ x: 70, y: 80, width: 120, height: 48 }),
+      );
+      expect(raf.pendingCount()).toBe(0);
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("discards a pending drag preview frame when the pointer is released before it flushes", () => {
+    const raf = installControlledRaf();
+    const editor = createEditor();
+    try {
+      render(
+        <EditorPage
+          editor={editor}
+          snapshot={selectedSnapshot("text")}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+        />,
+      );
+      const text = screen.getByRole("group", { name: "text element" });
+
+      dispatchPointerEvent(text, "pointerdown", { clientX: 55, clientY: 65, pointerId: 1 });
+      dispatchPointerEvent(text, "pointermove", { clientX: 75, clientY: 85, pointerId: 1 });
+      expect(raf.pendingCount()).toBe(1);
+
+      dispatchPointerEvent(text, "pointerup", { clientX: 75, clientY: 85, pointerId: 1 });
+
+      expect(raf.cancelSpy).toHaveBeenCalled();
+      expect(raf.pendingCount()).toBe(0);
+      expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
+      expect(editor.commitMoveElement).toHaveBeenCalledWith(
+        "text-1",
+        { x: 40, y: 50, width: 120, height: 48 },
+        expect.objectContaining({ x: 60, y: 70, width: 120, height: 48 }),
+      );
+
+      raf.flushLatest();
+      expect(editor.previewMoveElement).not.toHaveBeenCalled();
+    } finally {
+      raf.restore();
+    }
   });
 
   it("places text as a one-shot tool and switches back to Select", async () => {
@@ -2398,7 +2474,6 @@ describe("EditorPage PDF rendering", () => {
     dispatchPointerEvent(imageElement, "pointermove", { clientX: 76, clientY: 80, pointerId: 31 });
     dispatchPointerEvent(imageElement, "pointerup", { clientX: 76, clientY: 80, pointerId: 31 });
 
-    expect(editor.previewMoveElement).toHaveBeenCalledWith("image-1", { x: 64, y: 68 });
     expect(editor.commitMoveElement).toHaveBeenCalledTimes(1);
     expect(editor.commitMoveElement).toHaveBeenCalledWith(
       "image-1",
@@ -3169,6 +3244,58 @@ describe("EditorPage PDF rendering", () => {
     ).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /page [0-9]+/i }).length).toBeLessThanOrEqual(20);
     expect(container.querySelectorAll(".page-thumbnail-canvas").length).toBeLessThanOrEqual(20);
+  });
+
+  it("calls startRenderThumbnail with its renderer instance as the receiver", async () => {
+    const receivers: unknown[] = [];
+    class ThisCheckingRenderer {
+      public clearCanvas = vi.fn();
+      public startRenderPage = vi.fn(() => ({
+        promise: Promise.resolve({
+          ok: true as const,
+          cssWidth: 300,
+          cssHeight: 400,
+          backingWidth: 300,
+          backingHeight: 400,
+        }),
+        cancel: vi.fn(),
+      }));
+      public startRenderThumbnail(): PdfPageRenderHandle {
+        receivers.push(this);
+        const bound = this instanceof ThisCheckingRenderer;
+        return {
+          promise: Promise.resolve(
+            bound
+              ? { ok: true, cssWidth: 96, cssHeight: 128, backingWidth: 96, backingHeight: 128 }
+              : {
+                  ok: false,
+                  cancelled: false,
+                  error: { code: "RenderFailed", message: "unbound" },
+                },
+          ),
+          cancel: vi.fn(),
+        };
+      }
+    }
+    const pages = Array.from({ length: 3 }, (_, index) => ({
+      id: `page-${String(index + 1)}`,
+      width: 300,
+      height: 400,
+      rotation: 0 as const,
+    }));
+    render(
+      <EditorPage
+        editor={createEditor()}
+        snapshot={baseSnapshot({ pages })}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={new ThisCheckingRenderer()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(receivers.length).toBe(3);
+    });
+    expect(receivers.every((receiver) => receiver instanceof ThisCheckingRenderer)).toBe(true);
   });
 
   it("does not delete selected overlays while focus is inside editing controls", async () => {

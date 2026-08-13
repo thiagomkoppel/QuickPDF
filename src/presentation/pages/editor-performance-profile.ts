@@ -42,6 +42,9 @@ export const resolveEditorPerformanceProfile = (
   return isLowPowerTouchEnvironment(environment) ? "light" : "full";
 };
 
+/** Bounds the canvas backing-store multiplier so high-DPI displays don't allocate oversized canvases. */
+const MAX_RENDER_PIXEL_RATIO = 2;
+
 export const renderPixelRatioForProfile = (
   profile: EffectiveEditorPerformanceProfile,
   devicePixelRatio: number,
@@ -50,5 +53,6 @@ export const renderPixelRatioForProfile = (
     return 1;
   }
 
-  return Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const safeRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.min(safeRatio, MAX_RENDER_PIXEL_RATIO);
 };

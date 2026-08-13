@@ -14,6 +14,28 @@ describe("classifyEditorFormFactor", () => {
     ).toBe("phone");
   });
 
+  it("keeps a touch viewport with a 767px shortest edge in Phone Quick Edit", () => {
+    expect(
+      classifyEditorFormFactor({
+        width: 767,
+        height: 1024,
+        hasCoarsePointer: true,
+        maxTouchPoints: 5,
+      }),
+    ).toBe("phone");
+  });
+
+  it("uses the tablet shell once the shortest edge reaches 768px", () => {
+    expect(
+      classifyEditorFormFactor({
+        width: 768,
+        height: 1024,
+        hasCoarsePointer: true,
+        maxTouchPoints: 5,
+      }),
+    ).toBe("tablet-portrait");
+  });
+
   it("uses the portrait tablet shell for a tall coarse-pointer viewport", () => {
     expect(
       classifyEditorFormFactor({

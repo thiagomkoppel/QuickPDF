@@ -62,7 +62,12 @@ describe("renderPixelRatioForProfile", () => {
     expect(renderPixelRatioForProfile("light", 2)).toBe(1);
   });
 
-  it("preserves full-quality device pixel ratio", () => {
+  it("preserves full-quality device pixel ratio up to the backing-store cap", () => {
     expect(renderPixelRatioForProfile("full", 2)).toBe(2);
+  });
+
+  it("caps full-quality rendering to avoid oversized backing canvases on high-DPI displays", () => {
+    expect(renderPixelRatioForProfile("full", 3)).toBe(2);
+    expect(renderPixelRatioForProfile("full", 4)).toBe(2);
   });
 });

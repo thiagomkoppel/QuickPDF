@@ -671,7 +671,7 @@ export class PdfEditorApplication {
     }
 
     if (this.#renderGateway !== undefined) {
-      const renderResult = await this.#renderGateway.openRenderDocument(cloneBytes(originalBytes));
+      const renderResult = await this.#renderGateway.openRenderDocument(originalBytes);
       if (openSequence !== this.#openSequence) {
         if (renderResult.ok) {
           this.#renderGateway.disposeRenderDocument(renderResult.documentId);
@@ -1291,7 +1291,7 @@ export class PdfEditorApplication {
     void discardedExportError;
     this.#state = { ...exportingState, status: "exporting" };
     const exportResult = await this.#pdfGateway.exportPdf({
-      originalBytes: cloneBytes(originalBytes),
+      originalBytes,
       pages: session.pages(),
       elements: this.#orderedExportElements(),
     });
@@ -1314,7 +1314,7 @@ export class PdfEditorApplication {
         return this.snapshot();
       }
       const compressed = await this.#compressionGateway.compress({
-        bytes: cloneBytes(exportResult.bytes),
+        bytes: exportResult.bytes,
         ...(options.onCompressionProgress === undefined
           ? {}
           : { onProgress: options.onCompressionProgress }),

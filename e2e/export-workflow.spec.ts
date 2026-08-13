@@ -2345,6 +2345,120 @@ test("keeps the phone editor inside the viewport with a collapsed full-width ins
     await page.getByRole("button", { name: "Close", exact: true }).click();
   }
 });
+test.describe("phone landscape Quick Edit", () => {
+  test.use({ hasTouch: true });
+  test("keeps Phone Quick Edit active for landscape touch phones wider than 767px", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const fixturePath = testInfo.outputPath("phone-landscape-fixture.pdf");
+    await import("node:fs/promises").then(async (fs) =>
+      fs.writeFile(fixturePath, await createPdf()),
+    );
+
+    for (const viewport of [
+      { width: 926, height: 428 },
+      { width: 844, height: 390 },
+      { width: 740, height: 360 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/");
+      await page.evaluate(() => {
+        const nativeMatchMedia = window.matchMedia.bind(window);
+        Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 });
+        window.matchMedia = (query: string) => {
+          if (query === "(pointer: coarse)") {
+            return {
+              addEventListener: () => undefined,
+              addListener: () => undefined,
+              dispatchEvent: () => false,
+              matches: true,
+              media: query,
+              onchange: null,
+              removeEventListener: () => undefined,
+              removeListener: () => undefined,
+            } as MediaQueryList;
+          }
+          return nativeMatchMedia(query);
+        };
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+            maxTouchPoints: navigator.maxTouchPoints,
+          })),
+        )
+        .toEqual({ coarsePointer: true, maxTouchPoints: 5 });
+
+      await page.getByLabel("Choose a PDF file").setInputFiles(fixturePath);
+      await expect(page.getByRole("region", { name: "phone-landscape-fixture.pdf" })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect.poll(() => renderedCanvasHasVisibleContent(page)).toBe(true);
+
+      const editor = page.getByRole("region", { name: "phone-landscape-fixture.pdf" });
+      await expect(editor).toHaveClass(/is-compact-editor/);
+      await expect(editor).not.toHaveClass(/is-tablet-quick-edit/);
+
+      const layout = await page.evaluate(() => {
+        const rectFor = (selector: string): DOMRect => {
+          const element = document.querySelector(selector);
+          if (element === null) {
+            throw new Error(`Missing ${selector}`);
+          }
+          return element.getBoundingClientRect();
+        };
+        const actionRect = (label: string): { width: number; height: number } => {
+          const action = document.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+          if (action === null) {
+            throw new Error(`Missing ${label}`);
+          }
+          const rect = action.getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        };
+        const statusBar = rectFor(".editor-status-bar");
+        const toolbar = rectFor(".viewer-toolbar");
+        return {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          scrollWidth: document.documentElement.scrollWidth,
+          scrollHeight: document.documentElement.scrollHeight,
+          statusBar: { top: statusBar.top, bottom: statusBar.bottom, right: statusBar.right },
+          toolbar: { right: toolbar.right },
+          criticalActions: [
+            actionRect("Undo"),
+            actionRect("Redo"),
+            actionRect("Download"),
+            actionRect("Open page thumbnails"),
+          ],
+        };
+      });
+
+      expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth + 1);
+      expect(layout.scrollHeight).toBeLessThanOrEqual(layout.innerHeight + 1);
+      expect(layout.statusBar.bottom).toBeLessThanOrEqual(layout.innerHeight + 1);
+      expect(layout.statusBar.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+      expect(layout.toolbar.right).toBeLessThanOrEqual(layout.innerWidth + 1);
+      for (const action of layout.criticalActions) {
+        expect(action.width).toBeGreaterThanOrEqual(44);
+        expect(action.height).toBeGreaterThanOrEqual(44);
+      }
+
+      await page.getByRole("button", { name: "More editor tools" }).click();
+      await expect(page.getByRole("dialog", { name: "More tools" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Whiteout" })).toBeVisible();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `phone-landscape-${String(viewport.width)}x${String(viewport.height)}.png`,
+        ),
+        fullPage: true,
+      });
+    }
+  });
+});
 test("uses the simplified tablet Quick Edit layout without horizontal overflow", async ({
   page,
 }, testInfo) => {
