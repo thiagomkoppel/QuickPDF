@@ -53,6 +53,7 @@ export const renderPixelRatioForProfile = (
     return 1;
   }
 
-  const safeRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const safeRatio =
+    Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   return Math.min(safeRatio, MAX_RENDER_PIXEL_RATIO);
 };

@@ -3700,8 +3700,7 @@ body {
   }
 }
 @media (max-width: 767px) and (prefers-reduced-motion: reduce),
-  (max-height: 767px) and (orientation: landscape) and (pointer: coarse) and
-    (prefers-reduced-motion: reduce) {
+  (max-height: 767px) and (orientation: landscape) and (pointer: coarse) and (prefers-reduced-motion: reduce) {
   .editor-viewer.is-compact-editor .element-inspector:has(.layers-panel) {
     transition: none;
   }

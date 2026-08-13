@@ -1015,9 +1015,9 @@ export const EditorPage = ({
   const pendingVisualResizePreviewRef = useRef<VisualResizePreview | undefined>(undefined);
   const movePreviewRef = useRef<MovePreview | undefined>(undefined);
   const moveFrameRef = useRef<number | undefined>(undefined);
-  const pendingMovePreviewRef = useRef<{ readonly elementId: string; readonly x: number; readonly y: number } | undefined>(
-    undefined,
-  );
+  const pendingMovePreviewRef = useRef<
+    { readonly elementId: string; readonly x: number; readonly y: number } | undefined
+  >(undefined);
   const moveCancelRef = useRef<(() => void) | undefined>(undefined);
   const workspacePanRef = useRef<WorkspacePan | undefined>(undefined);
   const touchPointsRef = useRef(new Map<number, { readonly x: number; readonly y: number }>());

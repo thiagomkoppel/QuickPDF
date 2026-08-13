@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PdfPageRenderHandle, PdfPageRenderResult } from "../../infrastructure/pdf/pdfjs-page-renderer";
+import type {
+  PdfPageRenderHandle,
+  PdfPageRenderResult,
+} from "../../infrastructure/pdf/pdfjs-page-renderer";
 import { createThumbnailRenderQueue } from "./thumbnail-render-queue";
 
 interface Deferred<T> {
