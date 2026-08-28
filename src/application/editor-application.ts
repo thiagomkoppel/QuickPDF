@@ -31,6 +31,9 @@ export interface InitialElementSize {
 }
 export type EditorErrorCode =
   | "UnsupportedFile"
+  | "UnsupportedDocFormat"
+  | "DocumentConversionFailed"
+  | "DocumentConversionEmpty"
   | "EmptyFile"
   | "UnreadableFile"
   | "InvalidPdf"
@@ -71,11 +74,17 @@ export const classifyDocumentSize = (pageCount: number): DocumentSizeClass => {
   return "normal";
 };
 
-export interface PdfOpenProgress {
+export interface LargeDocumentOpenProgress {
   readonly phase: "preparing-large-document";
   readonly pageCount: number;
   readonly sizeClass: Exclude<DocumentSizeClass, "normal">;
 }
+
+export interface ConvertingDocumentOpenProgress {
+  readonly phase: "converting-document";
+}
+
+export type PdfOpenProgress = LargeDocumentOpenProgress | ConvertingDocumentOpenProgress;
 
 export type PdfOpenProgressListener = (progress: PdfOpenProgress) => void;
 
@@ -84,6 +93,53 @@ export interface LocalPdfFile {
   readonly size: number;
   readonly type: string;
   arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/**
+ * Categories of file the editor can be asked to open. Only `pdf` and `docx` are
+ * openable; `docx` is converted to PDF before editing (ADR-006).
+ */
+export type OpenableFileKind = "pdf" | "docx" | "legacy-doc" | "unsupported";
+
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const LEGACY_DOC_MIME_TYPE = "application/msword";
+
+const fileExtension = (name: string): string => {
+  const lastDot = name.lastIndexOf(".");
+  return lastDot === -1 ? "" : name.slice(lastDot + 1).toLowerCase();
+};
+
+export const classifyOpenableFile = (
+  file: Pick<LocalPdfFile, "name" | "type">,
+): OpenableFileKind => {
+  const extension = fileExtension(file.name);
+  if (extension === "pdf" || file.type === "application/pdf") {
+    return "pdf";
+  }
+  if (extension === "docx" || file.type === DOCX_MIME_TYPE) {
+    return "docx";
+  }
+  if (extension === "doc" || file.type === LEGACY_DOC_MIME_TYPE) {
+    return "legacy-doc";
+  }
+  return "unsupported";
+};
+
+export interface DocumentImportSuccess {
+  readonly ok: true;
+  readonly fileName: string;
+  readonly bytes: Uint8Array;
+}
+
+export type DocumentImportResult = DocumentImportSuccess | PdfFailure;
+
+/**
+ * Converts a non-PDF source document to PDF bytes entirely in the browser.
+ * Implementations must not upload the source and must release it once the
+ * conversion settles (ADR-006).
+ */
+export interface DocumentImportGateway {
+  convertToPdf(file: LocalPdfFile): Promise<DocumentImportResult>;
 }
 
 export interface LocalPdfReadSuccess {
@@ -584,6 +640,7 @@ export class PdfEditorApplication {
   readonly #renderGateway: PdfRenderDocumentGateway | undefined;
   readonly #dateProvider: DateProvider;
   readonly #compressionGateway: PdfCompressionGateway | undefined;
+  readonly #documentImportGateway: DocumentImportGateway | undefined;
   #session: DocumentSession | undefined;
   #originalBytes: Uint8Array | undefined;
   #renderDocumentId: string | undefined;
@@ -603,6 +660,7 @@ export class PdfEditorApplication {
     renderGateway?: PdfRenderDocumentGateway,
     dateProvider: DateProvider = { today: () => new Date() },
     compressionGateway?: PdfCompressionGateway,
+    documentImportGateway?: DocumentImportGateway,
   ) {
     this.#fileReader = fileReader;
     this.#pdfGateway = pdfGateway;
@@ -611,6 +669,7 @@ export class PdfEditorApplication {
     this.#renderGateway = renderGateway;
     this.#dateProvider = dateProvider;
     this.#compressionGateway = compressionGateway;
+    this.#documentImportGateway = documentImportGateway;
   }
 
   public snapshot(): EditorSnapshot {
@@ -642,16 +701,66 @@ export class PdfEditorApplication {
     void discardedOpenError;
     void discardedExportFilename;
     this.#state = { ...openState, status: "loading" };
-    const readResult = await this.#fileReader.read(file);
+
+    const source = await this.#resolvePdfSource(file, onProgress);
     if (openSequence !== this.#openSequence) {
       return this.snapshot();
     }
-    if (!readResult.ok) {
-      this.#state = { ...emptyState(), status: "error", error: readResult.error };
+    if (!source.ok) {
+      this.#state = { ...emptyState(), status: "error", error: source.error };
       return this.snapshot();
     }
 
-    const originalBytes = cloneBytes(readResult.bytes);
+    return this.#openResolvedPdf(source.bytes, source.fileName, openSequence, onProgress);
+  }
+
+  /**
+   * Resolves the PDF bytes to open. A PDF file is read directly; a `.docx` file
+   * is converted to PDF in the browser first (ADR-006); a legacy `.doc` file and
+   * every other type are rejected with a typed error.
+   */
+  async #resolvePdfSource(
+    file: LocalPdfFile,
+    onProgress?: PdfOpenProgressListener,
+  ): Promise<DocumentImportResult> {
+    const kind = classifyOpenableFile(file);
+
+    if (kind === "legacy-doc") {
+      return {
+        ok: false,
+        error: {
+          code: "UnsupportedDocFormat",
+          message:
+            "Word 97-2003 .doc files can't be opened here. Save the file as .docx or PDF and try again.",
+        },
+      };
+    }
+
+    if (kind === "docx") {
+      if (this.#documentImportGateway === undefined) {
+        return {
+          ok: false,
+          error: { code: "UnsupportedFile", message: "Only PDF files can be opened." },
+        };
+      }
+      onProgress?.({ phase: "converting-document" });
+      return this.#documentImportGateway.convertToPdf(file);
+    }
+
+    const readResult = await this.#fileReader.read(file);
+    if (!readResult.ok) {
+      return readResult;
+    }
+    return { ok: true, fileName: readResult.fileName, bytes: readResult.bytes };
+  }
+
+  async #openResolvedPdf(
+    sourceBytes: Uint8Array,
+    fileName: string,
+    openSequence: number,
+    onProgress?: PdfOpenProgressListener,
+  ): Promise<EditorSnapshot> {
+    const originalBytes = cloneBytes(sourceBytes);
     const openResult = await this.#pdfGateway.open(originalBytes);
     if (openSequence !== this.#openSequence) {
       return this.snapshot();
@@ -693,11 +802,11 @@ export class PdfEditorApplication {
     this.#session = DocumentSession.create({
       id: this.#idGenerator.nextId("session"),
       pages: openResult.pages,
-      temporaryPersonalInfo: { originalFileName: readResult.fileName },
+      temporaryPersonalInfo: { originalFileName: fileName },
       sourceReference: this.#idGenerator.nextId("source"),
     });
     this.#resetHistory();
-    this.#syncState({ fileName: readResult.fileName, status: "ready" });
+    this.#syncState({ fileName, status: "ready" });
     return this.snapshot();
   }
 

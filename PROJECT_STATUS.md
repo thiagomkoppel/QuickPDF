@@ -11,6 +11,7 @@ Repository foundation initialized. The project has a Vite, React, and TypeScript
 Implemented proof-of-concept behavior:
 
 - open one local PDF through browser File APIs;
+- open one local Word `.docx` file, converting it to a rasterized PDF entirely in the browser at import time behind a `DocumentImportGateway` port (`docx-preview` render, line-box-aware pagination that estimates the document's page count and spreads content evenly across it without cutting a line or emitting a thin trailing page, `html2canvas` capture, assembled with `pdf-lib`); the scratch render container and source bytes are released when conversion settles, external resource references are stripped before capture, oversized input is rejected, and legacy binary `.doc` is refused with a clear message (ADR-006);
 - provide a manifest, mark-only install icons, standalone presentation, safe-area layout, explicit session-only iOS/Chromium installation guidance, and a non-intrusive landing install card before installation, with its install action shown only when a real platform install action is available, without a service worker or document cache;
 - run a browser-local PDF.js renderer preflight before the application routes mount; only a confirmed probe failure blocks local PDF selection, while indeterminate outcomes preserve the existing pre-open safety guard;
 - validate basic PDF file properties and signature bytes;
