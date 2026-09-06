@@ -278,3 +278,109 @@ describe("PdfLibExportGateway annotation overlays", () => {
     expect(exported.getPage(0).getHeight()).toBe(400);
   });
 });
+
+/**
+ * Pages whose visible area is not the whole media box. PDF.js renders the crop box, so overlays
+ * must be exported into that same space or they land somewhere else in the downloaded file.
+ */
+const createCroppedPdf = async (): Promise<Uint8Array> => {
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  // Visible area 612x768, its top edge 12 units below the media box top.
+  page.setCropBox(0, 12, 612, 768);
+  return document.save();
+};
+
+const createOffsetMediaBoxPdf = async (): Promise<Uint8Array> => {
+  const document = await PDFDocument.create();
+  const page = document.addPage();
+  page.setMediaBox(0, 9, 612, 792);
+  return document.save();
+};
+
+describe("PdfLibExportGateway cropped pages", () => {
+  it("reports the visible page area rather than the media box", async () => {
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.open(await createCroppedPdf());
+
+    expect(result).toEqual({
+      ok: true,
+      pages: [{ id: "page-1", width: 612, height: 768, rotation: 0 }],
+    });
+  });
+
+  it("draws overlays against the visible top edge of a cropped page", async () => {
+    const drawImage = vi.spyOn(PDFPage.prototype, "drawImage");
+    const drawRectangle = vi.spyOn(PDFPage.prototype, "drawRectangle");
+    const drawText = vi.spyOn(PDFPage.prototype, "drawText");
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes: await createCroppedPdf(),
+      pages: [{ id: "page-1", width: 612, height: 768, rotation: 0 }],
+      elements: [
+        {
+          id: "signature-1",
+          pageId: "page-1",
+          type: "signature",
+          bounds: { x: 40, y: 100, width: 200, height: 60 },
+          image: { dataUrl: transparentPngDataUrl, mimeType: "image/png" },
+        },
+        {
+          id: "whiteout-1",
+          pageId: "page-1",
+          type: "whiteout",
+          bounds: { x: 40, y: 100, width: 200, height: 60 },
+        },
+        {
+          id: "text-1",
+          pageId: "page-1",
+          type: "text",
+          bounds: { x: 40, y: 100, width: 200, height: 60 },
+          text: "Signed",
+          textAppearance: { fontSize: 16, color: "#111111" },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    // The visible top edge sits at y = 780, so the overlay bottom belongs at 780 - 100 - 60.
+    expect(drawImage.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ x: 40, y: 620, width: 200, height: 60 }),
+    );
+    expect(drawRectangle.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ x: 40, y: 620, width: 200, height: 60 }),
+    );
+    expect(drawText.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ x: 40, y: 664 }));
+    drawImage.mockRestore();
+    drawRectangle.mockRestore();
+    drawText.mockRestore();
+  });
+
+  it("draws overlays against a media box that does not start at the origin", async () => {
+    const drawImage = vi.spyOn(PDFPage.prototype, "drawImage");
+    const gateway = new PdfLibExportGateway();
+
+    const result = await gateway.exportPdf({
+      originalBytes: await createOffsetMediaBoxPdf(),
+      pages: [{ id: "page-1", width: 612, height: 792, rotation: 0 }],
+      elements: [
+        {
+          id: "signature-1",
+          pageId: "page-1",
+          type: "signature",
+          bounds: { x: 40, y: 0, width: 200, height: 60 },
+          image: { dataUrl: transparentPngDataUrl, mimeType: "image/png" },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    // Visible top edge is 9 + 792 = 801.
+    expect(drawImage.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ x: 40, y: 741, width: 200, height: 60 }),
+    );
+    drawImage.mockRestore();
+  });
+});

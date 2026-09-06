@@ -14,7 +14,28 @@ import {
   pageTopLeftRectToPdfRect,
   pageTopLeftTextToPdfPoint,
 } from "../../application/editor-geometry";
+import type { PageGeometry } from "../../application/editor-geometry";
 import type { DocumentPage } from "../../domain/document-session";
+
+/**
+ * The area of a page a reader displays: the crop box clipped to the media box, exactly as
+ * PDF.js resolves it. `getWidth()`/`getHeight()` describe the media box alone, so using them to
+ * place overlays shifts every element on a cropped page — or on one whose media box does not
+ * start at the origin — by the difference between the two top edges.
+ */
+const visiblePageBox = (page: PDFPage): PageGeometry => {
+  const media = page.getMediaBox();
+  const crop = page.getCropBox();
+  const left = Math.max(media.x, crop.x);
+  const bottom = Math.max(media.y, crop.y);
+  const right = Math.min(media.x + media.width, crop.x + crop.width);
+  const top = Math.min(media.y + media.height, crop.y + crop.height);
+  if (right <= left || top <= bottom) {
+    // A crop box that does not overlap the media box is malformed; the media box still renders.
+    return { x: media.x, y: media.y, width: media.width, height: media.height };
+  }
+  return { x: left, y: bottom, width: right - left, height: top - bottom };
+};
 
 const exportFailure = (message: string): PdfExportResult => ({
   ok: false,
@@ -120,12 +141,15 @@ export class PdfLibExportGateway implements PdfExportGateway {
   public async open(bytes: Uint8Array): Promise<PdfOpenResult> {
     try {
       const document = await PDFDocument.load(bytes, { ignoreEncryption: false });
-      const pages = document.getPages().map<DocumentPage>((page, index) => ({
-        id: `page-${String(index + 1)}`,
-        width: page.getWidth(),
-        height: page.getHeight(),
-        rotation: page.getRotation().angle,
-      }));
+      const pages = document.getPages().map<DocumentPage>((page, index) => {
+        const view = visiblePageBox(page);
+        return {
+          id: `page-${String(index + 1)}`,
+          width: view.width,
+          height: view.height,
+          rotation: page.getRotation().angle,
+        };
+      });
       return { ok: true, pages };
     } catch {
       return openFailure("The PDF could not be opened in the browser.");
@@ -172,10 +196,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
       return;
     }
     if (element.type === "whiteout") {
-      const rect = pageTopLeftRectToPdfRect(element.bounds, {
-        width: page.getWidth(),
-        height: page.getHeight(),
-      });
+      const rect = pageTopLeftRectToPdfRect(element.bounds, visiblePageBox(page));
       page.drawRectangle({
         x: rect.x,
         y: rect.y,
@@ -188,10 +209,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     }
 
     if (element.type === "checkmark" || element.type === "cross") {
-      const rect = pageTopLeftRectToPdfRect(element.bounds, {
-        width: page.getWidth(),
-        height: page.getHeight(),
-      });
+      const rect = pageTopLeftRectToPdfRect(element.bounds, visiblePageBox(page));
       if (element.type === "checkmark") {
         drawCheckmark(page, rect, element.color);
       } else {
@@ -205,10 +223,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
         element.image.mimeType === "image/png"
           ? await document.embedPng(imageBytes)
           : await document.embedJpg(imageBytes);
-      const rect = pageTopLeftRectToPdfRect(element.bounds, {
-        width: page.getWidth(),
-        height: page.getHeight(),
-      });
+      const rect = pageTopLeftRectToPdfRect(element.bounds, visiblePageBox(page));
       page.drawImage(embeddedImage, {
         x: rect.x,
         y: rect.y,
@@ -227,7 +242,7 @@ export class PdfLibExportGateway implements PdfExportGateway {
     const activeFont = fontForElement(element, font, signatureFont, patrickHand);
     const start = pageTopLeftTextToPdfPoint({
       bounds: element.bounds,
-      page: { width: page.getWidth(), height: page.getHeight() },
+      page: visiblePageBox(page),
       fontSize,
     });
     const appearance = element.textAppearance;

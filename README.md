@@ -44,7 +44,7 @@ Closing the editor or leaving the session discards the working document from the
 - Add checkmarks and crosses
 - Add images
 - Whiteout content
-- Add signatures
+- Add signatures, including uploaded photos of a handwritten signature with the paper background removed in your browser
 - Add initials
 - Move and resize elements
 - Copy and paste supported elements
