@@ -32,6 +32,8 @@ import {
   validateImageFile,
   validateSignatureImageFile,
 } from "../../application/editor-application";
+import type { SignatureBackgroundRemover } from "../../application/signature-background-remover";
+import { createCanvasSignatureBackgroundRemover } from "../../infrastructure/browser/canvas-signature-background-remover";
 import type { PdfJsPageRenderer } from "../../infrastructure/pdf/pdfjs-page-renderer";
 import quickPdfMark from "../assets/brand/quickpdf-mark.svg";
 import { calculateViewerFit, type ViewerMode } from "./editor-view-modes";
@@ -51,6 +53,8 @@ interface EditorPageProps {
     Partial<Pick<PdfJsPageRenderer, "startRenderThumbnail">>;
   readonly onOpenRequest?: () => void;
   readonly onHomeRequest?: () => void;
+  /** Injectable so tests can run the signature dialog without a real canvas. */
+  readonly signatureBackgroundRemover?: SignatureBackgroundRemover;
 }
 
 type RenderStatus = "idle" | "loading" | "ready" | "error";
@@ -916,7 +920,12 @@ export const EditorPage = ({
   pdfRenderer,
   onOpenRequest,
   onHomeRequest,
+  signatureBackgroundRemover,
 }: EditorPageProps): React.ReactElement => {
+  const backgroundRemover = useMemo(
+    () => signatureBackgroundRemover ?? createCanvasSignatureBackgroundRemover(),
+    [signatureBackgroundRemover],
+  );
   const editorFormFactor = useEditorFormFactor();
   const isPhoneQuickEditViewport = editorFormFactor === "phone";
   const isTabletQuickEditViewport =
@@ -4027,6 +4036,7 @@ export const EditorPage = ({
           }}
           onAcceptImage={acceptSignatureImage}
           onAcceptText={acceptTypedSignature}
+          backgroundRemover={backgroundRemover}
         />
       )}
     </section>
@@ -4189,25 +4199,59 @@ interface SignatureDialogProps {
   readonly onCancel: () => void;
   readonly onAcceptImage: (image: SignatureImageInput) => void;
   readonly onAcceptText: (text: string, fontFamily: SignatureFont) => void;
+  readonly backgroundRemover: SignatureBackgroundRemover;
 }
+
+interface SignatureUploadPreview {
+  /** The image exactly as the user picked it, kept so the removal can be undone. */
+  readonly original: SignatureImageInput;
+  /** The ink on a transparent background, missing when removal did not produce one. */
+  readonly separated?: SignatureImageInput;
+  readonly status: "pending" | "removed" | "already-transparent" | "unchanged" | "failed";
+}
+
+const uploadPreviewNote = (preview: SignatureUploadPreview): string | undefined => {
+  switch (preview.status) {
+    case "removed":
+      return "Background removed. Only the signature ink will be placed on the page.";
+    case "already-transparent":
+      return "This image already had a transparent background, so it was only trimmed.";
+    case "unchanged":
+      return "No clear background was found, so the image was kept exactly as uploaded.";
+    case "pending":
+    case "failed":
+      return undefined;
+  }
+};
 
 const SignatureDialog = ({
   type,
   onCancel,
   onAcceptImage,
   onAcceptText,
+  backgroundRemover,
 }: SignatureDialogProps): React.ReactElement => {
   const [mode, setMode] = useState<SignatureDialogMode>("draw");
   const [typedName, setTypedName] = useState(type === "signature" ? "Your Name" : "YN");
   const [fontFamily, setFontFamily] = useState<SignatureFont>("cursive");
   const [uploadError, setUploadError] = useState<string | undefined>();
+  const [uploadPreview, setUploadPreview] = useState<SignatureUploadPreview | undefined>();
+  const [removeBackground, setRemoveBackground] = useState(true);
+  const [isRemovingBackground, setIsRemovingBackground] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const isDrawingRef = useRef(false);
   const hasStrokeRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // Re-armed on every mount: StrictMode mounts, unmounts, and mounts again in development,
+    // so a flag only ever cleared here would strand the next background removal mid-flight.
+    isMountedRef.current = true;
     dialogRef.current?.focus();
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -4302,6 +4346,25 @@ const SignatureDialog = ({
     onAcceptImage(canvasToImageInput(canvas, "draw"));
   };
 
+  const separateUploadedBackground = async (original: SignatureImageInput): Promise<void> => {
+    setIsRemovingBackground(true);
+    const outcome = await backgroundRemover.remove(original);
+    if (!isMountedRef.current) {
+      return;
+    }
+    setIsRemovingBackground(false);
+    if (outcome.status === "failed") {
+      setUploadError(outcome.error.message);
+      setUploadPreview({ original, status: "failed" });
+      return;
+    }
+    setUploadPreview(
+      outcome.status === "unchanged"
+        ? { original, status: "unchanged" }
+        : { original, separated: outcome.image, status: outcome.status },
+    );
+  };
+
   const acceptUpload = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.currentTarget.files?.[0];
     if (file === undefined) {
@@ -4312,6 +4375,8 @@ const SignatureDialog = ({
       setUploadError(validationError.message);
       return;
     }
+    setUploadError(undefined);
+    setUploadPreview(undefined);
     const image = new Image();
     const reader = new FileReader();
     reader.addEventListener("load", () => {
@@ -4319,18 +4384,39 @@ const SignatureDialog = ({
         setUploadError("The signature image could not be read.");
         return;
       }
+      const dataUrl = reader.result;
       image.addEventListener("load", () => {
-        onAcceptImage({
-          dataUrl: reader.result as string,
+        const original: SignatureImageInput = {
+          dataUrl,
           mimeType: file.type === "image/png" ? "image/png" : "image/jpeg",
           width: image.naturalWidth,
           height: image.naturalHeight,
           source: "upload",
-        });
+        };
+        setUploadPreview({ original, status: "pending" });
+        if (removeBackground) {
+          void separateUploadedBackground(original);
+        }
       });
-      image.src = reader.result;
+      image.src = dataUrl;
     });
     reader.readAsDataURL(file);
+  };
+
+  const previewImage =
+    uploadPreview === undefined
+      ? undefined
+      : removeBackground
+        ? (uploadPreview.separated ?? uploadPreview.original)
+        : uploadPreview.original;
+
+  const toggleRemoveBackground = (enabled: boolean): void => {
+    setRemoveBackground(enabled);
+    if (!enabled || uploadPreview === undefined || uploadPreview.separated !== undefined) {
+      return;
+    }
+    setUploadError(undefined);
+    void separateUploadedBackground(uploadPreview.original);
   };
 
   return (
@@ -4470,6 +4556,54 @@ const SignatureDialog = ({
                 onChange={acceptUpload}
               />
             </label>
+            <label className="signature-option">
+              <input
+                type="checkbox"
+                checked={removeBackground}
+                onChange={(event) => {
+                  toggleRemoveBackground(event.currentTarget.checked);
+                }}
+              />
+              Remove background automatically
+            </label>
+            {uploadPreview === undefined || previewImage === undefined ? (
+              <p className="signature-upload-hint">
+                Photograph or scan your signature on plain paper. The paper is removed here in your
+                browser; the image is never uploaded.
+              </p>
+            ) : (
+              <>
+                <div className="signature-upload-preview">
+                  <img
+                    src={previewImage.dataUrl}
+                    alt="Signature preview"
+                    aria-label="Uploaded signature preview"
+                  />
+                </div>
+                <p
+                  className="signature-upload-hint"
+                  role="status"
+                  aria-label="Signature upload status"
+                >
+                  {isRemovingBackground
+                    ? "Removing background…"
+                    : removeBackground
+                      ? (uploadPreviewNote(uploadPreview) ?? "Using the uploaded image as it is.")
+                      : "Using the uploaded image as it is."}
+                </p>
+                <div className="dialog-actions">
+                  <button
+                    type="button"
+                    disabled={isRemovingBackground}
+                    onClick={() => {
+                      onAcceptImage(previewImage);
+                    }}
+                  >
+                    Accept
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : null}
       </div>

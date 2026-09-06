@@ -2005,6 +2005,51 @@ body {
   background: #f8fcfc;
   color: #071d23;
 }
+.signature-panel .signature-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.signature-panel .signature-option input[type="checkbox"] {
+  min-height: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  padding: 0;
+  accent-color: #44a1a4;
+}
+.signature-upload-preview {
+  display: grid;
+  place-items: center;
+  min-height: 7.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(159 219 218 / 20%);
+  border-radius: 0.55rem;
+  /* Checkerboard so a removed background reads as transparent instead of white. */
+  background-color: #f8fcfc;
+  background-image:
+    linear-gradient(45deg, #dde9e9 25%, transparent 25%),
+    linear-gradient(-45deg, #dde9e9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dde9e9 75%),
+    linear-gradient(-45deg, transparent 75%, #dde9e9 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+.signature-upload-preview img {
+  max-width: 100%;
+  max-height: 11rem;
+  object-fit: contain;
+}
+.signature-upload-hint {
+  margin: 0;
+  color: rgb(230 247 247 / 70%);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
 .dialog-actions {
   min-height: 2.75rem;
   width: 100%;

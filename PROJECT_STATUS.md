@@ -21,6 +21,7 @@ Implemented proof-of-concept behavior:
 - add temporary text overlay elements as one-shot placements, with bounded font-size changes in the Style tab, user-controlled canvas bounds, and bundled Patrick Hand handwriting-font support in the editor and exported PDFs;
 - add temporary whiteout visual cover rectangles by click-drag creation;
 - add drawn, typed, and uploaded signature overlays as one-shot placements;
+- remove the paper behind an uploaded PNG/JPG signature entirely in the browser, keeping only the ink on a transparent background, trimmed to the strokes, with a preview and a toggle to keep the original image;
 - add drawn and typed initials overlays as one-shot placements;
 - add PNG, JPG, and JPEG image overlays through a browser-local file picker and click-to-place workflow;
 - add checkmark, cross, and captured-date annotation overlays as one-shot placements;
@@ -35,6 +36,10 @@ Implemented proof-of-concept behavior:
 - keep the editor session open after successful download;
 - mark the current session clean after successful download;
 - preserve the current session when export fails.
+
+Overlay placement is anchored to the visible page area (the crop box clipped to the media box, the same area PDF.js renders) rather than to the media box. Page metadata reports that visible size, so the overlay grid covers exactly what the reader draws, and export writes overlays into the same space. Cropped pages, and pages whose media box does not start at the origin, previously shifted every exported overlay by the difference between the two top edges. Page rotation metadata is still reported without swapping the reported page dimensions.
+
+Uploaded signature background removal runs on an offscreen canvas: the paper brightness is estimated on a local grid so uneven phone-photo lighting is followed rather than thresholded globally, ink is separated with a soft ramp and un-mixed from the paper colour so stroke edges carry no grey halo, faint islands that never reach solid ink are dropped as grain, and the result is cropped to the signature. Images whose paper cannot be told apart from the ink are kept exactly as uploaded and reported as such in the dialog.
 
 Not implemented: form filling, page organization, OCR, secure redaction, native editing of existing PDF text, arbitrary symbol picker, stickers, emojis, date picker, time/timestamps, custom annotation colors, annotation rotation, image cropping, image rotation, image filters, image opacity, persistence, backend services.
 

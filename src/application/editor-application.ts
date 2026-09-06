@@ -41,6 +41,7 @@ export type EditorErrorCode =
   | "InvalidSignature"
   | "UnsupportedSignatureImage"
   | "SignatureImageTooLarge"
+  | "SignatureBackgroundRemovalFailed"
   | "InvalidImage"
   | "UnsupportedImage"
   | "ImageTooLarge"

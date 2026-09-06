@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { describe, expect, it, vi, type Mock } from "vitest";
 
 import type {
@@ -3461,6 +3462,231 @@ describe("EditorPage PDF rendering", () => {
     expect(editor.addUploadedSignature).not.toHaveBeenCalled();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("removes the background of an uploaded signature before it is placed", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    const OriginalImage = window.Image;
+    class TestImage extends EventTarget {
+      public naturalWidth = 400;
+      public naturalHeight = 200;
+      public set src(_value: string) {
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    Object.defineProperty(window, "Image", { configurable: true, value: TestImage });
+    const separated = {
+      dataUrl: "data:image/png;base64,separated",
+      mimeType: "image/png" as const,
+      width: 320,
+      height: 90,
+      source: "upload" as const,
+    };
+    const backgroundRemover = {
+      remove: vi.fn(() => Promise.resolve({ status: "removed" as const, image: separated })),
+    };
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+        signatureBackgroundRemover={backgroundRemover}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Signature" }));
+    await user.click(screen.getByRole("tab", { name: "Upload" }));
+    await user.upload(
+      screen.getByLabelText("Upload signature image"),
+      new File(["jpg"], "sig.jpg", { type: "image/jpeg" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Uploaded signature preview")).toHaveAttribute(
+        "src",
+        separated.dataUrl,
+      );
+    });
+    expect(backgroundRemover.remove).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: "image/jpeg", width: 400, height: 200 }),
+    );
+    expect(screen.getByLabelText("Signature upload status")).toHaveTextContent(
+      "Background removed.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(editor.addUploadedSignature.mock.calls[0]?.[1]).toEqual(separated);
+    Object.defineProperty(window, "Image", { configurable: true, value: OriginalImage });
+  });
+
+  it("finishes background removal when the dialog is remounted by StrictMode", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    const OriginalImage = window.Image;
+    class TestImage extends EventTarget {
+      public naturalWidth = 400;
+      public naturalHeight = 200;
+      public set src(_value: string) {
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    Object.defineProperty(window, "Image", { configurable: true, value: TestImage });
+    const separated = {
+      dataUrl: "data:image/png;base64,separated",
+      mimeType: "image/png" as const,
+      width: 320,
+      height: 90,
+      source: "upload" as const,
+    };
+    const backgroundRemover = {
+      remove: vi.fn(() => Promise.resolve({ status: "removed" as const, image: separated })),
+    };
+    render(
+      <StrictMode>
+        <EditorPage
+          editor={editor}
+          snapshot={baseSnapshot()}
+          onSnapshotChange={vi.fn()}
+          pdfRenderer={createRenderer()}
+          signatureBackgroundRemover={backgroundRemover}
+        />
+      </StrictMode>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Signature" }));
+    await user.click(screen.getByRole("tab", { name: "Upload" }));
+    await user.upload(
+      screen.getByLabelText("Upload signature image"),
+      new File(["jpg"], "sig.jpg", { type: "image/jpeg" }),
+    );
+
+    // The status must settle instead of staying on "Removing background...".
+    await waitFor(() => {
+      expect(screen.getByLabelText("Signature upload status")).toHaveTextContent(
+        "Background removed.",
+      );
+    });
+    expect(screen.getByLabelText("Uploaded signature preview")).toHaveAttribute(
+      "src",
+      separated.dataUrl,
+    );
+    expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
+    Object.defineProperty(window, "Image", { configurable: true, value: OriginalImage });
+  });
+
+  it("keeps the original upload when background removal is switched off", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    const OriginalImage = window.Image;
+    class TestImage extends EventTarget {
+      public naturalWidth = 400;
+      public naturalHeight = 200;
+      public set src(_value: string) {
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    Object.defineProperty(window, "Image", { configurable: true, value: TestImage });
+    const backgroundRemover = {
+      remove: vi.fn(() =>
+        Promise.resolve({
+          status: "removed" as const,
+          image: {
+            dataUrl: "data:image/png;base64,separated",
+            mimeType: "image/png" as const,
+            width: 320,
+            height: 90,
+            source: "upload" as const,
+          },
+        }),
+      ),
+    };
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+        signatureBackgroundRemover={backgroundRemover}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Signature" }));
+    await user.click(screen.getByRole("tab", { name: "Upload" }));
+    await user.upload(
+      screen.getByLabelText("Upload signature image"),
+      new File(["jpg"], "sig.jpg", { type: "image/jpeg" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Uploaded signature preview")).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("checkbox", { name: "Remove background automatically" }));
+
+    expect(screen.getByLabelText("Signature upload status")).toHaveTextContent(
+      "Using the uploaded image as it is.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(editor.addUploadedSignature.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ mimeType: "image/jpeg", width: 400, height: 200 }),
+    );
+    Object.defineProperty(window, "Image", { configurable: true, value: OriginalImage });
+  });
+
+  it("explains when the signature background could not be removed", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const editor = createEditor();
+    const OriginalImage = window.Image;
+    class TestImage extends EventTarget {
+      public naturalWidth = 400;
+      public naturalHeight = 200;
+      public set src(_value: string) {
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    Object.defineProperty(window, "Image", { configurable: true, value: TestImage });
+    const backgroundRemover = {
+      remove: vi.fn(() =>
+        Promise.resolve({
+          status: "failed" as const,
+          error: {
+            code: "SignatureBackgroundRemovalFailed" as const,
+            message: "The signature background could not be removed. The original image was kept.",
+          },
+        }),
+      ),
+    };
+    render(
+      <EditorPage
+        editor={editor}
+        snapshot={baseSnapshot()}
+        onSnapshotChange={vi.fn()}
+        pdfRenderer={createRenderer()}
+        signatureBackgroundRemover={backgroundRemover}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Signature" }));
+    await user.click(screen.getByRole("tab", { name: "Upload" }));
+    await user.upload(
+      screen.getByLabelText("Upload signature image"),
+      new File(["jpg"], "sig.jpg", { type: "image/jpeg" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The signature background could not be removed.",
+      );
+    });
+    await user.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(editor.addUploadedSignature.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ mimeType: "image/jpeg", width: 400 }),
+    );
+    Object.defineProperty(window, "Image", { configurable: true, value: OriginalImage });
   });
 
   it("supports pointer drawing with a transparent canvas background", async () => {
